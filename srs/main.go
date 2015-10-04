@@ -41,16 +41,17 @@ func run() int {
     core.LoggerTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version))
     flag.Parse()
 
-    conf := &core.Config{}
     core.LoggerInfo.Println("start to parse config file", confFile)
-
-    if err := conf.Loads(confFile); err != nil {
+    if err := core.GsConfig.Loads(confFile); err != nil {
         core.LoggerError.Println("parse config", confFile, "failed, err is", err)
         return -1
     }
 
+    // reload goroutine
+    go core.GsConfig.ReloadWorker(confFile)
+
     core.LoggerTrace.Println("Copyright (c) 2013-2015 SRS(simple-rtmp-server)")
-    return core.ServerRun(conf, func() int {
+    return core.ServerRun(core.GsConfig, func() int {
         return 0
     })
 }

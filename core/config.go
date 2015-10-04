@@ -30,11 +30,33 @@ import (
     "errors"
     "fmt"
     "io"
+    "os/signal"
+    "syscall"
 )
+
+const (
+    ReloadWorkers = iota
+    ReloadListen
+    ReloadLog
+)
+
+// the reload handler,
+// the client which care about the reload event,
+// must implements this interface and then register itself
+// to the config.
+type ReloadHandler interface {
+    // when reload the global scopes,
+    // for example, the workers, listen and log.
+    // @param scope defined in const ReloadXXX.
+    // @param cc the current loaded config, GsConfig.
+    // @param pc the previous old config.
+    OnReloadGlobal(scope int, cc, pc *Config) error
+}
 
 // the config for this application,
 // which can load from file in json style,
 // and convert to json string.
+// @remark user can user the GsConfig object.
 type Config struct {
     Workers int `json:"workers"` // the number of cpus to use
     Listen int `json:"listen"` // the system service RTMP listen port
@@ -45,6 +67,17 @@ type Config struct {
         Level string `json:"level"` // the log level, info/trace/warn/error
         File string `json:"file"` // for log tank file, the log file path.
     } `json:"log"`
+
+    reloadHandlers []ReloadHandler `json:"-"`
+}
+
+// the current global config.
+var GsConfig = NewConfig()
+
+func NewConfig() *Config {
+    return &Config{
+        reloadHandlers: []ReloadHandler{},
+    }
 }
 
 // loads and validate config from config file.
@@ -86,15 +119,6 @@ func (c *Config) Validate() error {
     return nil
 }
 
-// convert the config to json string.
-func (c *Config) Json() (string, error) {
-    if b,err := json.Marshal(c); err != nil {
-        return "", err
-    } else {
-        return string(b), nil
-    }
-}
-
 // whether log tank is file
 func (c *Config) LogToFile() bool {
     return c.Log.Tank == "file"
@@ -126,5 +150,75 @@ func (c *Config) LogTank(level string, dw io.Writer) io.Writer {
     }
 
     return ioutil.Discard
+}
+
+func (c *Config) Subscribe(h ReloadHandler) {
+    // ignore exists.
+    for _,v := range c.reloadHandlers {
+        if v == h {
+            return
+        }
+    }
+
+    c.reloadHandlers = append(c.reloadHandlers, h)
+}
+
+func (c* Config) Unsubscribe(h ReloadHandler) {
+    for i,v := range c.reloadHandlers {
+        if v == h {
+            c.reloadHandlers = append(c.reloadHandlers[:i], c.reloadHandlers[i+1:]...)
+            return
+        }
+    }
+}
+
+// for reload worker.
+func (c *Config) ReloadWorker(conf string) {
+    signals := make(chan os.Signal, 1)
+    // 1: SIGHUP
+    signal.Notify(signals, syscall.Signal(1))
+
+    // process all reload signals.
+    func(){
+        defer func(){
+            if r := recover(); r != nil {
+                LoggerError.Println("reload panic:", r)
+            }
+        }()
+
+        LoggerTrace.Println("wait for reload signals: kill -1", os.Getpid())
+        for signal := range signals {
+            LoggerTrace.Println("reload by", signal)
+
+            pc := c
+            cc := NewConfig()
+            cc.reloadHandlers = pc.reloadHandlers[:]
+            if err := cc.Loads(conf); err != nil {
+                LoggerError.Println("reload config failed. err is", err)
+                continue
+            }
+
+            if err := doReload(cc, pc); err != nil {
+                LoggerError.Println("apply reload failed. err is", err)
+                continue
+            }
+
+            GsConfig = cc
+            LoggerTrace.Println("reload config ok")
+        }
+    }()
+}
+
+func doReload(cc, pc *Config) (err error) {
+    if cc.Workers != pc.Workers {
+        for _, h := range cc.reloadHandlers {
+            if err = h.OnReloadGlobal(ReloadWorkers, cc, pc); err != nil {
+                return
+            }
+        }
+        LoggerTrace.Println("reload apply workers ok")
+    }
+
+    return
 }
 
