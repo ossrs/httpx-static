@@ -1,0 +1,7 @@
+{
+  "listen": 1935,
+  "log": {
+    "tank": "console",
+    "level": "trace"
+  }
+}

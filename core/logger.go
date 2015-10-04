@@ -61,11 +61,11 @@ type simpleLogger struct {
 }
 
 func (l *simpleLogger) Open(c *Config) (err error) {
-    LoggerTrace.Println("apply log tank", c.Log.Tank)
-    LoggerTrace.Println("apply log level", c.Log.Level)
+    LoggerInfo.Println("apply log tank", c.Log.Tank)
+    LoggerInfo.Println("apply log level", c.Log.Level)
 
     if c.LogToFile() {
-        LoggerTrace.Println("apply log file", c.Log.File)
+        LoggerTrace.Println("apply log", c.Log.Tank, c.Log.Level, c.Log.File)
         LoggerTrace.Println("please see detail of log: tailf", c.Log.File)
 
         if l.file,err = os.OpenFile(c.Log.File, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
@@ -78,6 +78,8 @@ func (l *simpleLogger) Open(c *Config) (err error) {
             LoggerError = log.New(c.LogTank("error", l.file), logErrorLabel, log.LstdFlags)
         }
     } else {
+        LoggerTrace.Println("apply log", c.Log.Tank, c.Log.Level)
+
         LoggerInfo = log.New(c.LogTank("info", os.Stdout), logInfoLabel, log.LstdFlags)
         LoggerTrace = log.New(c.LogTank("trace", os.Stdout), logTraceLabel, log.LstdFlags)
         LoggerWarn = log.New(c.LogTank("warn", os.Stderr), logWarnLabel, log.LstdFlags)
