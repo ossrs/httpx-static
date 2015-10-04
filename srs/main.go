@@ -35,7 +35,7 @@ import (
 //      --c conf/srs.json
 //      -c=conf/srs.json
 //      --c=conf/srs.json
-var confFile = *flag.String("c", "conf/srs.json", "the config file.")
+var confFile = flag.String("c", "conf/srs.json", "the config file.")
 
 func run() int {
     flag.Parse()
@@ -43,8 +43,8 @@ func run() int {
     svr := core.NewServer()
     defer svr.Close()
 
-    if err := svr.ParseConfig(confFile); err != nil {
-        core.LoggerError.Println("parse config from", confFile, "failed, err is", err)
+    if err := svr.ParseConfig(*confFile); err != nil {
+        core.LoggerError.Println("parse config from", *confFile, "failed, err is", err)
         return -1
     }
 

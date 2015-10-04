@@ -47,7 +47,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
-    LoggerInfo.Println("start to parse config file", conf)
+    LoggerTrace.Println("start to parse config file", conf)
     if err = GsConfig.Loads(conf); err != nil {
         return
     }

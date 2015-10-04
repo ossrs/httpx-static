@@ -34,6 +34,7 @@ import (
     "syscall"
 )
 
+// the scope for reload.
 const (
     ReloadWorkers = iota
     ReloadLog
@@ -83,24 +84,42 @@ type Config struct {
 var GsConfig = NewConfig()
 
 func NewConfig() *Config {
-    return &Config{
+    c := &Config{
         reloadHandlers: []ReloadHandler{},
     }
+
+    // default to 4 workers.
+    c.Workers = 4
+    // default go gc to 300s.
+    c.Go.GcInterval = 300
+
+    // default to log to file
+    c.Log.Tank = "file"
+    c.Log.Level = "trace"
+    c.Log.File = "./gsrs.log"
+
+    return c
 }
 
 // loads and validate config from config file.
 func (c *Config) Loads(conf string) error {
     c.conf = conf
 
+    // read the whole config to []byte.
+    var s []byte
     if f,err := os.Open(conf); err != nil {
         return err
-    } else if s,err := ioutil.ReadAll(f); err != nil {
+    } else if s,err = ioutil.ReadAll(f); err != nil {
         return err
-    } else if err := json.Unmarshal([]byte(s), c); err != nil {
-        return err
-    } else {
-        return c.Validate()
     }
+
+    // parse string to json.
+    if err := json.Unmarshal([]byte(s), c); err != nil {
+        return err
+    }
+
+    // validate the config.
+    return c.Validate()
 }
 
 // validate the config whether ok.
