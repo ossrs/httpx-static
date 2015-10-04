@@ -7,19 +7,19 @@ Golang implementation for [srs][srs].
 For linux/unix-like os:
 
 ```
-go get github.com/simple-rtmp-server/go-srs/srs && $GOPATH/bin/srs
+go get github.com/simple-rtmp-server/go-srs/srs && $GOPATH/bin/srs -c conf/srs.json
 ```
 
 Or, for windows:
 
 ```
-go get github.com/simple-rtmp-server/go-srs/srs && %GOPATH%\bin\srs.exe
+go get github.com/simple-rtmp-server/go-srs/srs && %GOPATH%\bin\srs.exe -c conf\srs.json
 ```
 
 About how to build and run at current directory:
 
 ```
-go build -o objs/srs github.com/simple-rtmp-server/go-srs/srs && ./objs/srs
+go build -o objs/srs github.com/simple-rtmp-server/go-srs/srs && ./objs/srs -c conf/srs.json
 ```
 
 About how to set $GOPATH, read [prepare go][go-prepare].
