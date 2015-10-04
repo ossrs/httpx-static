@@ -36,7 +36,6 @@ import (
 
 const (
     ReloadWorkers = iota
-    ReloadListen
     ReloadLog
 )
 
@@ -58,8 +57,16 @@ type ReloadHandler interface {
 // and convert to json string.
 // @remark user can user the GsConfig object.
 type Config struct {
+    // the global section.
     Workers int `json:"workers"` // the number of cpus to use
+
+    // the rtmp global section.
     Listen int `json:"listen"` // the system service RTMP listen port
+
+    // the go section.
+    Go struct {
+        GcInterval int `json:"gc_interval"` // the gc interval in seconds.
+    }
 
     // the log config.
     Log struct {
@@ -68,6 +75,7 @@ type Config struct {
         File string `json:"file"` // for log tank file, the log file path.
     } `json:"log"`
 
+    conf string `json:"-"` // the config file path.
     reloadHandlers []ReloadHandler `json:"-"`
 }
 
@@ -82,6 +90,8 @@ func NewConfig() *Config {
 
 // loads and validate config from config file.
 func (c *Config) Loads(conf string) error {
+    c.conf = conf
+
     if f,err := os.Open(conf); err != nil {
         return err
     } else if s,err := ioutil.ReadAll(f); err != nil {
@@ -104,6 +114,10 @@ func (c *Config) Validate() error {
     }
     if c.Listen <= 0 || c.Listen > 65535 {
         return errors.New(fmt.Sprintf("listen must in (0, 65535], actual is %v", c.Listen))
+    }
+
+    if c.Go.GcInterval <= 0 || c.Go.GcInterval > 24 * 3600 {
+        return errors.New(fmt.Sprintf("go gc_interval must in (0, 24*3600], actual is %v", c.Go.GcInterval))
     }
 
     if c.Log.Level != "info" && c.Log.Level != "trace" && c.Log.Level != "warn" && c.Log.Level != "error" {
@@ -152,6 +166,8 @@ func (c *Config) LogTank(level string, dw io.Writer) io.Writer {
     return ioutil.Discard
 }
 
+// subscribe the reload event,
+// when got reload event, notify all handlers.
 func (c *Config) Subscribe(h ReloadHandler) {
     // ignore exists.
     for _,v := range c.reloadHandlers {
@@ -172,8 +188,8 @@ func (c* Config) Unsubscribe(h ReloadHandler) {
     }
 }
 
-// for reload worker.
-func (c *Config) ReloadWorker(conf string) {
+// the goroutine worker for reload.
+func ReloadWorker() {
     signals := make(chan os.Signal, 1)
     // 1: SIGHUP
     signal.Notify(signals, syscall.Signal(1))
@@ -190,18 +206,20 @@ func (c *Config) ReloadWorker(conf string) {
         for signal := range signals {
             LoggerTrace.Println("reload by", signal)
 
-            pc := c
+            pc := GsConfig
             cc := NewConfig()
             cc.reloadHandlers = pc.reloadHandlers[:]
-            if err := cc.Loads(conf); err != nil {
+            if err := cc.Loads(GsConfig.conf); err != nil {
                 LoggerError.Println("reload config failed. err is", err)
                 continue
             }
+            LoggerInfo.Println("reload parse fresh config ok")
 
             if err := doReload(cc, pc); err != nil {
                 LoggerError.Println("apply reload failed. err is", err)
                 continue
             }
+            LoggerInfo.Println("reload completed work")
 
             GsConfig = cc
             LoggerTrace.Println("reload config ok")
@@ -217,6 +235,19 @@ func doReload(cc, pc *Config) (err error) {
             }
         }
         LoggerTrace.Println("reload apply workers ok")
+    } else {
+        LoggerInfo.Println("reload ignore workers")
+    }
+
+    if cc.Log.File != pc.Log.File || cc.Log.Level != pc.Log.Level || cc.Log.Tank != pc.Log.Tank {
+        for _, h := range cc.reloadHandlers {
+            if err = h.OnReloadGlobal(ReloadLog, cc, pc); err != nil {
+                return
+            }
+        }
+        LoggerTrace.Println("reload apply log ok")
+    } else {
+        LoggerInfo.Println("reload ignore log")
     }
 
     return

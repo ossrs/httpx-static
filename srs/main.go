@@ -38,22 +38,35 @@ import (
 var confFile = *flag.String("c", "conf/srs.json", "the config file.")
 
 func run() int {
-    core.LoggerTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version))
     flag.Parse()
 
-    core.LoggerInfo.Println("start to parse config file", confFile)
-    if err := core.GsConfig.Loads(confFile); err != nil {
-        core.LoggerError.Println("parse config", confFile, "failed, err is", err)
+    svr := core.NewServer()
+    defer svr.Close()
+
+    if err := svr.ParseConfig(confFile); err != nil {
+        core.LoggerError.Println("parse config from", confFile, "failed, err is", err)
         return -1
     }
 
-    // reload goroutine
-    go core.GsConfig.ReloadWorker(confFile)
+    if err := svr.PrepareLogger(); err != nil {
+        core.LoggerError.Println("prepare logger failed, err is", err)
+        return -1
+    }
 
     core.LoggerTrace.Println("Copyright (c) 2013-2015 SRS(simple-rtmp-server)")
-    return core.ServerRun(core.GsConfig, func() int {
-        return 0
-    })
+    core.LoggerTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version))
+
+    if err := svr.Initialize(); err != nil {
+        core.LoggerError.Println("initialize server failed, err is", err)
+        return -1
+    }
+
+    if err := svr.Run(); err != nil {
+        core.LoggerError.Println("run server failed, err is", err)
+        return -1
+    }
+
+    return 0
 }
 
 func main() {
