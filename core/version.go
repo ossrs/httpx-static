@@ -25,9 +25,11 @@ package core
 import "fmt"
 
 const (
-    Major = 0
-    Minor = 0
-    Reversion = 2
+    major = 0
+    minor = 0
+    reversion = 3
 )
 
-var Version = fmt.Sprintf("%v.%v.%v", Major, Minor, Reversion)
+func Version() string {
+    return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
+}

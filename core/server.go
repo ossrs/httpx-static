@@ -48,7 +48,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
-    LoggerTrace.Println("start to parse config file", conf)
+    GsTrace.Println("start to parse config file", conf)
     if err = GsConfig.Loads(conf); err != nil {
         return
     }
@@ -73,7 +73,7 @@ func (s *Server) Initialize() (err error) {
     if !c.LogToFile() {
         l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
     }
-    LoggerTrace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v", c.conf, l, c.Workers))
+    GsTrace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v", c.conf, l, c.Workers))
 
     return
 }
@@ -83,7 +83,7 @@ func (s *Server) Run() (err error) {
 
     for {
         runtime.GC()
-        LoggerInfo.Println("go runtime gc every", GsConfig.Go.GcInterval, "seconds")
+        GsInfo.Println("go runtime gc every", GsConfig.Go.GcInterval, "seconds")
         time.Sleep(time.Second * time.Duration(GsConfig.Go.GcInterval))
     }
 
@@ -105,9 +105,9 @@ func (s *Server) applyMultipleProcesses(workers int) {
     pv := runtime.GOMAXPROCS(workers)
 
     if pv != workers {
-        LoggerTrace.Println("apply workers", workers, "and previous is", pv)
+        GsTrace.Println("apply workers", workers, "and previous is", pv)
     } else {
-        LoggerInfo.Println("apply workers", workers, "and previous is", pv)
+        GsInfo.Println("apply workers", workers, "and previous is", pv)
     }
 }
 
@@ -115,12 +115,12 @@ func (s *Server) applyLogger(c *Config) (err error) {
     if err = s.logger.Close(c); err != nil {
         return
     }
-    LoggerInfo.Println("close logger ok")
+    GsInfo.Println("close logger ok")
 
     if err = s.logger.Open(c); err != nil {
         return
     }
-    LoggerInfo.Println("open logger ok")
+    GsInfo.Println("open logger ok")
 
     return
 }

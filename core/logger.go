@@ -39,13 +39,13 @@ const (
 
 // the application loggers
 // info, the verbose info level, very detail log, the lowest level, to discard.
-var LoggerInfo Logger = log.New(ioutil.Discard, logLabel, log.LstdFlags)
+var GsInfo Logger = log.New(ioutil.Discard, logLabel, log.LstdFlags)
 // trace, the trace level, something important, the default log level, to stdout.
-var LoggerTrace Logger = log.New(os.Stdout, logTraceLabel, log.LstdFlags)
+var GsTrace Logger = log.New(os.Stdout, logTraceLabel, log.LstdFlags)
 // warn, the warning level, dangerous information, to stderr.
-var LoggerWarn Logger = log.New(os.Stderr, logWarnLabel, log.LstdFlags)
+var GsWarn Logger = log.New(os.Stderr, logWarnLabel, log.LstdFlags)
 // error, the error level, fatal error things, ot stderr.
-var LoggerError Logger = log.New(os.Stderr, logErrorLabel, log.LstdFlags)
+var GsError Logger = log.New(os.Stderr, logErrorLabel, log.LstdFlags)
 
 // the logger for gsrs.
 type Logger interface {
@@ -61,29 +61,29 @@ type simpleLogger struct {
 }
 
 func (l *simpleLogger) Open(c *Config) (err error) {
-    LoggerInfo.Println("apply log tank", c.Log.Tank)
-    LoggerInfo.Println("apply log level", c.Log.Level)
+    GsInfo.Println("apply log tank", c.Log.Tank)
+    GsInfo.Println("apply log level", c.Log.Level)
 
     if c.LogToFile() {
-        LoggerTrace.Println("apply log", c.Log.Tank, c.Log.Level, c.Log.File)
-        LoggerTrace.Println("please see detail of log: tailf", c.Log.File)
+        GsTrace.Println("apply log", c.Log.Tank, c.Log.Level, c.Log.File)
+        GsTrace.Println("please see detail of log: tailf", c.Log.File)
 
         if l.file,err = os.OpenFile(c.Log.File, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
-            LoggerError.Println("open log file", c.Log.File, "failed, err is", err)
+            GsError.Println("open log file", c.Log.File, "failed, err is", err)
             return
         } else {
-            LoggerInfo = log.New(c.LogTank("info", l.file), logInfoLabel, log.LstdFlags)
-            LoggerTrace = log.New(c.LogTank("trace", l.file), logTraceLabel, log.LstdFlags)
-            LoggerWarn = log.New(c.LogTank("warn", l.file), logWarnLabel, log.LstdFlags)
-            LoggerError = log.New(c.LogTank("error", l.file), logErrorLabel, log.LstdFlags)
+            GsInfo = log.New(c.LogTank("info", l.file), logInfoLabel, log.LstdFlags)
+            GsTrace = log.New(c.LogTank("trace", l.file), logTraceLabel, log.LstdFlags)
+            GsWarn = log.New(c.LogTank("warn", l.file), logWarnLabel, log.LstdFlags)
+            GsError = log.New(c.LogTank("error", l.file), logErrorLabel, log.LstdFlags)
         }
     } else {
-        LoggerTrace.Println("apply log", c.Log.Tank, c.Log.Level)
+        GsTrace.Println("apply log", c.Log.Tank, c.Log.Level)
 
-        LoggerInfo = log.New(c.LogTank("info", os.Stdout), logInfoLabel, log.LstdFlags)
-        LoggerTrace = log.New(c.LogTank("trace", os.Stdout), logTraceLabel, log.LstdFlags)
-        LoggerWarn = log.New(c.LogTank("warn", os.Stderr), logWarnLabel, log.LstdFlags)
-        LoggerError = log.New(c.LogTank("error", os.Stderr), logErrorLabel, log.LstdFlags)
+        GsInfo = log.New(c.LogTank("info", os.Stdout), logInfoLabel, log.LstdFlags)
+        GsTrace = log.New(c.LogTank("trace", os.Stdout), logTraceLabel, log.LstdFlags)
+        GsWarn = log.New(c.LogTank("warn", os.Stderr), logWarnLabel, log.LstdFlags)
+        GsError = log.New(c.LogTank("error", os.Stderr), logErrorLabel, log.LstdFlags)
     }
 
     return
@@ -95,13 +95,13 @@ func (l *simpleLogger) Close(c *Config) (err error) {
     }
 
     // when log closed, set the logger warn to stderr for file closed.
-    LoggerWarn = log.New(os.Stderr, "[gsrs][warn]", log.LstdFlags)
+    GsWarn = log.New(os.Stderr, "[gsrs][warn]", log.LstdFlags)
 
     // try to close the log file.
     if err = l.file.Close(); err != nil {
-        LoggerWarn.Println("gracefully close log file", c.Log.File, "failed, err is", err)
+        GsWarn.Println("gracefully close log file", c.Log.File, "failed, err is", err)
     } else {
-        LoggerWarn.Println("close log file", c.Log.File, "ok")
+        GsWarn.Println("close log file", c.Log.File, "ok")
     }
 
     return
