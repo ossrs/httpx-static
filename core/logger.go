@@ -21,41 +21,34 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-package main
+package core
 
 import (
+    "log"
+    "io/ioutil"
     "os"
-    "flag"
-    "github.com/simple-rtmp-server/go-srs/core"
-    "fmt"
 )
 
-// the startup argv:
-//      -c conf/srs.json
-//      --c conf/srs.json
-//      -c=conf/srs.json
-//      --c=conf/srs.json
-var confFile = *flag.String("c", "conf/srs.json", "the config file.")
+const (
+    logLabel = "[gsrs]"
+    logInfoLabel = logLabel + "[info] "
+    logTraceLabel = logLabel + "[trace] "
+    logWarnLabel = logLabel + "[warn] "
+    logErrorLabel = logLabel + "[error] "
+)
 
-func run() int {
-    core.LoggerTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version))
-    flag.Parse()
+// the application loggers
+// info, the verbose info level, very detail log, the lowest level, to discard.
+var LoggerInfo Logger = log.New(ioutil.Discard, logLabel, log.LstdFlags)
+// trace, the trace level, something important, the default log level, to stdout.
+var LoggerTrace Logger = log.New(os.Stdout, logTraceLabel, log.LstdFlags)
+// warn, the warning level, dangerous information, to stderr.
+var LoggerWarn Logger = log.New(os.Stderr, logWarnLabel, log.LstdFlags)
+// error, the error level, fatal error things, ot stderr.
+var LoggerError Logger = log.New(os.Stderr, logErrorLabel, log.LstdFlags)
 
-    conf := &core.Config{}
-    core.LoggerInfo.Println("start to parse config file", confFile)
-
-    if err := conf.Loads(confFile); err != nil {
-        core.LoggerError.Println("parse config", confFile, "failed, err is", err)
-        return -1
-    }
-
-    core.LoggerTrace.Println("Copyright (c) 2013-2015 SRS(simple-rtmp-server)")
-    return core.ServerRun(conf, func() int {
-        return 0
-    })
-}
-
-func main() {
-    ret := run()
-    os.Exit(ret)
+type Logger interface {
+    Print(a ...interface{})
+    Println(a ...interface{})
+    Printf(format string, a ...interface{})
 }

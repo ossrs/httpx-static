@@ -21,41 +21,13 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-package main
+package core
+import "fmt"
 
-import (
-    "os"
-    "flag"
-    "github.com/simple-rtmp-server/go-srs/core"
-    "fmt"
+const (
+    Major = 0
+    Minor = 0
+    Reversion = 1
 )
 
-// the startup argv:
-//      -c conf/srs.json
-//      --c conf/srs.json
-//      -c=conf/srs.json
-//      --c=conf/srs.json
-var confFile = *flag.String("c", "conf/srs.json", "the config file.")
-
-func run() int {
-    core.LoggerTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version))
-    flag.Parse()
-
-    conf := &core.Config{}
-    core.LoggerInfo.Println("start to parse config file", confFile)
-
-    if err := conf.Loads(confFile); err != nil {
-        core.LoggerError.Println("parse config", confFile, "failed, err is", err)
-        return -1
-    }
-
-    core.LoggerTrace.Println("Copyright (c) 2013-2015 SRS(simple-rtmp-server)")
-    return core.ServerRun(conf, func() int {
-        return 0
-    })
-}
-
-func main() {
-    ret := run()
-    os.Exit(ret)
-}
+var Version = fmt.Sprintf("%v.%v.%v", Major, Minor, Reversion)

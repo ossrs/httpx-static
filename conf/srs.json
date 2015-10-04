@@ -1,0 +1,9 @@
+{
+  "workers": 4,
+  "listen": 1935,
+  "log": {
+    "tank": "console",
+    "level": "trace",
+    "file": "./gsrs.log"
+  }
+}
