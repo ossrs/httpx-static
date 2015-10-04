@@ -21,11 +21,11 @@ About how to set $GOPATH, read [prepare go][go-prepare].
 
 ## IDE
 
-Go: [download][go-download]
+GO SDK: [download][go-download]
 
-JetBrains [IntelliJ IDEA][go-ide]
+JetBrains IntelliJ IDEA: [download][go-ide]
 
-Idea [Plugin][go-ide-plugin]
+IntelliJ IDEA Golang Plugin: [download][go-ide-plugin]
 
 Winlin 2015.10
 
