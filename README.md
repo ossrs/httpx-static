@@ -35,7 +35,7 @@ GO SDK: [download][go-download]
 
 JetBrains IntelliJ IDEA: [download][go-ide]
 
-IntelliJ IDEA Golang Plugin: [download][go-ide-plugin]
+IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plugin-download]
 
 ### Features
 
@@ -54,3 +54,4 @@ Winlin 2015.10
 [go-prepare]: http://blog.csdn.net/win_lin/article/details/40618671
 [go-ide]: http://www.jetbrains.com/idea/download
 [go-ide-plugin]: https://github.com/go-lang-plugin-org/go-lang-idea-plugin
+[go-ide-plugin-download]: https://plugins.jetbrains.com/plugin/5047
