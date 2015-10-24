@@ -22,14 +22,15 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 package core
+
 import "fmt"
 
 const (
-    major = 0
-    minor = 0
-    reversion = 3
+	major     = 0
+	minor     = 0
+	reversion = 3
 )
 
 func Version() string {
-    return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
+	return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
 }
