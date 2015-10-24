@@ -72,7 +72,9 @@ func ExampleConfig_Loads() {
     //}
 
     fmt.Println("listen at", c.Listen)
+    fmt.Println("workers is", c.Workers)
 
     // Output:
     // listen at 1935
+    // workers is 1
 }
