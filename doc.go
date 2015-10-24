@@ -27,6 +27,12 @@ SRS is industrial-strength live streaming cluster, for the best conceptual integ
 
 Usage
 
+To get and run go-srs:
+
+    go get github.com/simple-rtmp-server/go-srs &&
+    cd $GOPATH/src/github.com/simple-rtmp-server/go-srs &&
+    $GOPATH/bin/go-srs -c conf/srs.json
+
 Please read https://github.com/simple-rtmp-server/go-srs#usage
 */
 package main
