@@ -43,6 +43,7 @@ IntelliJ IDEA Golang Plugin: [download][go-ide-plugin]
 1. Supports Linux, Unix-like and Windows.
 1. Supports JSON style config file.
 1. Supports Reload config file.
+1. [dev] Standard godoc, gofmt and gotest.
 1. [dev] Supports Publish and Play RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
 
