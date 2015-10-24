@@ -66,8 +66,13 @@ func BenchmarkConfigBasic(b *testing.B) {
 
 func ExampleConfig_Loads() {
     c := NewConfig()
-    // err := c.Loads("config.json")
+
+    //if err := c.Loads("config.json"); err != nil {
+    //    panic(err)
+    //}
+
     fmt.Println("listen at", c.Listen)
+
     // Output:
     // listen at 1935
 }
