@@ -22,8 +22,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
 /*
-SRS is a go implementation of http://github.com/simple-rtmp-server/srs.
-
 SRS is industrial-strength live streaming cluster, for the best conceptual integrity and the simplest implementation.
 */
 package main

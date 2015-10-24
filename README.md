@@ -23,9 +23,8 @@ cd %GOPATH%\src\github.com\simple-rtmp-server\go-srs &&
 About how to build and run at current directory:
 
 ```
-cd $GOPATH/src/github.com/simple-rtmp-server/go-srs &&
-go build -o objs/srs github.com/simple-rtmp-server/go-srs/srs &&
-./objs/srs -c conf/srs.json
+cd $GOPATH/src/github.com/simple-rtmp-server/go-srs/srs &&
+go build . && ./srs -c ../conf/srs.json
 ```
 
 About how to set $GOPATH, read [prepare go][go-prepare].
