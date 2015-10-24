@@ -39,7 +39,7 @@ const (
 
 // the application loggers
 // info, the verbose info level, very detail log, the lowest level, to discard.
-var GsInfo Logger = log.New(ioutil.Discard, logLabel, log.LstdFlags)
+var GsInfo Logger = log.New(ioutil.Discard, logInfoLabel, log.LstdFlags)
 
 // trace, the trace level, something important, the default log level, to stdout.
 var GsTrace Logger = log.New(os.Stdout, logTraceLabel, log.LstdFlags)
