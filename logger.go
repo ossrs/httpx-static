@@ -52,9 +52,7 @@ var GsError Logger = log.New(os.Stderr, logErrorLabel, log.LstdFlags)
 
 // the logger for gsrs.
 type Logger interface {
-	Print(a ...interface{})
 	Println(a ...interface{})
-	Printf(format string, a ...interface{})
 }
 
 // the simple logger which implements the interface

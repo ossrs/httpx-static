@@ -88,12 +88,10 @@ func NewConfig() *Config {
 		reloadHandlers: []ReloadHandler{},
 	}
 
-	// default to use 1 cpu
-	c.Workers = 1
-	// default go gc to 300s.
-	c.Go.GcInterval = 300
+	c.Workers = Workers
+    c.Listen = RtmpListen
+    c.Go.GcInterval = GcIntervalSeconds
 
-	// default to log to file
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
 	c.Log.File = "gsrs.log"
@@ -208,7 +206,7 @@ func (c *Config) Unsubscribe(h ReloadHandler) {
 }
 
 // the goroutine worker for reload.
-func ReloadWorker() {
+func reloadWorker() {
 	signals := make(chan os.Signal, 1)
 	// 1: SIGHUP
 	signal.Notify(signals, syscall.Signal(1))
@@ -225,28 +223,36 @@ func ReloadWorker() {
 		for signal := range signals {
 			GsTrace.Println("start reload by", signal)
 
-			pc := GsConfig
-			cc := NewConfig()
-			cc.reloadHandlers = pc.reloadHandlers[:]
-			if err := cc.Loads(GsConfig.conf); err != nil {
-				GsError.Println("reload config failed. err is", err)
-				continue
-			}
-			GsInfo.Println("reload parse fresh config ok")
-
-			if err := doReload(cc, pc); err != nil {
-				GsError.Println("apply reload failed. err is", err)
-				continue
-			}
-			GsInfo.Println("reload completed work")
-
-			GsConfig = cc
-			GsTrace.Println("reload config ok")
+            if err := reload(); err != nil {
+                continue
+            }
 		}
 	}()
 }
 
-func doReload(cc, pc *Config) (err error) {
+func reload() (err error) {
+    pc := GsConfig
+    cc := NewConfig()
+    cc.reloadHandlers = pc.reloadHandlers[:]
+    if err = cc.Loads(GsConfig.conf); err != nil {
+        GsError.Println("reload config failed. err is", err)
+        return
+    }
+    GsInfo.Println("reload parse fresh config ok")
+
+    if err = pc.Reload(cc); err != nil {
+        GsError.Println("apply reload failed. err is", err)
+        return
+    }
+    GsInfo.Println("reload completed work")
+
+    GsConfig = cc
+    GsTrace.Println("reload config ok")
+
+    return
+}
+
+func (pc *Config) Reload(cc *Config) (err error) {
 	if cc.Workers != pc.Workers {
 		for _, h := range cc.reloadHandlers {
 			if err = h.OnReloadGlobal(ReloadWorkers, cc, pc); err != nil {
