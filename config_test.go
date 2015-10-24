@@ -73,8 +73,10 @@ func ExampleConfig_Loads() {
 
     fmt.Println("listen at", c.Listen)
     fmt.Println("workers is", c.Workers)
+    fmt.Println("go gc every", c.Go.GcInterval, "seconds")
 
     // Output:
     // listen at 1935
     // workers is 1
+    // go gc every 300 seconds
 }
