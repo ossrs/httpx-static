@@ -23,8 +23,20 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 package main
 
-import "testing"
+import (
+    "testing"
+    "log"
+    "io/ioutil"
+)
 
 func TestBasicLogger(t *testing.T) {
-    GsInfo.Println("test logger ok.")
+    GsInfo = log.New(ioutil.Discard, logLabel, log.LstdFlags)
+    GsTrace = log.New(ioutil.Discard, logLabel, log.LstdFlags)
+    GsWarn = log.New(ioutil.Discard, logLabel, log.LstdFlags)
+    GsError = log.New(ioutil.Discard, logLabel, log.LstdFlags)
+
+    GsInfo.Println("test logger info ok.")
+    GsTrace.Println("test logger trace ok.")
+    GsWarn.Println("test logger warn ok.")
+    GsError.Println("test logger error ok.")
 }
