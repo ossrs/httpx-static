@@ -7,24 +7,24 @@ Golang implementation for [srs][srs].
 For linux/unix-like os:
 
 ```
-go get github.com/simple-rtmp-server/go-srs/srs &&
+go get github.com/simple-rtmp-server/go-srs &&
 cd $GOPATH/src/github.com/simple-rtmp-server/go-srs &&
-$GOPATH/bin/srs -c conf/srs.json
+$GOPATH/bin/go-srs -c conf/srs.json
 ```
 
 Or, for windows:
 
 ```
-go get github.com/simple-rtmp-server/go-srs/srs &&
+go get github.com/simple-rtmp-server/go-srs &&
 cd %GOPATH%\src\github.com\simple-rtmp-server\go-srs &&
-%GOPATH%\bin\srs.exe -c conf\srs.json
+%GOPATH%\bin\go-srs.exe -c conf\srs.json
 ```
 
 About how to build and run at current directory:
 
 ```
-cd $GOPATH/src/github.com/simple-rtmp-server/go-srs/srs &&
-go build . && ./srs -c ../conf/srs.json
+cd $GOPATH/src/github.com/simple-rtmp-server/go-srs &&
+go build . && ./go-srs -c conf/srs.json
 ```
 
 About how to set $GOPATH, read [prepare go][go-prepare].
@@ -43,6 +43,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. Supports Linux, Unix-like and Windows.
 1. Supports JSON style config file.
 1. Supports Reload config file.
+1. [dev] Standard godoc, gofmt and gotest.
 1. [dev] Supports Publish and Play RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
 

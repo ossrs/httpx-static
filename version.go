@@ -21,7 +21,16 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-/*
-SRS is industrial-strength live streaming cluster, for the best conceptual integrity and the simplest implementation.
-*/
 package main
+
+import "fmt"
+
+const (
+	major     = 0
+	minor     = 0
+	reversion = 3
+)
+
+func Version() string {
+	return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
+}
