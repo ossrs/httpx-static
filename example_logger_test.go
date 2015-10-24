@@ -21,12 +21,10 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-/*
-The go-srs project is a go implementation of http://github.com/simple-rtmp-server/srs.
-SRS is industrial-strength live streaming cluster, for the best conceptual integrity and the simplest implementation.
-
-Usage
-
-Please read https://github.com/simple-rtmp-server/go-srs#usage
-*/
 package main
+
+import "testing"
+
+func TestBasicLogger(t *testing.T) {
+    GsInfo.Println("test logger ok.")
+}
