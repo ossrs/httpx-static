@@ -21,13 +21,8 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-package main
-
-import (
-    "testing"
-    "os"
-)
-
-func TestMain(m *testing.M) {
-    os.Exit(m.Run())
-}
+/*
+The app package provides the application level feature for srs,
+for example, the server object and some stream control service.
+*/
+package app
