@@ -21,25 +21,26 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-package main
+package app
 
 import (
     "testing"
     "fmt"
+    "github.com/simple-rtmp-server/go-srs/core"
 )
 
 func TestConfigBasic(t *testing.T) {
     c := NewConfig()
 
-    if c.Workers != Workers {
+    if c.Workers != core.Workers {
         t.Error("workers failed.")
     }
 
-    if c.Listen != RtmpListen {
+    if c.Listen != core.RtmpListen {
         t.Error("listen failed.")
     }
 
-    if c.Go.GcInterval != GcIntervalSeconds {
+    if c.Go.GcInterval != core.GcIntervalSeconds {
         t.Error("go gc interval failed.")
     }
 

@@ -21,16 +21,4 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-package main
-
-import "fmt"
-
-const (
-	major     = 0
-	minor     = 0
-	reversion = 4
-)
-
-func Version() string {
-	return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
-}
+package core

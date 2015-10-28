@@ -21,13 +21,16 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-package main
+package core
 
-import (
-    "testing"
-    "os"
+import "fmt"
+
+const (
+	major     = 0
+	minor     = 0
+	reversion = 4
 )
 
-func TestMain(m *testing.M) {
-    os.Exit(m.Run())
+func Version() string {
+	return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
 }

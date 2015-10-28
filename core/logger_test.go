@@ -21,7 +21,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-package main
+package core
 
 import (
     "testing"
@@ -44,10 +44,10 @@ func TestBasicLogger(t *testing.T) {
         return len(tank), nil
     }
 
-    GsInfo = log.New(WriterFunc(writer), logInfoLabel, log.LstdFlags)
-    GsTrace = log.New(WriterFunc(writer), logTraceLabel, log.LstdFlags)
-    GsWarn = log.New(WriterFunc(writer), logWarnLabel, log.LstdFlags)
-    GsError = log.New(WriterFunc(writer), logErrorLabel, log.LstdFlags)
+    GsInfo = log.New(WriterFunc(writer), LogInfoLabel, log.LstdFlags)
+    GsTrace = log.New(WriterFunc(writer), LogTraceLabel, log.LstdFlags)
+    GsWarn = log.New(WriterFunc(writer), LogWarnLabel, log.LstdFlags)
+    GsError = log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags)
 
     GsInfo.Println("test logger.")
     if !strings.HasPrefix(tank, "[gsrs][info]") {
