@@ -55,6 +55,7 @@ func NewServer() *Server {
 
 func (s *Server) Close() {
 	GsConfig.Unsubscribe(s)
+	// TODO: FIXME: do cleanup.
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
@@ -110,7 +111,7 @@ func (s *Server) Run() (err error) {
 				fallthrough
 			case syscall.SIGTERM:
 				// SIGTERM
-				q := make(chan error)
+				q := make(chan error, 1)
 				s.quit <- q
 			}
 		case q := <-s.quit:

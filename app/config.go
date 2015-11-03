@@ -242,7 +242,7 @@ func configReloadWorker(quit chan chan error) {
 		if r := recover(); r != nil {
 			core.GsError.Println("reload panic:", r)
 
-			q := make(chan error)
+			q := make(chan error, 1)
 			switch r := r.(type) {
 			case error:
 				q <- r
@@ -262,7 +262,7 @@ func configReloadWorker(quit chan chan error) {
 			if err := reload(); err != nil {
 				core.GsError.Println("quit for reload failed. err is", err)
 
-				q := make(chan error)
+				q := make(chan error, 1)
 				q <- err
 				quit <- q
 
