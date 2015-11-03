@@ -36,7 +36,7 @@ import (
 
 type Server struct {
 	sigs   chan os.Signal
-	quit   chan chan error
+	quit   chan bool
 	wg     sync.WaitGroup
 	logger *simpleLogger
 }
@@ -44,7 +44,7 @@ type Server struct {
 func NewServer() *Server {
 	svr := &Server{
 		sigs:   make(chan os.Signal, 1),
-		quit:   make(chan chan error, 1),
+		quit:   make(chan bool, 1),
 		logger: &simpleLogger{},
 	}
 
@@ -111,10 +111,8 @@ func (s *Server) Run() (err error) {
 				fallthrough
 			case syscall.SIGTERM:
 				// SIGTERM
-				q := make(chan error, 1)
-
 				select {
-				case s.quit <- q:
+				case s.quit <- true:
 				default:
 				}
 			}
@@ -129,7 +127,7 @@ func (s *Server) Run() (err error) {
 			return
 		case <-time.After(time.Second * time.Duration(GsConfig.Go.GcInterval)):
 			runtime.GC()
-			core.GsError.Println("go runtime gc every", GsConfig.Go.GcInterval, "seconds")
+			core.GsInfo.Println("go runtime gc every", GsConfig.Go.GcInterval, "seconds")
 		}
 	}
 
