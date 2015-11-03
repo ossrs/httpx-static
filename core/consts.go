@@ -24,7 +24,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 package core
 
 const (
-    RtmpListen = 1935
-    Workers = 1
-    GcIntervalSeconds = 300
+	RtmpListen        = 1935
+	Workers           = 1
+	GcIntervalSeconds = 300
 )

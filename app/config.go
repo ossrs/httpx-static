@@ -27,12 +27,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/simple-rtmp-server/go-srs/core"
 	"io"
 	"io/ioutil"
 	"os"
 	"os/signal"
 	"syscall"
-    "github.com/simple-rtmp-server/go-srs/core"
 )
 
 // the scope for reload.
@@ -90,8 +90,8 @@ func NewConfig() *Config {
 	}
 
 	c.Workers = core.Workers
-    c.Listen = core.RtmpListen
-    c.Go.GcInterval = core.GcIntervalSeconds
+	c.Listen = core.RtmpListen
+	c.Go.GcInterval = core.GcIntervalSeconds
 
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
@@ -124,7 +124,7 @@ func (c *Config) Loads(conf string) error {
 // validate the config whether ok.
 func (c *Config) Validate() error {
 	if c.Log.Level == "info" {
-        core.GsWarn.Println("info level hurts performance")
+		core.GsWarn.Println("info level hurts performance")
 	}
 
 	if c.Workers <= 0 || c.Workers > 64 {
@@ -213,9 +213,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-        core.GsTrace.Println("reload apply workers ok")
+		core.GsTrace.Println("reload apply workers ok")
 	} else {
-        core.GsInfo.Println("reload ignore workers")
+		core.GsInfo.Println("reload ignore workers")
 	}
 
 	if cc.Log.File != pc.Log.File || cc.Log.Level != pc.Log.Level || cc.Log.Tank != pc.Log.Tank {
@@ -224,57 +224,77 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-        core.GsTrace.Println("reload apply log ok")
+		core.GsTrace.Println("reload apply log ok")
 	} else {
-        core.GsInfo.Println("reload ignore log")
+		core.GsInfo.Println("reload ignore log")
 	}
 
 	return
 }
 
 // the goroutine worker for reload.
-func reloadWorker() {
-    signals := make(chan os.Signal, 1)
-    // 1: SIGHUP
-    signal.Notify(signals, syscall.Signal(1))
+func configReloadWorker(quit chan chan error) {
+	signals := make(chan os.Signal, 1)
+	// 1: SIGHUP
+	signal.Notify(signals, syscall.Signal(1))
 
-    // process all reload signals.
-    func() {
-        defer func() {
-            if r := recover(); r != nil {
-                core.GsError.Println("reload panic:", r)
-            }
-        }()
+	defer func() {
+		if r := recover(); r != nil {
+			core.GsError.Println("reload panic:", r)
 
-        core.GsTrace.Println("wait for reload signals: kill -1", os.Getpid())
-        for signal := range signals {
-            core.GsTrace.Println("start reload by", signal)
+			q := make(chan error)
+			switch r := r.(type) {
+			case error:
+				q <- r
+			default:
+				q <- fmt.Errorf("%v", r)
+			}
+			quit <- q
+		}
+	}()
 
-            if err := reload(); err != nil {
-                continue
-            }
-        }
-    }()
+	core.GsTrace.Println("wait for reload signals: kill -1", os.Getpid())
+	for {
+		select {
+		case signal := <-signals:
+			core.GsTrace.Println("start reload by", signal)
+
+			if err := reload(); err != nil {
+				core.GsError.Println("quit for reload failed. err is", err)
+
+				q := make(chan error)
+				q <- err
+				quit <- q
+
+				return
+			}
+
+		case q := <-quit:
+			core.GsWarn.Println("user stop reload")
+			quit <- q
+			return
+		}
+	}
 }
 
 func reload() (err error) {
-    pc := GsConfig
-    cc := NewConfig()
-    cc.reloadHandlers = pc.reloadHandlers[:]
-    if err = cc.Loads(GsConfig.conf); err != nil {
-        core.GsError.Println("reload config failed. err is", err)
-        return
-    }
-    core.GsInfo.Println("reload parse fresh config ok")
+	pc := GsConfig
+	cc := NewConfig()
+	cc.reloadHandlers = pc.reloadHandlers[:]
+	if err = cc.Loads(GsConfig.conf); err != nil {
+		core.GsError.Println("reload config failed. err is", err)
+		return
+	}
+	core.GsInfo.Println("reload parse fresh config ok")
 
-    if err = pc.Reload(cc); err != nil {
-        core.GsError.Println("apply reload failed. err is", err)
-        return
-    }
-    core.GsInfo.Println("reload completed work")
+	if err = pc.Reload(cc); err != nil {
+		core.GsError.Println("apply reload failed. err is", err)
+		return
+	}
+	core.GsInfo.Println("reload completed work")
 
-    GsConfig = cc
-    core.GsTrace.Println("reload config ok")
+	GsConfig = cc
+	core.GsTrace.Println("reload config ok")
 
-    return
+	return
 }

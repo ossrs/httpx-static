@@ -24,9 +24,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 package core
 
 import (
-    "testing"
-    "log"
-    "strings"
+	"log"
+	"strings"
+	"testing"
 )
 
 // convert a func to interface io.Writer
@@ -34,50 +34,50 @@ type WriterFunc func(p []byte) (n int, err error)
 
 // for io.Writer
 func (f WriterFunc) Write(p []byte) (n int, err error) {
-    return f(p)
+	return f(p)
 }
 
 func TestBasicLogger(t *testing.T) {
-    var tank string
-    var writer = func(p []byte) (n int, err error) {
-        tank = string(p)
-        return len(tank), nil
-    }
+	var tank string
+	var writer = func(p []byte) (n int, err error) {
+		tank = string(p)
+		return len(tank), nil
+	}
 
-    GsInfo = log.New(WriterFunc(writer), LogInfoLabel, log.LstdFlags)
-    GsTrace = log.New(WriterFunc(writer), LogTraceLabel, log.LstdFlags)
-    GsWarn = log.New(WriterFunc(writer), LogWarnLabel, log.LstdFlags)
-    GsError = log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags)
+	GsInfo = log.New(WriterFunc(writer), LogInfoLabel, log.LstdFlags)
+	GsTrace = log.New(WriterFunc(writer), LogTraceLabel, log.LstdFlags)
+	GsWarn = log.New(WriterFunc(writer), LogWarnLabel, log.LstdFlags)
+	GsError = log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags)
 
-    GsInfo.Println("test logger.")
-    if !strings.HasPrefix(tank, "[gsrs][info]") {
-        t.Error("logger format failed.")
-    }
-    if !strings.HasSuffix(tank, "test logger.\n") {
-        t.Error("logger format failed. tank is", tank)
-    }
+	GsInfo.Println("test logger.")
+	if !strings.HasPrefix(tank, "[gsrs][info]") {
+		t.Error("logger format failed.")
+	}
+	if !strings.HasSuffix(tank, "test logger.\n") {
+		t.Error("logger format failed. tank is", tank)
+	}
 
-    GsTrace.Println("test logger.")
-    if !strings.HasPrefix(tank, "[gsrs][trace]") {
-        t.Error("logger format failed.")
-    }
-    if !strings.HasSuffix(tank, "test logger.\n") {
-        t.Error("logger format failed. tank is", tank)
-    }
+	GsTrace.Println("test logger.")
+	if !strings.HasPrefix(tank, "[gsrs][trace]") {
+		t.Error("logger format failed.")
+	}
+	if !strings.HasSuffix(tank, "test logger.\n") {
+		t.Error("logger format failed. tank is", tank)
+	}
 
-    GsWarn.Println("test logger.")
-    if !strings.HasPrefix(tank, "[gsrs][warn]") {
-        t.Error("logger format failed.")
-    }
-    if !strings.HasSuffix(tank, "test logger.\n") {
-        t.Error("logger format failed. tank is", tank)
-    }
+	GsWarn.Println("test logger.")
+	if !strings.HasPrefix(tank, "[gsrs][warn]") {
+		t.Error("logger format failed.")
+	}
+	if !strings.HasSuffix(tank, "test logger.\n") {
+		t.Error("logger format failed. tank is", tank)
+	}
 
-    GsError.Println("test logger.")
-    if !strings.HasPrefix(tank, "[gsrs][error]") {
-        t.Error("logger format failed.")
-    }
-    if !strings.HasSuffix(tank, "test logger.\n") {
-        t.Error("logger format failed. tank is", tank)
-    }
+	GsError.Println("test logger.")
+	if !strings.HasPrefix(tank, "[gsrs][error]") {
+		t.Error("logger format failed.")
+	}
+	if !strings.HasSuffix(tank, "test logger.\n") {
+		t.Error("logger format failed. tank is", tank)
+	}
 }
