@@ -62,6 +62,7 @@ func NewServer() *Server {
 }
 
 // notify server to stop and wait for cleanup.
+// TODO: FIXME: should return a chan to support async timeout close.
 func (s *Server) Close() {
 	// notify to close.
 	core.GsInfo.Println("notify server to stop.")
