@@ -249,7 +249,11 @@ func configReloadWorker(quit chan chan error) {
 			default:
 				q <- fmt.Errorf("%v", r)
 			}
-			quit <- q
+
+			select {
+			case quit <- q:
+			default:
+			}
 		}
 	}()
 
@@ -264,14 +268,22 @@ func configReloadWorker(quit chan chan error) {
 
 				q := make(chan error, 1)
 				q <- err
-				quit <- q
+
+				select {
+				case quit <- q:
+				default:
+				}
 
 				return
 			}
 
 		case q := <-quit:
 			core.GsWarn.Println("user stop reload")
-			quit <- q
+
+			select {
+			case quit <- q:
+			default:
+			}
 			return
 		}
 	}
