@@ -69,7 +69,7 @@ type Server struct {
 func NewServer() *Server {
 	svr := &Server{
 		sigs:    make(chan os.Signal, 1),
-		closed:  true,
+		closed:  false,
 		closing: make(chan bool, 1),
 		quit:    make(chan bool, 1),
 		logger:  &simpleLogger{},
@@ -111,6 +111,13 @@ func (s *Server) Close() {
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.closed {
+		panic("server already closed.")
+	}
+
 	core.GsTrace.Println("start to parse config file", conf)
 	if err = GsConfig.Loads(conf); err != nil {
 		return
@@ -120,6 +127,13 @@ func (s *Server) ParseConfig(conf string) (err error) {
 }
 
 func (s *Server) PrepareLogger() (err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.closed {
+		panic("server already closed.")
+	}
+
 	if err = s.applyLogger(GsConfig); err != nil {
 		return
 	}
@@ -128,6 +142,13 @@ func (s *Server) PrepareLogger() (err error) {
 }
 
 func (s *Server) Initialize() (err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.closed {
+		panic("server already closed.")
+	}
+
 	// install signals.
 	// TODO: FIXME: when process the current signal, others may drop.
 	signal.Notify(s.sigs)
@@ -147,12 +168,12 @@ func (s *Server) Initialize() (err error) {
 
 func (s *Server) Run() (err error) {
 	func() {
-		// when running, the state cannot changed.
 		s.lock.Lock()
 		defer s.lock.Unlock()
 
-		// set to running.
-		s.closed = false
+		if s.closed {
+			panic("server already closed.")
+		}
 	}()
 
 	// when terminated, notify the chan.
