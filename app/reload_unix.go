@@ -19,9 +19,9 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux plan9
+// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
 
-// Unix+Plan9 reload by signal.
+// Unix reload by signal.
 
 package app
 
