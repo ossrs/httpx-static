@@ -26,9 +26,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/simple-rtmp-server/go-srs/app"
+	"github.com/simple-rtmp-server/go-srs/core"
 	"os"
-    "github.com/simple-rtmp-server/go-srs/core"
-    "github.com/simple-rtmp-server/go-srs/app"
 )
 
 // the startup argv:

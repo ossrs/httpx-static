@@ -24,60 +24,60 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 package app
 
 import (
-    "testing"
-    "fmt"
-    "github.com/simple-rtmp-server/go-srs/core"
+	"fmt"
+	"github.com/simple-rtmp-server/go-srs/core"
+	"testing"
 )
 
 func TestConfigBasic(t *testing.T) {
-    c := NewConfig()
+	c := NewConfig()
 
-    if c.Workers != core.Workers {
-        t.Error("workers failed.")
-    }
+	if c.Workers != core.Workers {
+		t.Error("workers failed.")
+	}
 
-    if c.Listen != core.RtmpListen {
-        t.Error("listen failed.")
-    }
+	if c.Listen != core.RtmpListen {
+		t.Error("listen failed.")
+	}
 
-    if c.Go.GcInterval != core.GcIntervalSeconds {
-        t.Error("go gc interval failed.")
-    }
+	if c.Go.GcInterval != core.GcIntervalSeconds {
+		t.Error("go gc interval failed.")
+	}
 
-    if c.Log.Tank != "file" {
-        t.Error("log tank failed.")
-    }
+	if c.Log.Tank != "file" {
+		t.Error("log tank failed.")
+	}
 
-    if c.Log.Level != "trace" {
-        t.Error("log level failed.")
-    }
+	if c.Log.Level != "trace" {
+		t.Error("log level failed.")
+	}
 
-    if c.Log.File != "gsrs.log" {
-        t.Error("log file failed.")
-    }
+	if c.Log.File != "gsrs.log" {
+		t.Error("log file failed.")
+	}
 }
 
 func BenchmarkConfigBasic(b *testing.B) {
-    pc := NewConfig()
-    cc := NewConfig()
-    if err := pc.Reload(cc); err != nil {
-        b.Error("reload failed.")
-    }
+	pc := NewConfig()
+	cc := NewConfig()
+	if err := pc.Reload(cc); err != nil {
+		b.Error("reload failed.")
+	}
 }
 
 func ExampleConfig_Loads() {
-    c := NewConfig()
+	c := NewConfig()
 
-    //if err := c.Loads("config.json"); err != nil {
-    //    panic(err)
-    //}
+	//if err := c.Loads("config.json"); err != nil {
+	//    panic(err)
+	//}
 
-    fmt.Println("listen at", c.Listen)
-    fmt.Println("workers is", c.Workers)
-    fmt.Println("go gc every", c.Go.GcInterval, "seconds")
+	fmt.Println("listen at", c.Listen)
+	fmt.Println("workers is", c.Workers)
+	fmt.Println("go gc every", c.Go.GcInterval, "seconds")
 
-    // Output:
-    // listen at 1935
-    // workers is 1
-    // go gc every 300 seconds
+	// Output:
+	// listen at 1935
+	// workers is 1
+	// go gc every 300 seconds
 }

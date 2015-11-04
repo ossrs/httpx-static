@@ -30,11 +30,11 @@ import (
 )
 
 const (
-    logLabel      = "[gsrs]"
-    LogInfoLabel = logLabel + "[info] "
-    LogTraceLabel = logLabel + "[trace] "
-    LogWarnLabel = logLabel + "[warn] "
-    LogErrorLabel = logLabel + "[error] "
+	logLabel      = "[gsrs]"
+	LogInfoLabel  = logLabel + "[info] "
+	LogTraceLabel = logLabel + "[trace] "
+	LogWarnLabel  = logLabel + "[warn] "
+	LogErrorLabel = logLabel + "[error] "
 )
 
 // the application loggers
