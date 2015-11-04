@@ -24,10 +24,10 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 package main
 
 import (
-    "testing"
-    "os"
+	"os"
+	"testing"
 )
 
 func TestMain(m *testing.M) {
-    os.Exit(m.Run())
+	os.Exit(m.Run())
 }
