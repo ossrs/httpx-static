@@ -44,10 +44,13 @@ type WorkerContainer interface {
 	// notify the container to quit.
 	// for example, when goroutine fatal error,
 	// which can't be recover, notify server to cleanup and quit.
+	// @remark when got quit signal, the goroutine must notify the
+	//      container to Quit(), for which others goroutines wait.
 	Quit()
 	// fork a new goroutine with work container.
-	// the param can be a global func or object method.
-	GFork(func(WorkerContainer))
+	// the param f can be a global func or object method.
+	// the param name is the goroutine name.
+	GFork(name string, f func(WorkerContainer))
 }
 
 type Server struct {
@@ -132,7 +135,7 @@ func (s *Server) Initialize() (err error) {
 	signal.Notify(s.sigs)
 
 	// reload goroutine
-	s.GFork(GsConfig.reloadCycle)
+	s.GFork("reload", GsConfig.reloadCycle)
 
 	c := GsConfig
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
@@ -205,20 +208,20 @@ func (s *Server) Quit() {
 	}
 }
 
-func (s *Server) GFork(f func(WorkerContainer)) {
+func (s *Server) GFork(name string, f func(WorkerContainer)) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 
 		defer func() {
 			if r := recover(); r != nil {
-				core.GsError.Println("worker panic:", r)
+				core.GsError.Println(name, "worker panic:", r)
 				s.Quit()
 			}
 		}()
 
 		f(s)
-		core.GsTrace.Println("worker terminated.")
+		core.GsTrace.Println(name, "worker terminated.")
 	}()
 }
 

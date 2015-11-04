@@ -31,8 +31,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"os/signal"
-	"syscall"
 )
 
 // the scope for reload.
@@ -228,53 +226,6 @@ func (pc *Config) Reload(cc *Config) (err error) {
 	} else {
 		core.GsInfo.Println("reload ignore log")
 	}
-
-	return
-}
-
-func (c *Config) reloadCycle(wc WorkerContainer) {
-	signals := make(chan os.Signal, 1)
-	// 1: SIGHUP
-	signal.Notify(signals, syscall.Signal(1))
-
-	core.GsTrace.Println("wait for reload signals: kill -1", os.Getpid())
-	for {
-		select {
-		case signal := <-signals:
-			core.GsTrace.Println("start reload by", signal)
-
-			if err := c.doReload(); err != nil {
-				core.GsError.Println("quit for reload failed. err is", err)
-				wc.Quit()
-				return
-			}
-
-		case <-wc.QC():
-			core.GsWarn.Println("user stop reload")
-			wc.Quit()
-			return
-		}
-	}
-}
-
-func (c *Config) doReload() (err error) {
-	pc := c
-	cc := NewConfig()
-	cc.reloadHandlers = pc.reloadHandlers[:]
-	if err = cc.Loads(c.conf); err != nil {
-		core.GsError.Println("reload config failed. err is", err)
-		return
-	}
-	core.GsInfo.Println("reload parse fresh config ok")
-
-	if err = pc.Reload(cc); err != nil {
-		core.GsError.Println("apply reload failed. err is", err)
-		return
-	}
-	core.GsInfo.Println("reload completed work")
-
-	GsConfig = cc
-	core.GsTrace.Println("reload config ok")
 
 	return
 }

@@ -21,6 +21,15 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
+// The os defines:
+//      bsd: darwin dragonfly freebsd nacl netbsd openbsd solaris
+//      unix: bsd linux
+//      server: unix plan9
+//      posix: bsd linux windows
+// All os by go:
+//      server windows
+//      posix plan9
+
 package main
 
 import (
