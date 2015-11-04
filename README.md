@@ -1,5 +1,9 @@
 # go-srs
 
+<a href="https://godoc.org/github.com/simple-rtmp-server/go-srs">
+    <img src="https://godoc.org/github.com/simple-rtmp-server/go-srs?status.svg" alt="GoDoc">
+</a>
+
 Golang implementation for [srs][srs].
 
 ## Usage
