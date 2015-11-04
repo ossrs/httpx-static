@@ -23,15 +23,41 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 package app
 
-import "time"
+import (
+	"time"
+)
 
-func ExampleWorkerContainer() {
+// the goroutine cycle ignore any error.
+func ExampleWorkerContainer_recoverable() {
 	var wc WorkerContainer
 	wc.GFork(func(wc WorkerContainer) {
 		for {
 			select {
-			case <-time.After(3 * time.Duration):
-				// select other channel, do something to get error.
+			case <-time.After(3 * time.Second):
+				// select other channel, do something cycle to get error.
+				if err := error(nil); err != nil {
+					// recoverable error, log it only and continue.
+					continue
+				}
+			case <-wc.QC():
+				// when got a quit signal, break the loop.
+				// and must notify the container again for other workers
+				// in container to quit.
+				wc.Quit()
+				return
+			}
+		}
+	})
+}
+
+// the goroutine cycle notify container to quit when error.
+func ExampleWorkerContainer_fatal() {
+	var wc WorkerContainer
+	wc.GFork(func(wc WorkerContainer) {
+		for {
+			select {
+			case <-time.After(3 * time.Second):
+				// select other channel, do something cycle to get error.
 				if err := error(nil); err != nil {
 					// when got none-recoverable error, notify container to quit.
 					wc.Quit()
