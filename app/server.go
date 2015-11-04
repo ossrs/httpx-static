@@ -1,25 +1,23 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2015 SRS(simple-rtmp-server)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+// The MIT License (MIT)
+//
+// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of
+// this software and associated documentation files (the "Software"), to deal in
+// the Software without restriction, including without limitation the rights to
+// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+// FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+// IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+// CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 package app
 
@@ -44,10 +42,13 @@ type WorkerContainer interface {
 	// notify the container to quit.
 	// for example, when goroutine fatal error,
 	// which can't be recover, notify server to cleanup and quit.
+	// @remark when got quit signal, the goroutine must notify the
+	//      container to Quit(), for which others goroutines wait.
 	Quit()
 	// fork a new goroutine with work container.
-	// the param can be a global func or object method.
-	GFork(func(WorkerContainer))
+	// the param f can be a global func or object method.
+	// the param name is the goroutine name.
+	GFork(name string, f func(WorkerContainer))
 }
 
 type Server struct {
@@ -132,7 +133,7 @@ func (s *Server) Initialize() (err error) {
 	signal.Notify(s.sigs)
 
 	// reload goroutine
-	s.GFork(GsConfig.reloadCycle)
+	s.GFork("reload", GsConfig.reloadCycle)
 
 	c := GsConfig
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
@@ -205,20 +206,20 @@ func (s *Server) Quit() {
 	}
 }
 
-func (s *Server) GFork(f func(WorkerContainer)) {
+func (s *Server) GFork(name string, f func(WorkerContainer)) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 
 		defer func() {
 			if r := recover(); r != nil {
-				core.GsError.Println("worker panic:", r)
+				core.GsError.Println(name, "worker panic:", r)
 				s.Quit()
 			}
 		}()
 
 		f(s)
-		core.GsTrace.Println("worker terminated.")
+		core.GsTrace.Println(name, "worker terminated.")
 	}()
 }
 
