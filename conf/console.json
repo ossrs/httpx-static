@@ -1,6 +1,6 @@
 {
   "listen": 1935,
-  "daemon": true,
+  "daemon": false,
   "log": {
     "tank": "console",
     "level": "trace"
