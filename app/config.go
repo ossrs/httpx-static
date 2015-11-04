@@ -59,7 +59,8 @@ type Config struct {
 	Workers int `json:"workers"` // the number of cpus to use
 
 	// the rtmp global section.
-	Listen int `json:"listen"` // the system service RTMP listen port
+	Listen int  `json:"listen"` // the system service RTMP listen port
+	Daemon bool `json:"daemon"` // whether enabled the daemon for unix-like os
 
 	// the go section.
 	Go struct {
@@ -87,6 +88,7 @@ func NewConfig() *Config {
 
 	c.Workers = core.Workers
 	c.Listen = core.RtmpListen
+	c.Daemon = true
 	c.Go.GcInterval = core.GcIntervalSeconds
 
 	c.Log.Tank = "file"

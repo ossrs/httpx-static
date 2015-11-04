@@ -51,11 +51,23 @@ type WorkerContainer interface {
 	GFork(name string, f func(WorkerContainer))
 }
 
+// the state of server, state graph:
+//      Init => Normal(Ready => Running)
+//      Init/Normal => Closed
+type ServerState int
+
+const (
+	StateInit ServerState = 1 << iota
+	StateReady
+	StateRunning
+	StateClosed
+)
+
 type Server struct {
 	// signal handler.
 	sigs chan os.Signal
 	// whether closed.
-	closed  bool
+	closed  ServerState
 	closing chan bool
 	// for system internal to notify quit.
 	quit chan bool
@@ -69,7 +81,7 @@ type Server struct {
 func NewServer() *Server {
 	svr := &Server{
 		sigs:    make(chan os.Signal, 1),
-		closed:  false,
+		closed:  StateInit,
 		closing: make(chan bool, 1),
 		quit:    make(chan bool, 1),
 		logger:  &simpleLogger{},
@@ -87,26 +99,30 @@ func (s *Server) Close() {
 	defer s.lock.Unlock()
 
 	// closed?
-	if s.closed {
+	if s.closed == StateClosed {
 		core.GsInfo.Println("server already closed.")
 		return
 	}
 
 	// notify to close.
-	core.GsInfo.Println("notify server to stop.")
-	select {
-	case s.quit <- true:
-	default:
+	if s.closed == StateRunning {
+		core.GsInfo.Println("notify server to stop.")
+		select {
+		case s.quit <- true:
+		default:
+		}
 	}
 
 	// wait for closed.
-	<-s.closing
+	if s.closed == StateRunning {
+		<-s.closing
+	}
 
 	// do cleanup when stopped.
 	GsConfig.Unsubscribe(s)
 
 	// ok, closed.
-	s.closed = true
+	s.closed = StateClosed
 	core.GsInfo.Println("server closed")
 }
 
@@ -114,13 +130,20 @@ func (s *Server) ParseConfig(conf string) (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.closed {
-		panic("server already closed.")
+	if s.closed != StateInit {
+		panic("server invalid state.")
 	}
+	s.closed = StateReady
 
 	core.GsTrace.Println("start to parse config file", conf)
 	if err = GsConfig.Loads(conf); err != nil {
 		return
+	}
+
+	if GsConfig.Daemon {
+		if err = s.daemon(); err != nil {
+			return
+		}
 	}
 
 	return
@@ -130,12 +153,16 @@ func (s *Server) PrepareLogger() (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.closed {
-		panic("server already closed.")
+	if s.closed != StateReady {
+		panic("server invalid state.")
 	}
 
 	if err = s.applyLogger(GsConfig); err != nil {
 		return
+	}
+
+	if GsConfig.Daemon {
+		s.daemonOnRunning()
 	}
 
 	return
@@ -145,8 +172,8 @@ func (s *Server) Initialize() (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.closed {
-		panic("server already closed.")
+	if s.closed != StateReady {
+		panic("server invalid state.")
 	}
 
 	// install signals.
@@ -161,7 +188,8 @@ func (s *Server) Initialize() (err error) {
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
-	core.GsTrace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v, gc=%v", c.conf, l, c.Workers, c.Go.GcInterval))
+	core.GsTrace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v, gc=%v, daemon=%v",
+		c.conf, l, c.Workers, c.Go.GcInterval, c.Daemon))
 
 	return
 }
@@ -171,9 +199,10 @@ func (s *Server) Run() (err error) {
 		s.lock.Lock()
 		defer s.lock.Unlock()
 
-		if s.closed {
-			panic("server already closed.")
+		if s.closed != StateReady {
+			panic("server invalid state.")
 		}
+		s.closed = StateRunning
 	}()
 
 	// when terminated, notify the chan.
