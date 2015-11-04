@@ -38,7 +38,8 @@ type Server struct {
 	// signal handler.
 	sigs chan os.Signal
 	// whether closed.
-	closed bool
+	closed  bool
+	closing chan bool
 	// for system internal to notify quit.
 	quit chan bool
 	wg   sync.WaitGroup
@@ -50,10 +51,11 @@ type Server struct {
 
 func NewServer() *Server {
 	svr := &Server{
-		sigs:   make(chan os.Signal, 1),
-		closed: true,
-		quit:   make(chan bool, 1),
-		logger: &simpleLogger{},
+		sigs:    make(chan os.Signal, 1),
+		closed:  true,
+		closing: make(chan bool, 1),
+		quit:    make(chan bool, 1),
+		logger:  &simpleLogger{},
 	}
 
 	GsConfig.Subscribe(svr)
@@ -62,8 +64,17 @@ func NewServer() *Server {
 }
 
 // notify server to stop and wait for cleanup.
-// TODO: FIXME: should return a chan to support async timeout close.
 func (s *Server) Close() {
+	// wait for stopped.
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	// closed?
+	if s.closed {
+		core.GsWarn.Println("server already closed.")
+		return
+	}
+
 	// notify to close.
 	core.GsInfo.Println("notify server to stop.")
 	select {
@@ -71,15 +82,8 @@ func (s *Server) Close() {
 	default:
 	}
 
-	// wait for stopped.
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	// closed?
-	if s.closed {
-		core.GsInfo.Println("server already closed.")
-		return
-	}
+	// wait for closed.
+	<-s.closing
 
 	// do cleanup when stopped.
 	GsConfig.Unsubscribe(s)
@@ -130,12 +134,23 @@ func (s *Server) Initialize() (err error) {
 }
 
 func (s *Server) Run() (err error) {
-	// when running, the state cannot changed.
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	func() {
+		// when running, the state cannot changed.
+		s.lock.Lock()
+		defer s.lock.Unlock()
 
-	// set to running.
-	s.closed = false
+		// set to running.
+		s.closed = false
+	}()
+
+	// when terminated, notify the chan.
+	defer func() {
+		select {
+		case s.closing <- true:
+		default:
+		}
+	}()
+
 	core.GsInfo.Println("server running")
 
 	// run server, apply settings.
