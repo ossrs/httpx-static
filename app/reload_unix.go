@@ -19,63 +19,61 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
+
+// Unix reload by signal.
+
 package app
 
 import (
-	"fmt"
 	"github.com/simple-rtmp-server/go-srs/core"
-	"testing"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
-func TestConfigBasic(t *testing.T) {
-	c := NewConfig()
+func (c *Config) reloadCycle(wc WorkerContainer) {
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGHUP)
 
-	if c.Workers != core.Workers {
-		t.Error("workers failed.")
-	}
+	core.GsTrace.Println("wait for reload signals: kill -1", os.Getpid())
+	for {
+		select {
+		case signal := <-signals:
+			core.GsTrace.Println("start reload by", signal)
 
-	if c.Listen != core.RtmpListen {
-		t.Error("listen failed.")
-	}
+			if err := c.doReload(); err != nil {
+				core.GsError.Println("quit for reload failed. err is", err)
+				wc.Quit()
+				return
+			}
 
-	if c.Go.GcInterval != core.GcIntervalSeconds {
-		t.Error("go gc interval failed.")
-	}
-
-	if c.Log.Tank != "file" {
-		t.Error("log tank failed.")
-	}
-
-	if c.Log.Level != "trace" {
-		t.Error("log level failed.")
-	}
-
-	if c.Log.File != "gsrs.log" {
-		t.Error("log file failed.")
+		case <-wc.QC():
+			core.GsWarn.Println("user stop reload")
+			wc.Quit()
+			return
+		}
 	}
 }
 
-func BenchmarkConfigBasic(b *testing.B) {
-	pc := NewConfig()
+func (c *Config) doReload() (err error) {
+	pc := c
 	cc := NewConfig()
-	if err := pc.Reload(cc); err != nil {
-		b.Error("reload failed.")
+	cc.reloadHandlers = pc.reloadHandlers[:]
+	if err = cc.Loads(c.conf); err != nil {
+		core.GsError.Println("reload config failed. err is", err)
+		return
 	}
-}
+	core.GsInfo.Println("reload parse fresh config ok")
 
-func ExampleConfig_Loads() {
-	c := NewConfig()
+	if err = pc.Reload(cc); err != nil {
+		core.GsError.Println("apply reload failed. err is", err)
+		return
+	}
+	core.GsInfo.Println("reload completed work")
 
-	//if err := c.Loads("config.json"); err != nil {
-	//    panic(err)
-	//}
+	GsConfig = cc
+	core.GsTrace.Println("reload config ok")
 
-	fmt.Println("listen at", c.Listen)
-	fmt.Println("workers is", c.Workers)
-	fmt.Println("go gc every", c.Go.GcInterval, "seconds")
-
-	// Output:
-	// listen at 1935
-	// workers is 1
-	// go gc every 300 seconds
+	return
 }
