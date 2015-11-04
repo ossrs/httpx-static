@@ -70,7 +70,7 @@ func (l *simpleLogger) close(c *Config) (err error) {
 	}
 
 	// when log closed, set the logger warn to stderr for file closed.
-	core.GsWarn = log.New(os.Stderr, "[gsrs][warn]", log.LstdFlags)
+	core.GsWarn = log.New(os.Stderr, core.LogWarnLabel, log.LstdFlags)
 
 	// try to close the log file.
 	if err = l.file.Close(); err != nil {
