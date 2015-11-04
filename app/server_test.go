@@ -36,7 +36,37 @@ func ExampleWorkerContainer_recoverable() {
 			case <-time.After(3 * time.Second):
 				// select other channel, do something cycle to get error.
 				if err := error(nil); err != nil {
-					// recoverable error, log it only and continue.
+					// recoverable error, log it only and continue or return.
+					continue
+				}
+			case <-wc.QC():
+				// when got a quit signal, break the loop.
+				// and must notify the container again for other workers
+				// in container to quit.
+				wc.Quit()
+				return
+			}
+		}
+	})
+}
+
+// the goroutine cycle absolutely safe, no panic no error to quit.
+func ExampleWorkerContainer_safe() {
+	var wc WorkerContainer
+	wc.GFork(func(wc WorkerContainer) {
+		defer func() {
+			if r := recover(); r != nil {
+				// log the r and ignore.
+				return
+			}
+		}()
+
+		for {
+			select {
+			case <-time.After(3 * time.Second):
+				// select other channel, do something cycle to get error.
+				if err := error(nil); err != nil {
+					// recoverable error, log it only and continue or return.
 					continue
 				}
 			case <-wc.QC():
