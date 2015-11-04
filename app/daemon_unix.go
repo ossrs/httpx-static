@@ -71,5 +71,5 @@ func (s *Server) daemon() error {
 }
 
 func (s *Server) daemonOnRunning() {
-	core.GsTrace.Println("server run in daemon, pid is", os.Getpid(), "and ppid is", os.Getppid())
+	core.GsTrace.Println("server in daemon, pid is", os.Getpid(), "and ppid is", os.Getppid())
 }
