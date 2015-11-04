@@ -19,13 +19,16 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package main
+// Windows to run in daemon.
 
-import (
-	"os"
-	"testing"
-)
+package app
 
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+import "github.com/simple-rtmp-server/go-srs/core"
+
+func (s *Server) daemon() error {
+	return nil
+}
+
+func (s *Server) daemonOnRunning() {
+	core.GsWarn.Println("windows does not support daemon.")
 }

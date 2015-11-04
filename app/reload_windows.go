@@ -19,13 +19,18 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package main
+// Windows reload by signal.
+
+package app
 
 import (
-	"os"
-	"testing"
+	"github.com/simple-rtmp-server/go-srs/core"
 )
 
-func TestMain(m *testing.M) {
-	os.Exit(m.Run())
+func (c *Config) reloadCycle(wc WorkerContainer) {
+	core.GsWarn.Println("windows does not support reload with signal.")
+
+	// wait for server to quit.
+	<-wc.QC()
+	wc.Quit()
 }

@@ -1,6 +1,7 @@
 {
   "workers": 1,
   "listen": 1935,
+  "daemon": true,
   "go": {
     "gc_interval": 300
   },

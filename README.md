@@ -1,5 +1,9 @@
 # go-srs
 
+<a href="https://godoc.org/github.com/simple-rtmp-server/go-srs">
+    <img src="https://godoc.org/github.com/simple-rtmp-server/go-srs?status.svg" alt="GoDoc">
+</a>
+
 Golang implementation for [srs][srs].
 
 ## Usage
@@ -44,7 +48,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. Supports JSON style config file.
 1. Supports Reload config file.
 1. Standard godoc, gofmt, gotest and TravisCI.
-1. [dev] Supports daemon for unix-like os.
+1. Supports daemon for unix-like os.
 1. [dev] Support heartbeat to report.
 1. [dev] Supports Publish and Play RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.

@@ -1,25 +1,23 @@
-/*
-The MIT License (MIT)
-
-Copyright (c) 2013-2015 SRS(simple-rtmp-server)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+// The MIT License (MIT)
+//
+// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+//
+// Permission is hereby granted, free of charge, to any person obtaining a copy of
+// this software and associated documentation files (the "Software"), to deal in
+// the Software without restriction, including without limitation the rights to
+// use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+// the Software, and to permit persons to whom the Software is furnished to do so,
+// subject to the following conditions:
+//
+// The above copyright notice and this permission notice shall be included in all
+// copies or substantial portions of the Software.
+//
+// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+// FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+// COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+// IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+// CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 package app
 
@@ -44,17 +42,32 @@ type WorkerContainer interface {
 	// notify the container to quit.
 	// for example, when goroutine fatal error,
 	// which can't be recover, notify server to cleanup and quit.
+	// @remark when got quit signal, the goroutine must notify the
+	//      container to Quit(), for which others goroutines wait.
 	Quit()
 	// fork a new goroutine with work container.
-	// the param can be a global func or object method.
-	GFork(func(WorkerContainer))
+	// the param f can be a global func or object method.
+	// the param name is the goroutine name.
+	GFork(name string, f func(WorkerContainer))
 }
+
+// the state of server, state graph:
+//      Init => Normal(Ready => Running)
+//      Init/Normal => Closed
+type ServerState int
+
+const (
+	StateInit ServerState = 1 << iota
+	StateReady
+	StateRunning
+	StateClosed
+)
 
 type Server struct {
 	// signal handler.
 	sigs chan os.Signal
 	// whether closed.
-	closed  bool
+	closed  ServerState
 	closing chan bool
 	// for system internal to notify quit.
 	quit chan bool
@@ -68,7 +81,7 @@ type Server struct {
 func NewServer() *Server {
 	svr := &Server{
 		sigs:    make(chan os.Signal, 1),
-		closed:  true,
+		closed:  StateInit,
 		closing: make(chan bool, 1),
 		quit:    make(chan bool, 1),
 		logger:  &simpleLogger{},
@@ -86,72 +99,110 @@ func (s *Server) Close() {
 	defer s.lock.Unlock()
 
 	// closed?
-	if s.closed {
+	if s.closed == StateClosed {
 		core.GsInfo.Println("server already closed.")
 		return
 	}
 
 	// notify to close.
-	core.GsInfo.Println("notify server to stop.")
-	select {
-	case s.quit <- true:
-	default:
+	if s.closed == StateRunning {
+		core.GsInfo.Println("notify server to stop.")
+		select {
+		case s.quit <- true:
+		default:
+		}
 	}
 
 	// wait for closed.
-	<-s.closing
+	if s.closed == StateRunning {
+		<-s.closing
+	}
 
 	// do cleanup when stopped.
 	GsConfig.Unsubscribe(s)
 
 	// ok, closed.
-	s.closed = true
+	s.closed = StateClosed
 	core.GsInfo.Println("server closed")
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.closed != StateInit {
+		panic("server invalid state.")
+	}
+	s.closed = StateReady
+
 	core.GsTrace.Println("start to parse config file", conf)
 	if err = GsConfig.Loads(conf); err != nil {
 		return
+	}
+
+	if GsConfig.Daemon {
+		if err = s.daemon(); err != nil {
+			return
+		}
 	}
 
 	return
 }
 
 func (s *Server) PrepareLogger() (err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.closed != StateReady {
+		panic("server invalid state.")
+	}
+
 	if err = s.applyLogger(GsConfig); err != nil {
 		return
+	}
+
+	if GsConfig.Daemon {
+		s.daemonOnRunning()
 	}
 
 	return
 }
 
 func (s *Server) Initialize() (err error) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	if s.closed != StateReady {
+		panic("server invalid state.")
+	}
+
 	// install signals.
 	// TODO: FIXME: when process the current signal, others may drop.
 	signal.Notify(s.sigs)
 
 	// reload goroutine
-	s.GFork(GsConfig.reloadCycle)
+	s.GFork("reload", GsConfig.reloadCycle)
 
 	c := GsConfig
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
-	core.GsTrace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v, gc=%v", c.conf, l, c.Workers, c.Go.GcInterval))
+	core.GsTrace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v, gc=%v, daemon=%v",
+		c.conf, l, c.Workers, c.Go.GcInterval, c.Daemon))
 
 	return
 }
 
 func (s *Server) Run() (err error) {
 	func() {
-		// when running, the state cannot changed.
 		s.lock.Lock()
 		defer s.lock.Unlock()
 
-		// set to running.
-		s.closed = false
+		if s.closed != StateReady {
+			panic("server invalid state.")
+		}
+		s.closed = StateRunning
 	}()
 
 	// when terminated, notify the chan.
@@ -205,20 +256,20 @@ func (s *Server) Quit() {
 	}
 }
 
-func (s *Server) GFork(f func(WorkerContainer)) {
+func (s *Server) GFork(name string, f func(WorkerContainer)) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 
 		defer func() {
 			if r := recover(); r != nil {
-				core.GsError.Println("worker panic:", r)
+				core.GsError.Println(name, "worker panic:", r)
 				s.Quit()
 			}
 		}()
 
 		f(s)
-		core.GsTrace.Println("worker terminated.")
+		core.GsTrace.Println(name, "worker terminated.")
 	}()
 }
 
