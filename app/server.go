@@ -38,10 +38,12 @@ import (
 // which provides the quit and cleanup methods.
 type WorkerContainer interface {
 	// get the quit channel,
-	// worker can fetch the quit signal,
-	// or push a quit signal to channel.
-	QC() chan bool
+	// worker can fetch the quit signal.
+	// please use Quit to notify the container to quit.
+	QC() <-chan bool
 	// notify the container to quit.
+	// for example, when goroutine fatal error,
+	// which can't be recover, notify server to cleanup and quit.
 	Quit()
 	// fork a new goroutine with work container.
 	// the param can be a global func or object method.
@@ -192,7 +194,7 @@ func (s *Server) Run() (err error) {
 }
 
 // interface WorkContainer
-func (s *Server) QC() chan bool {
+func (s *Server) QC() <-chan bool {
 	return s.quit
 }
 
