@@ -34,6 +34,20 @@ import (
 	"time"
 )
 
+// the container for all worker,
+// which provides the quit and cleanup methods.
+type WorkerContainer interface {
+	// get the quit channel,
+	// worker can fetch the quit signal,
+	// or push a quit signal to channel.
+	QC() chan bool
+	// notify the container to quit.
+	Quit()
+	// fork a new goroutine with work container.
+	// the param can be a global func or object method.
+	GFork(func(WorkerContainer))
+}
+
 type Server struct {
 	// signal handler.
 	sigs chan os.Signal
@@ -71,7 +85,7 @@ func (s *Server) Close() {
 
 	// closed?
 	if s.closed {
-		core.GsWarn.Println("server already closed.")
+		core.GsInfo.Println("server already closed.")
 		return
 	}
 
@@ -116,12 +130,7 @@ func (s *Server) Initialize() (err error) {
 	signal.Notify(s.sigs)
 
 	// reload goroutine
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		configReloadWorker(s.quit)
-		core.GsTrace.Println("reload worker terminated.")
-	}()
+	s.GFork(GsConfig.reloadCycle)
 
 	c := GsConfig
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
@@ -163,20 +172,13 @@ func (s *Server) Run() (err error) {
 			switch signal {
 			case os.Interrupt:
 				// SIGINT
-				fallthrough
+				s.Quit()
 			case syscall.SIGTERM:
 				// SIGTERM
-				select {
-				case s.quit <- true:
-				default:
-				}
+				s.Quit()
 			}
-		case q := <-s.quit:
-			select {
-			case s.quit <- q:
-			default:
-			}
-
+		case <-s.QC():
+			s.Quit()
 			s.wg.Wait()
 			core.GsWarn.Println("server quit")
 			return
@@ -187,6 +189,35 @@ func (s *Server) Run() (err error) {
 	}
 
 	return
+}
+
+// interface WorkContainer
+func (s *Server) QC() chan bool {
+	return s.quit
+}
+
+func (s *Server) Quit() {
+	select {
+	case s.quit <- true:
+	default:
+	}
+}
+
+func (s *Server) GFork(f func(WorkerContainer)) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+
+		defer func() {
+			if r := recover(); r != nil {
+				core.GsError.Println("worker panic:", r)
+				s.Quit()
+			}
+		}()
+
+		f(s)
+		core.GsTrace.Println("worker terminated.")
+	}()
 }
 
 // interface ReloadHandler
