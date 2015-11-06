@@ -50,6 +50,22 @@ type ReloadHandler interface {
 	OnReloadGlobal(scope int, cc, pc *Config) error
 }
 
+// the reader support c++-style comment,
+//      block: /* comments */
+//      line: // comments
+type Reader struct {
+	r io.Reader
+}
+
+func NewReader(r io.Reader) io.Reader {
+	return &Reader{r: r}
+}
+
+// interface io.Reader
+func (r *Reader) Read(p []byte) (n int, err error) {
+	return r.r.Read(p)
+}
+
 // the config for this application,
 // which can load from file in json style,
 // and convert to json string.
@@ -103,15 +119,16 @@ func (c *Config) Loads(conf string) error {
 	c.conf = conf
 
 	// read the whole config to []byte.
-	var s []byte
+	var d *json.Decoder
 	if f, err := os.Open(conf); err != nil {
 		return err
-	} else if s, err = ioutil.ReadAll(f); err != nil {
-		return err
+	} else {
+		defer f.Close()
+		d = json.NewDecoder(NewReader(f))
 	}
 
-	// parse string to json.
-	if err := json.Unmarshal([]byte(s), c); err != nil {
+	// decode config from stream.
+	if err := d.Decode(c); err != nil {
 		return err
 	}
 

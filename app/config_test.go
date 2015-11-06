@@ -22,8 +22,10 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/simple-rtmp-server/go-srs/core"
+	"strings"
 	"testing"
 )
 
@@ -78,4 +80,82 @@ func ExampleConfig_Loads() {
 	// listen at 1935
 	// workers is 1
 	// go gc every 300 seconds
+}
+
+func TestConfigComments(t *testing.T) {
+	f := func(vs []string, eh func(string, interface{}, error)) {
+		for _, v := range vs {
+			j := json.NewDecoder(NewReader(strings.NewReader(v)))
+			var o interface{}
+			err := j.Decode(&o)
+			eh(v, o, err)
+		}
+	}
+
+	f([]string{
+		`
+        {
+            // the RTMP listen port.
+            "listen": 1935,
+            // whether start in daemon for unix-like os.
+            "daemon": false,
+            /**
+            * the go runtime config.
+            * for go-srs specified.
+            */
+            "go": {
+                "gc_interval": 300,
+                "max_threads": 0 // where 0 is use default.
+            }
+        }
+        `,
+	}, func(v string, o interface{}, err error) {
+		if err != nil {
+			t.Error("show pass for", v, "actual err is", err)
+		}
+	})
+
+	f([]string{
+		"//empty",
+		"/*empty*/",
+
+		`//c++ style
+        {"listen": 1935}`,
+
+		`/*c style*/
+        {"listen": 1935}`,
+
+		`/*c style*/{"listen": 1935}`,
+
+		`//c++ style
+        {"listen": 1935}
+        //c++ style`,
+
+		`/*c style*/
+        {"listen": 1935}/*c style*/`,
+
+		`/*c style*/ {"listen": /* c style */1935}`,
+	}, func(v string, o interface{}, err error) {
+		if err != nil {
+			t.Error("show pass for", v, "actual err is", err)
+		}
+	})
+
+	f([]string{
+		`{"listen": 1935}`,
+		`{"listen": 1935, "daemon": true}`,
+	}, func(v string, o interface{}, err error) {
+		if err != nil {
+			t.Error("show pass for", v, "actual err is", err)
+		}
+	})
+
+	f([]string{
+		"/*comments",
+		`{"listen":1935/*comments}`,
+	}, func(v string, o interface{}, err error) {
+		if err == nil {
+			t.Error("show failed for", v)
+		}
+	})
 }
