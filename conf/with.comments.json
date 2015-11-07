@@ -1,0 +1,18 @@
+{
+  // the RTMP listen, default to 1935.
+  "listen": 1935,
+
+  // whether enable daemon.
+  "daemon": false, // console without daemon.
+
+  // log section.
+  "log": {
+    "tank": "console", /* log to console */
+    "level": /* default to trace level */ "trace"
+  },
+
+  /* go section */
+  "go": {
+    "gc_interval": 5
+  }
+}

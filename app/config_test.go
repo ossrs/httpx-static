@@ -22,8 +22,11 @@
 package app
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/simple-rtmp-server/go-srs/core"
+	"io/ioutil"
+	"strings"
 	"testing"
 )
 
@@ -78,4 +81,111 @@ func ExampleConfig_Loads() {
 	// listen at 1935
 	// workers is 1
 	// go gc every 300 seconds
+}
+
+func TestConfigReader(t *testing.T) {
+	f := func(vs []string, eh func(string, string, string)) {
+		for i := 0; i < len(vs)-1; i += 2 {
+			o := vs[i]
+			e := vs[i+1]
+
+			if b, err := ioutil.ReadAll(NewReader(strings.NewReader(o))); err != nil {
+				t.Error("read", o, "failed, err is", err)
+			} else {
+				eh(o, e, string(b))
+			}
+		}
+		return
+	}
+
+	f([]string{
+		"//comments", "",
+		"/*comments*/", "",
+		"//comments\nabc", "abc",
+		"/*comments*/abc", "abc",
+		"a/*comments*/b", "ab",
+		"a//comments\nb", "ab",
+	}, func(v string, e string, o string) {
+		if e != o {
+			t.Error("for", v, "expect", len(e), "size", e, "but got", len(o), "size", o)
+		}
+	})
+}
+
+func TestConfigComments(t *testing.T) {
+	f := func(vs []string, eh func(string, interface{}, error)) {
+		for _, v := range vs {
+			j := json.NewDecoder(NewReader(strings.NewReader(v)))
+			var o interface{}
+			err := j.Decode(&o)
+			eh(v, o, err)
+		}
+	}
+
+	f([]string{
+		`
+        {
+            // the RTMP listen port.
+            "listen": 1935,
+            // whether start in daemon for unix-like os.
+            "daemon": false,
+            /**
+            * the go runtime config.
+            * for go-srs specified.
+            */
+            "go": {
+                "gc_interval": 300,
+                "max_threads": 0 // where 0 is use default.
+            }
+        }
+        `,
+	}, func(v string, o interface{}, err error) {
+		if err != nil {
+			t.Error("show pass for", v, "actual err is", err)
+		}
+	})
+
+	f([]string{
+		"{}//empty",
+		"{}/*empty*/",
+
+		`//c++ style
+        {"listen": 1935}`,
+
+		`/*c style*/
+        {"listen": 1935}`,
+
+		`/*c style*/{"listen": 1935}`,
+
+		`//c++ style
+        {"listen": 1935}
+        //c++ style`,
+
+		`/*c style*/
+        {"listen": 1935}/*c style*/`,
+
+		`/*c style*/ {"listen": /* c style */1935}`,
+	}, func(v string, o interface{}, err error) {
+		if err != nil {
+			t.Error("show pass for", v, "actual err is", err)
+		}
+	})
+
+	f([]string{
+		`{"listen": 1935}`,
+		`{"listen": 1935, "daemon": true}`,
+	}, func(v string, o interface{}, err error) {
+		if err != nil {
+			t.Error("show pass for", v, "actual err is", err)
+		}
+	})
+
+	f([]string{
+		"/*comments",
+		`{"listen":1935/*comments}`,
+	}, func(v string, o interface{}, err error) {
+		if err == nil {
+			t.Error("show failed for", v)
+		}
+	})
 }
