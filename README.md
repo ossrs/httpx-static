@@ -50,7 +50,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. Standard godoc, gofmt, gotest and TravisCI.
 1. Supports daemon for unix-like os.
 1. Extend JSON with c++ style comments.
-1. [dev] Support heartbeat to report.
+1. Support heartbeat to report for ARM.
 1. [dev] Supports Publish and Play RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
 
