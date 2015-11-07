@@ -4,7 +4,7 @@
     <img src="https://godoc.org/github.com/simple-rtmp-server/go-srs?status.svg" alt="GoDoc">
 </a>
 
-Golang implementation for [srs][srs], focus on real-time live streaming cluster.
+Focus on real-time live streaming cluster, advanced [srs][srs].
 
 ## Usage
 
