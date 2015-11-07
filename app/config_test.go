@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/simple-rtmp-server/go-srs/core"
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -82,6 +83,35 @@ func ExampleConfig_Loads() {
 	// go gc every 300 seconds
 }
 
+func TestConfigReader(t *testing.T) {
+	f := func(vs []string, eh func(string, string, string)) {
+		for i := 0; i < len(vs)-1; i += 2 {
+			o := vs[i]
+			e := vs[i+1]
+
+			if b, err := ioutil.ReadAll(NewReader(strings.NewReader(o))); err != nil {
+				t.Error("read", o, "failed, err is", err)
+			} else {
+				eh(o, e, string(b))
+			}
+		}
+		return
+	}
+
+	f([]string{
+		"//comments", "",
+		"/*comments*/", "",
+		"//comments\nabc", "abc",
+		"/*comments*/abc", "abc",
+		"a/*comments*/b", "ab",
+		"a//comments\nb", "ab",
+	}, func(v string, e string, o string) {
+		if e != o {
+			t.Error("for", v, "expect", len(e), "size", e, "but got", len(o), "size", o)
+		}
+	})
+}
+
 func TestConfigComments(t *testing.T) {
 	f := func(vs []string, eh func(string, interface{}, error)) {
 		for _, v := range vs {
@@ -116,8 +146,8 @@ func TestConfigComments(t *testing.T) {
 	})
 
 	f([]string{
-		"//empty",
-		"/*empty*/",
+		"{}//empty",
+		"{}/*empty*/",
 
 		`//c++ style
         {"listen": 1935}`,

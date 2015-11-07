@@ -54,16 +54,145 @@ type ReloadHandler interface {
 //      block: /* comments */
 //      line: // comments
 type Reader struct {
-	r io.Reader
+	attention int // attention please, maybe comments.
+	f         funcReader
+	r         io.Reader
 }
 
 func NewReader(r io.Reader) io.Reader {
 	return &Reader{r: r}
 }
 
+// read from r into p, return actual n bytes, the next handler and err indicates error.
+type funcReader func(r io.Reader, p []byte) (n int, next funcReader, err error)
+
 // interface io.Reader
-func (r *Reader) Read(p []byte) (n int, err error) {
-	return r.r.Read(p)
+func (v *Reader) Read(p []byte) (n int, err error) {
+	var lineReader funcReader
+	var blockReader funcReader
+	var contentReader funcReader
+
+	lineReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			return
+		}
+
+		// skip any util \n
+		if b[0] != '\n' {
+			return 0, lineReader, nil
+		}
+
+		return 0, contentReader, nil
+	})
+
+	blockReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		if len(p) < v.attention+1 {
+			return 0, nil, nil
+		}
+
+		// read one byte more.
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			// when EOF, ok for content or content reader,
+			// but invalid for block reader.
+			if err == io.EOF {
+				return 0, nil, errors.New("block comments should not EOF")
+			}
+			return
+		}
+
+		// skip any util */
+		if b[0] != '/' && b[0] != '*' {
+			return 0, blockReader, nil
+		}
+
+		// attention
+		if b[0] == '*' {
+			v.attention = 1
+			return 0, blockReader, nil
+		}
+
+		// eof comments.
+		if v.attention != 0 && b[0] == '/' {
+			v.attention = 0
+			return 0, contentReader, nil
+		}
+
+		panic(fmt.Sprintf("impossible, attention=%v, b=%v", v.attention, b[0]))
+		return
+	})
+
+	contentReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		if len(p) < v.attention+1 {
+			return 0, nil, nil
+		}
+
+		// read one byte more.
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			return
+		}
+
+		// 2byte push.
+		if v.attention != 0 && b[0] != '/' && b[0] != '*' {
+			p[0] = '/'
+			p[1] = b[0]
+			return 2, contentReader, err
+		}
+
+		// 1byte push.
+		if v.attention == 0 && b[0] != '/' {
+			p[0] = b[0]
+			return 1, contentReader, err
+		}
+
+		// attention
+		if v.attention == 0 && b[0] == '/' {
+			v.attention = 1
+			return 0, contentReader, err
+		}
+
+		// line comments.
+		if v.attention != 0 && b[0] == '/' {
+			v.attention = 0
+			return 0, lineReader, err
+		}
+
+		// block comments.
+		if v.attention != 0 && b[0] == '*' {
+			v.attention = 0
+			return 0, blockReader, err
+		}
+
+		panic("impossible execute path")
+		return
+	})
+
+	// start using normal byte reader.
+	var f funcReader
+	if f = v.f; f == nil {
+		f = contentReader
+	}
+
+	// read util full or no func reader specified.
+	for i := 0; f != nil && i < len(p); {
+		var ne int
+		if ne, f, err = f(v.r, p[i:]); err != nil {
+			break
+		}
+
+		// apply the consumed bytes.
+		n += ne
+		i += ne
+
+		// remember the last handler we use.
+		if f != nil {
+			v.f = f
+		}
+	}
+
+	return
 }
 
 // the config for this application,
