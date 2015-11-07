@@ -7,5 +7,12 @@
   },
   "go": {
     "gc_interval": 5
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 9.3,
+    "url": "http://127.0.0.1:8085/api/v1/servers",
+    "device_id": "my-srs-device",
+    "summaries": false
   }
 }

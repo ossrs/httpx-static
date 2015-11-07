@@ -219,6 +219,15 @@ type Config struct {
 		File  string `json:"file"`  // for log tank file, the log file path.
 	} `json:"log"`
 
+	// the heartbeat section.
+	Heartbeat struct {
+		Enabled  bool    `json:"enabled"`   // whether enable the heartbeat.
+		Interval float64 `json:"interval"`  // the heartbeat interval in seconds.
+		Url      string  `json:"url"`       // the url to report.
+		DeviceId string  `json:"device_id"` // the device id to report.
+		Summary  bool    `json:"summaries"` // whether enable the detail summary.
+	} `json:"heartbeat"`
+
 	conf           string          `json:"-"` // the config file path.
 	reloadHandlers []ReloadHandler `json:"-"`
 }
@@ -231,10 +240,15 @@ func NewConfig() *Config {
 		reloadHandlers: []ReloadHandler{},
 	}
 
-	c.Workers = core.Workers
 	c.Listen = core.RtmpListen
+	c.Workers = 1
 	c.Daemon = true
-	c.Go.GcInterval = core.GcIntervalSeconds
+	c.Go.GcInterval = 300
+
+	c.Heartbeat.Enabled = false
+	c.Heartbeat.Interval = 9.3
+	c.Heartbeat.Url = "http://127.0.0.1:8085/api/v1/servers"
+	c.Heartbeat.Summary = false
 
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
@@ -253,7 +267,9 @@ func (c *Config) Loads(conf string) error {
 		return err
 	} else {
 		defer f.Close()
+
 		d = json.NewDecoder(NewReader(f))
+		//d = json.NewDecoder(f)
 	}
 
 	// decode config from stream.
