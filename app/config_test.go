@@ -33,7 +33,7 @@ import (
 func TestConfigBasic(t *testing.T) {
 	c := NewConfig()
 
-	if c.Workers != core.Workers {
+	if c.Workers != 1 {
 		t.Error("workers failed.")
 	}
 
@@ -41,7 +41,7 @@ func TestConfigBasic(t *testing.T) {
 		t.Error("listen failed.")
 	}
 
-	if c.Go.GcInterval != core.GcIntervalSeconds {
+	if c.Go.GcInterval != 300 {
 		t.Error("go gc interval failed.")
 	}
 
@@ -55,6 +55,22 @@ func TestConfigBasic(t *testing.T) {
 
 	if c.Log.File != "gsrs.log" {
 		t.Error("log file failed.")
+	}
+
+	if c.Heartbeat.Enabled {
+		t.Error("log heartbeat enabled failed")
+	}
+
+	if c.Heartbeat.Interval != 9.3 {
+		t.Error("log heartbeat interval failed")
+	}
+
+	if c.Heartbeat.Url != "http://127.0.0.1:8085/api/v1/servers" {
+		t.Error("log heartbeat url failed")
+	}
+
+	if c.Heartbeat.Summary {
+		t.Error("log heartbeat summary failed")
 	}
 }
 
@@ -165,6 +181,8 @@ func TestConfigComments(t *testing.T) {
         {"listen": 1935}/*c style*/`,
 
 		`/*c style*/ {"listen": /* c style */1935}`,
+
+		`{"url": "http://server/api"}`,
 	}, func(v string, o interface{}, err error) {
 		if err != nil {
 			t.Error("show pass for", v, "actual err is", err)

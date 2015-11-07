@@ -71,6 +71,7 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 	var lineReader funcReader
 	var blockReader funcReader
 	var contentReader funcReader
+	var stringReader funcReader
 
 	lineReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
 		b := make([]byte, 1)
@@ -84,6 +85,21 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 		}
 
 		return 0, contentReader, nil
+	})
+
+	stringReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			return
+		}
+
+		p[0] = b[0]
+
+		if b[0] == '"' {
+			return 1, contentReader, err
+		}
+
+		return 1, stringReader, err
 	})
 
 	blockReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
@@ -138,12 +154,18 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 		if v.attention != 0 && b[0] != '/' && b[0] != '*' {
 			p[0] = '/'
 			p[1] = b[0]
+			if b[0] == '"' {
+				return 2, stringReader, err
+			}
 			return 2, contentReader, err
 		}
 
 		// 1byte push.
 		if v.attention == 0 && b[0] != '/' {
 			p[0] = b[0]
+			if b[0] == '"' {
+				return 1, stringReader, err
+			}
 			return 1, contentReader, err
 		}
 
