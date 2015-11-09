@@ -119,7 +119,7 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 			return 0, contentReader, nil
 		}
 
-		panic(fmt.Sprintf("impossible, attention=%v, b=%v", v.attention, b[0]))
+		panic(fmt.Sprintf("invalid block, attention=%v, b=%v", v.attention, b[0]))
 		return
 	})
 
@@ -165,7 +165,7 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 			return 0, blockReader, err
 		}
 
-		panic("impossible execute path")
+		panic(fmt.Sprintf("invalid content, attention=%v, b=%v", v.attention, b[0]))
 		return
 	})
 
