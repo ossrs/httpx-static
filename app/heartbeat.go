@@ -25,13 +25,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"github.com/simple-rtmp-server/go-srs/core"
+	"net"
 	"net/http"
 	"sync"
 	"time"
 )
 
 type Heartbeat struct {
-	ready    bool
 	ips      []string
 	exportIp string
 	lock     sync.Mutex
@@ -54,7 +54,7 @@ func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
 			if err := h.discovery(); err != nil {
 				core.GsWarn.Println("heartbeat discovery failed, err is", err)
 			} else {
-				core.GsTrace.Println("local ip is", h.ips)
+				core.GsTrace.Println("local ip is", h.ips, "exported", h.exportIp)
 				interval = 300 * time.Second
 			}
 		}
@@ -86,6 +86,34 @@ func (h *Heartbeat) beatCycle(w WorkerContainer) {
 }
 
 func (h *Heartbeat) discovery() (err error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	var ifaces []net.Interface
+	if ifaces, err = net.Interfaces(); err != nil {
+		return
+	}
+
+	for _, iface := range ifaces {
+		var addrs []net.Addr
+		if addrs, err = iface.Addrs(); err != nil {
+			return
+		}
+
+		for _, addr := range addrs {
+			if v, ok := addr.(*net.IPNet); ok && len(v.Mask) == net.IPv4len && !v.IP.IsLoopback() {
+				core.GsTrace.Println("iface", iface.Name, "ip is", v.IP.String())
+				h.ips = append(h.ips, v.IP.String())
+			} else {
+				core.GsInfo.Println("iface", iface.Name, addr)
+			}
+		}
+	}
+
+	// choose one as exported network address.
+	if len(h.ips) > 0 {
+		h.exportIp = h.ips[GsConfig.Stat.Network%len(h.ips)]
+	}
 	return
 }
 
@@ -93,7 +121,7 @@ func (h *Heartbeat) beat() (err error) {
 	h.lock.Lock()
 	defer h.lock.Unlock()
 
-	if !h.ready || len(h.exportIp) <= 0 {
+	if len(h.exportIp) <= 0 {
 		core.GsInfo.Println("heartbeat not ready.")
 		return
 	}
@@ -111,7 +139,7 @@ func (h *Heartbeat) beat() (err error) {
 	if b, err = json.Marshal(&v); err != nil {
 		return
 	}
-	core.GsTrace.Println("heartbeat info is", string(b))
+	core.GsInfo.Println("heartbeat info is", string(b))
 
 	var resp *http.Response
 	if resp, err = http.Post(c.Url, core.HttpJson, bytes.NewReader(b)); err != nil {

@@ -72,7 +72,8 @@ type Server struct {
 	// for system internal to notify quit.
 	quit chan bool
 	wg   sync.WaitGroup
-	// logger.
+	// core components.
+	htbt   *Heartbeat
 	logger *simpleLogger
 	// the locker for state, for instance, the closed.
 	lock sync.Mutex
@@ -84,6 +85,7 @@ func NewServer() *Server {
 		closed:  StateInit,
 		closing: make(chan bool, 1),
 		quit:    make(chan bool, 1),
+		htbt:    NewHeartbeat(),
 		logger:  &simpleLogger{},
 	}
 
@@ -183,9 +185,8 @@ func (s *Server) Initialize() (err error) {
 	// reload goroutine
 	s.GFork("reload", GsConfig.reloadCycle)
 	// heartbeat goroutine
-	htbt := NewHeartbeat()
-	s.GFork("heartbeat", htbt.discoveryCycle)
-	s.GFork("heartbeat", htbt.beatCycle)
+	s.GFork("htbt(discovery)", s.htbt.discoveryCycle)
+	s.GFork("htbt(main)", s.htbt.beatCycle)
 
 	c := GsConfig
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
