@@ -4,8 +4,5 @@
   "log": {
     "tank": "console",
     "level": "trace"
-  },
-  "go": {
-    "gc_interval": 5
   }
 }

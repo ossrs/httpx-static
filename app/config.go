@@ -71,6 +71,7 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 	var lineReader funcReader
 	var blockReader funcReader
 	var contentReader funcReader
+	var stringReader funcReader
 
 	lineReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
 		b := make([]byte, 1)
@@ -84,6 +85,21 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 		}
 
 		return 0, contentReader, nil
+	})
+
+	stringReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			return
+		}
+
+		p[0] = b[0]
+
+		if b[0] == '"' {
+			return 1, contentReader, err
+		}
+
+		return 1, stringReader, err
 	})
 
 	blockReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
@@ -138,12 +154,18 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 		if v.attention != 0 && b[0] != '/' && b[0] != '*' {
 			p[0] = '/'
 			p[1] = b[0]
+			if b[0] == '"' {
+				return 2, stringReader, err
+			}
 			return 2, contentReader, err
 		}
 
 		// 1byte push.
 		if v.attention == 0 && b[0] != '/' {
 			p[0] = b[0]
+			if b[0] == '"' {
+				return 1, stringReader, err
+			}
 			return 1, contentReader, err
 		}
 
@@ -219,6 +241,21 @@ type Config struct {
 		File  string `json:"file"`  // for log tank file, the log file path.
 	} `json:"log"`
 
+	// the heartbeat section.
+	Heartbeat struct {
+		Enabled  bool    `json:"enabled"`   // whether enable the heartbeat.
+		Interval float64 `json:"interval"`  // the heartbeat interval in seconds.
+		Url      string  `json:"url"`       // the url to report.
+		DeviceId string  `json:"device_id"` // the device id to report.
+		Summary  bool    `json:"summaries"` // whether enable the detail summary.
+	} `json:"heartbeat"`
+
+	// the stat section.
+	Stat struct {
+		Network int      `json:"network"` // the network device index to use as exported ip.
+		Disks   []string `json:"disk"`    // the disks to stat.
+	} `json:"stats"`
+
 	conf           string          `json:"-"` // the config file path.
 	reloadHandlers []ReloadHandler `json:"-"`
 }
@@ -231,10 +268,17 @@ func NewConfig() *Config {
 		reloadHandlers: []ReloadHandler{},
 	}
 
-	c.Workers = core.Workers
 	c.Listen = core.RtmpListen
+	c.Workers = 1
 	c.Daemon = true
-	c.Go.GcInterval = core.GcIntervalSeconds
+	c.Go.GcInterval = 300
+
+	c.Heartbeat.Enabled = false
+	c.Heartbeat.Interval = 9.3
+	c.Heartbeat.Url = "http://127.0.0.1:8085/api/v1/servers"
+	c.Heartbeat.Summary = false
+
+	c.Stat.Network = 0
 
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
@@ -253,7 +297,9 @@ func (c *Config) Loads(conf string) error {
 		return err
 	} else {
 		defer f.Close()
+
 		d = json.NewDecoder(NewReader(f))
+		//d = json.NewDecoder(f)
 	}
 
 	// decode config from stream.
@@ -269,6 +315,10 @@ func (c *Config) Loads(conf string) error {
 func (c *Config) Validate() error {
 	if c.Log.Level == "info" {
 		core.GsWarn.Println("info level hurts performance")
+	}
+
+	if len(c.Stat.Disks) > 0 {
+		core.GsWarn.Println("stat disks not support")
 	}
 
 	if c.Workers <= 0 || c.Workers > 64 {
