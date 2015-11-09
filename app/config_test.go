@@ -72,6 +72,10 @@ func TestConfigBasic(t *testing.T) {
 	if c.Heartbeat.Summary {
 		t.Error("log heartbeat summary failed")
 	}
+
+	if c.Stat.Network != 0 {
+		t.Error("log stat network failed")
+	}
 }
 
 func BenchmarkConfigBasic(b *testing.B) {

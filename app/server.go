@@ -183,7 +183,9 @@ func (s *Server) Initialize() (err error) {
 	// reload goroutine
 	s.GFork("reload", GsConfig.reloadCycle)
 	// heartbeat goroutine
-	s.GFork("heartbeat", NewHeartbeat().cycle)
+	htbt := NewHeartbeat()
+	s.GFork("heartbeat", htbt.discoveryCycle)
+	s.GFork("heartbeat", htbt.beatCycle)
 
 	c := GsConfig
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)

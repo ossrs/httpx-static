@@ -26,17 +26,44 @@ import (
 	"encoding/json"
 	"github.com/simple-rtmp-server/go-srs/core"
 	"net/http"
+	"sync"
 	"time"
 )
 
 type Heartbeat struct {
+	ready    bool
+	ips      []string
+	exportIp string
+	lock     sync.Mutex
 }
 
 func NewHeartbeat() *Heartbeat {
-	return &Heartbeat{}
+	return &Heartbeat{
+		ips: []string{},
+	}
 }
 
-func (h *Heartbeat) cycle(w WorkerContainer) {
+func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
+	interval := time.Duration(0)
+	for {
+		select {
+		case <-w.QC():
+			w.Quit()
+			return
+		case <-time.After(interval):
+			if err := h.discovery(); err != nil {
+				core.GsWarn.Println("heartbeat discovery failed, err is", err)
+			} else {
+				core.GsTrace.Println("local ip is", h.ips)
+				interval = 300 * time.Second
+			}
+		}
+	}
+
+	return
+}
+
+func (h *Heartbeat) beatCycle(w WorkerContainer) {
 	for {
 		c := &GsConfig.Heartbeat
 
@@ -58,7 +85,19 @@ func (h *Heartbeat) cycle(w WorkerContainer) {
 	}
 }
 
+func (h *Heartbeat) discovery() (err error) {
+	return
+}
+
 func (h *Heartbeat) beat() (err error) {
+	h.lock.Lock()
+	defer h.lock.Unlock()
+
+	if !h.ready || len(h.exportIp) <= 0 {
+		core.GsInfo.Println("heartbeat not ready.")
+		return
+	}
+
 	v := struct {
 		DeviceId string `json:"device_id"`
 		Ip       string `json:"ip"`
@@ -66,6 +105,7 @@ func (h *Heartbeat) beat() (err error) {
 
 	c := &GsConfig.Heartbeat
 	v.DeviceId = c.DeviceId
+	v.Ip = h.exportIp
 
 	var b []byte
 	if b, err = json.Marshal(&v); err != nil {

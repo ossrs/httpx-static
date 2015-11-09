@@ -250,6 +250,12 @@ type Config struct {
 		Summary  bool    `json:"summaries"` // whether enable the detail summary.
 	} `json:"heartbeat"`
 
+	// the stat section.
+	Stat struct {
+		Network int      `json:"network"` // the network device index to use as exported ip.
+		Disks   []string `json:"disk"`    // the disks to stat.
+	} `json:"stats"`
+
 	conf           string          `json:"-"` // the config file path.
 	reloadHandlers []ReloadHandler `json:"-"`
 }
@@ -271,6 +277,8 @@ func NewConfig() *Config {
 	c.Heartbeat.Interval = 9.3
 	c.Heartbeat.Url = "http://127.0.0.1:8085/api/v1/servers"
 	c.Heartbeat.Summary = false
+
+	c.Stat.Network = 0
 
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
@@ -307,6 +315,10 @@ func (c *Config) Loads(conf string) error {
 func (c *Config) Validate() error {
 	if c.Log.Level == "info" {
 		core.GsWarn.Println("info level hurts performance")
+	}
+
+	if len(c.Stat.Disks) > 0 {
+		core.GsWarn.Println("stat disks not support")
 	}
 
 	if c.Workers <= 0 || c.Workers > 64 {
