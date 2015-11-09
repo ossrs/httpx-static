@@ -54,7 +54,7 @@ func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
 			if err := h.discovery(); err != nil {
 				core.GsWarn.Println("heartbeat discovery failed, err is", err)
 			} else {
-				if len(h.ips) < 0 {
+				if len(h.ips) <= 0 {
 					interval = 3 * time.Second
 					continue
 				}
