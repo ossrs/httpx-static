@@ -23,4 +23,5 @@ package core
 
 const (
 	RtmpListen = 1935
+	HttpJson   = "application/json"
 )
