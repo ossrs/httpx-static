@@ -19,16 +19,32 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+package app
 
-import "fmt"
-
-const (
-	major     = 0
-	minor     = 1
-	reversion = 4
+import (
+	"github.com/simple-rtmp-server/go-srs/core"
+	"os"
+	"time"
 )
 
-func Version() string {
-	return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
+type Summary struct {
+	Ok   bool  `json:"ok"`
+	Now  int64 `json:"now_ms"`
+	Self struct {
+		Version string `json:"version"`
+		Pid     int64  `json:"pid"`
+		Ppid    int64  `json:"ppid"`
+	} `json:"self"`
+}
+
+func NewSummary() *Summary {
+	s := &Summary{}
+
+	s.Now = time.Now().UnixNano() / int64(time.Millisecond)
+
+	s.Self.Version = core.Version()
+	s.Self.Pid = int64(os.Getpid())
+	s.Self.Ppid = int64(os.Getppid())
+
+	return s
 }

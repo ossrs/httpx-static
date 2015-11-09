@@ -127,13 +127,27 @@ func (h *Heartbeat) beat() (err error) {
 	}
 
 	v := struct {
-		DeviceId string `json:"device_id"`
-		Ip       string `json:"ip"`
+		DeviceId string      `json:"device_id"`
+		Ip       string      `json:"ip"`
+		Summary  interface{} `json:"summaries,omitempty"`
 	}{}
 
 	c := &GsConfig.Heartbeat
 	v.DeviceId = c.DeviceId
 	v.Ip = h.exportIp
+
+	if c.Summary {
+		s := NewSummary()
+		s.Ok = true
+
+		v.Summary = struct {
+			Code int      `json:"code"`
+			Data *Summary `json:"data"`
+		}{
+			Code: 0,
+			Data: s,
+		}
+	}
 
 	var b []byte
 	if b, err = json.Marshal(&v); err != nil {
