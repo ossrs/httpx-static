@@ -24,7 +24,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/core"
 	"net"
 	"net/http"
 	"sync"

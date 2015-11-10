@@ -48,7 +48,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. Supports JSON style config file.
 1. Supports Reload config file.
 1. Standard godoc, gofmt, gotest and TravisCI.
-1. Not support daemon for unix-like os.
+1. Support daemon over ossrs/go-daemon(fork from sevlyar/go-daemon).
 1. Extend JSON with c++ style comments.
 1. Support heartbeat to report for ARM.
 1. [dev] Supports Publish and Play RTMP stream.

@@ -33,8 +33,9 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/simple-rtmp-server/go-srs/app"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-daemon"
+	"github.com/ossrs/go-srs/app"
+	"github.com/ossrs/go-srs/core"
 	"os"
 )
 
@@ -45,22 +46,13 @@ import (
 //          --c=conf/srs.json
 var confFile = flag.String("c", "conf/srs.json", "the config file.")
 
-func run() int {
-	flag.Parse()
-
-	svr := app.NewServer()
-	defer svr.Close()
-
-	if err := svr.ParseConfig(*confFile); err != nil {
-		core.GsError.Println("parse config from", *confFile, "failed, err is", err)
-		return -1
-	}
-
+func serve(svr *app.Server) int {
 	if err := svr.PrepareLogger(); err != nil {
 		core.GsError.Println("prepare logger failed, err is", err)
 		return -1
 	}
 
+	core.GsTrace.Println("SRS start serve, pid is", os.Getpid(), "and ppid is", os.Getppid())
 	core.GsTrace.Println("Copyright (c) 2013-2015 SRS(simple-rtmp-server)")
 	core.GsTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version()))
 
@@ -75,6 +67,36 @@ func run() int {
 	}
 
 	return 0
+}
+
+func run() int {
+	flag.Parse()
+
+	svr := app.NewServer()
+	defer svr.Close()
+
+	if err := svr.ParseConfig(*confFile); err != nil {
+		core.GsError.Println("parse config from", *confFile, "failed, err is", err)
+		return -1
+	}
+
+	d := new(daemon.Context)
+	var c *os.Process
+	if app.GsConfig.Daemon {
+		if child, err := d.Reborn(); err != nil {
+			core.GsError.Println("daemon failed. err is", err)
+			return -1
+		} else {
+			c = child
+		}
+	}
+	defer d.Release()
+
+	if c != nil {
+		os.Exit(0)
+	}
+
+	return serve(svr)
 }
 
 func main() {

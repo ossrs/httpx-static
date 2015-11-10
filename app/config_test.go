@@ -24,7 +24,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/core"
 	"io/ioutil"
 	"strings"
 	"testing"

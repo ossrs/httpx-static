@@ -26,7 +26,7 @@
 package app
 
 import (
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/core"
 	"os"
 	"os/signal"
 	"syscall"

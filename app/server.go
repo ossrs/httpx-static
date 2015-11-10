@@ -23,7 +23,7 @@ package app
 
 import (
 	"fmt"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/core"
 	"os"
 	"os/signal"
 	"runtime"
@@ -142,12 +142,6 @@ func (s *Server) ParseConfig(conf string) (err error) {
 		return
 	}
 
-	if GsConfig.Daemon {
-		if err = s.daemon(); err != nil {
-			return
-		}
-	}
-
 	return
 }
 
@@ -161,10 +155,6 @@ func (s *Server) PrepareLogger() (err error) {
 
 	if err = s.applyLogger(GsConfig); err != nil {
 		return
-	}
-
-	if GsConfig.Daemon {
-		s.daemonOnRunning()
 	}
 
 	return
