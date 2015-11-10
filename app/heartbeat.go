@@ -119,6 +119,7 @@ func (h *Heartbeat) discovery() (err error) {
 		return
 	}
 
+	h.ips = []string{}
 	for _, iface := range ifaces {
 		var addrs []net.Addr
 		if addrs, err = iface.Addrs(); err != nil {
