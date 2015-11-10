@@ -83,6 +83,7 @@ func run() int {
 	d := new(daemon.Context)
 	var c *os.Process
 	if app.GsConfig.Daemon {
+		core.GsTrace.Println("run in daemon mode, log file", app.GsConfig.Log.File)
 		if child, err := d.Reborn(); err != nil {
 			core.GsError.Println("daemon failed. err is", err)
 			return -1
