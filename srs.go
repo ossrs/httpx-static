@@ -33,7 +33,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ossrs/go-daemon"
 	"github.com/ossrs/go-srs/app"
 	"github.com/ossrs/go-srs/core"
 	"os"
@@ -52,7 +51,8 @@ func serve(svr *app.Server) int {
 		return -1
 	}
 
-	core.GsTrace.Println("SRS start serve, pid is", os.Getpid(), "and ppid is", os.Getppid())
+	srsMain(svr)
+
 	core.GsTrace.Println("Copyright (c) 2013-2015 SRS(simple-rtmp-server)")
 	core.GsTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version()))
 
@@ -69,7 +69,7 @@ func serve(svr *app.Server) int {
 	return 0
 }
 
-func run() int {
+func main() {
 	flag.Parse()
 
 	svr := app.NewServer()
@@ -77,30 +77,9 @@ func run() int {
 
 	if err := svr.ParseConfig(*confFile); err != nil {
 		core.GsError.Println("parse config from", *confFile, "failed, err is", err)
-		return -1
+		os.Exit(-1)
 	}
 
-	d := new(daemon.Context)
-	var c *os.Process
-	if app.GsConfig.Daemon {
-		core.GsTrace.Println("run in daemon mode, log file", app.GsConfig.Log.File)
-		if child, err := d.Reborn(); err != nil {
-			core.GsError.Println("daemon failed. err is", err)
-			return -1
-		} else {
-			c = child
-		}
-	}
-	defer d.Release()
-
-	if c != nil {
-		os.Exit(0)
-	}
-
-	return serve(svr)
-}
-
-func main() {
-	ret := run()
+	ret := run(svr)
 	os.Exit(ret)
 }
