@@ -26,50 +26,13 @@
 package app
 
 import (
-	"fmt"
 	"github.com/simple-rtmp-server/go-srs/core"
-	"os"
-	"runtime"
-	"syscall"
 )
 
 func (s *Server) daemon() error {
-	// set to single thread mode.
-	runtime.GOMAXPROCS(1)
-
-	// lock goroutine to thread.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	// start in daemon if possible.
-	pid, r2, err := syscall.RawSyscall(syscall.SYS_FORK, 0, 0, 0)
-
-	if err != 0 {
-		return fmt.Errorf("fork failed, err is %v", err)
-	}
-
-	if r2 < 0 {
-		return fmt.Errorf("fork failed, r2 is", r2)
-	}
-
-	// for darwin, the child process forked.
-	if runtime.GOOS == "darwin" && r2 == 1 {
-		pid = 0
-	}
-
-	// exit parent process.
-	if pid > 0 {
-		os.Exit(0)
-	}
-
-	// setsid for child process to daemon.
-	if _, err := syscall.Setsid(); err != nil {
-		return err
-	}
-
 	return nil
 }
 
 func (s *Server) daemonOnRunning() {
-	core.GsTrace.Println("server in daemon, pid is", os.Getpid(), "and ppid is", os.Getppid())
+	core.GsWarn.Println("unix does not support daemon.")
 }
