@@ -51,6 +51,8 @@ func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
 			w.Quit()
 			return
 		case <-time.After(interval):
+			core.GsInfo.Println("start to discovery network every", interval)
+
 			if err := h.discovery(); err != nil {
 				core.GsWarn.Println("heartbeat discovery failed, err is", err)
 			} else {
@@ -80,10 +82,12 @@ func (h *Heartbeat) beatCycle(w WorkerContainer) {
 				continue
 			}
 
+			core.GsInfo.Println("start to heartbeat every", c.Interval)
+
 			if err := h.beat(); err != nil {
-				core.GsWarn.Println("heartbeat to", c.Url, "every", c.Interval, "seconds failed, err is", err)
+				core.GsWarn.Println("heartbeat to", c.Url, "every", c.Interval, "failed, err is", err)
 			} else {
-				core.GsInfo.Println("heartbeat to", c.Url, "every", c.Interval, "seconds")
+				core.GsInfo.Println("heartbeat to", c.Url, "every", c.Interval)
 			}
 		}
 	}
