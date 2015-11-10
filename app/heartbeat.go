@@ -27,6 +27,7 @@ import (
 	"github.com/ossrs/go-srs/core"
 	"net"
 	"net/http"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -109,11 +110,17 @@ func (h *Heartbeat) discovery() (err error) {
 		}
 
 		for _, addr := range addrs {
-			if v, ok := addr.(*net.IPNet); ok && len(v.Mask) == net.IPv4len && !v.IP.IsLoopback() {
+			vf := func(ip net.IP) bool {
+				return ip != nil && ip.To4() != nil && !ip.IsLoopback()
+			}
+			if v, ok := addr.(*net.IPNet); ok && vf(v.IP) {
+				core.GsTrace.Println("iface", iface.Name, "ip is", v.IP.String())
+				h.ips = append(h.ips, v.IP.String())
+			} else if v, ok := addr.(*net.IPAddr); ok && vf(v.IP) {
 				core.GsTrace.Println("iface", iface.Name, "ip is", v.IP.String())
 				h.ips = append(h.ips, v.IP.String())
 			} else {
-				core.GsInfo.Println("iface", iface.Name, addr)
+				core.GsInfo.Println("iface", iface.Name, addr, reflect.TypeOf(addr))
 			}
 		}
 	}
