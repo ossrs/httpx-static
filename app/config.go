@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+// Copyright (c) 2013-2015 SRS(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -25,7 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/core"
 	"io"
 	"io/ioutil"
 	"os"
@@ -48,6 +48,173 @@ type ReloadHandler interface {
 	// @param cc the current loaded config, GsConfig.
 	// @param pc the previous old config.
 	OnReloadGlobal(scope int, cc, pc *Config) error
+}
+
+// the reader support c++-style comment,
+//      block: /* comments */
+//      line: // comments
+type Reader struct {
+	attention int // attention please, maybe comments.
+	f         funcReader
+	r         io.Reader
+}
+
+func NewReader(r io.Reader) io.Reader {
+	return &Reader{r: r}
+}
+
+// read from r into p, return actual n bytes, the next handler and err indicates error.
+type funcReader func(r io.Reader, p []byte) (n int, next funcReader, err error)
+
+// interface io.Reader
+func (v *Reader) Read(p []byte) (n int, err error) {
+	var lineReader funcReader
+	var blockReader funcReader
+	var contentReader funcReader
+	var stringReader funcReader
+
+	lineReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			return
+		}
+
+		// skip any util \n
+		if b[0] != '\n' {
+			return 0, lineReader, nil
+		}
+
+		return 0, contentReader, nil
+	})
+
+	stringReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			return
+		}
+
+		p[0] = b[0]
+
+		if b[0] == '"' {
+			return 1, contentReader, err
+		}
+
+		return 1, stringReader, err
+	})
+
+	blockReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		if len(p) < v.attention+1 {
+			return 0, nil, nil
+		}
+
+		// read one byte more.
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			// when EOF, ok for content or content reader,
+			// but invalid for block reader.
+			if err == io.EOF {
+				return 0, nil, errors.New("block comments should not EOF")
+			}
+			return
+		}
+
+		// skip any util */
+		if b[0] != '/' && b[0] != '*' {
+			return 0, blockReader, nil
+		}
+
+		// attention
+		if b[0] == '*' {
+			v.attention = 1
+			return 0, blockReader, nil
+		}
+
+		// eof comments.
+		if v.attention != 0 && b[0] == '/' {
+			v.attention = 0
+			return 0, contentReader, nil
+		}
+
+		panic(fmt.Sprintf("invalid block, attention=%v, b=%v", v.attention, b[0]))
+		return
+	})
+
+	contentReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
+		if len(p) < v.attention+1 {
+			return 0, nil, nil
+		}
+
+		// read one byte more.
+		b := make([]byte, 1)
+		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
+			return
+		}
+
+		// 2byte push.
+		if v.attention != 0 && b[0] != '/' && b[0] != '*' {
+			p[0] = '/'
+			p[1] = b[0]
+			if b[0] == '"' {
+				return 2, stringReader, err
+			}
+			return 2, contentReader, err
+		}
+
+		// 1byte push.
+		if v.attention == 0 && b[0] != '/' {
+			p[0] = b[0]
+			if b[0] == '"' {
+				return 1, stringReader, err
+			}
+			return 1, contentReader, err
+		}
+
+		// attention
+		if v.attention == 0 && b[0] == '/' {
+			v.attention = 1
+			return 0, contentReader, err
+		}
+
+		// line comments.
+		if v.attention != 0 && b[0] == '/' {
+			v.attention = 0
+			return 0, lineReader, err
+		}
+
+		// block comments.
+		if v.attention != 0 && b[0] == '*' {
+			v.attention = 0
+			return 0, blockReader, err
+		}
+
+		panic(fmt.Sprintf("invalid content, attention=%v, b=%v", v.attention, b[0]))
+		return
+	})
+
+	// start using normal byte reader.
+	var f funcReader
+	if f = v.f; f == nil {
+		f = contentReader
+	}
+
+	// read util full or no func reader specified.
+	for i := 0; f != nil && i < len(p); {
+		var ne int
+		if ne, f, err = f(v.r, p[i:]); err != nil {
+			break
+		}
+
+		// apply the consumed bytes.
+		n += ne
+		i += ne
+
+		// remember the last handler we use.
+		if f != nil {
+			v.f = f
+		}
+	}
+
+	return
 }
 
 // the config for this application,
@@ -74,6 +241,21 @@ type Config struct {
 		File  string `json:"file"`  // for log tank file, the log file path.
 	} `json:"log"`
 
+	// the heartbeat section.
+	Heartbeat struct {
+		Enabled  bool    `json:"enabled"`   // whether enable the heartbeat.
+		Interval float64 `json:"interval"`  // the heartbeat interval in seconds.
+		Url      string  `json:"url"`       // the url to report.
+		DeviceId string  `json:"device_id"` // the device id to report.
+		Summary  bool    `json:"summaries"` // whether enable the detail summary.
+	} `json:"heartbeat"`
+
+	// the stat section.
+	Stat struct {
+		Network int      `json:"network"` // the network device index to use as exported ip.
+		Disks   []string `json:"disk"`    // the disks to stat.
+	} `json:"stats"`
+
 	conf           string          `json:"-"` // the config file path.
 	reloadHandlers []ReloadHandler `json:"-"`
 }
@@ -86,10 +268,17 @@ func NewConfig() *Config {
 		reloadHandlers: []ReloadHandler{},
 	}
 
-	c.Workers = core.Workers
 	c.Listen = core.RtmpListen
+	c.Workers = 1
 	c.Daemon = true
-	c.Go.GcInterval = core.GcIntervalSeconds
+	c.Go.GcInterval = 300
+
+	c.Heartbeat.Enabled = false
+	c.Heartbeat.Interval = 9.3
+	c.Heartbeat.Url = "http://127.0.0.1:8085/api/v1/servers"
+	c.Heartbeat.Summary = false
+
+	c.Stat.Network = 0
 
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
@@ -103,15 +292,18 @@ func (c *Config) Loads(conf string) error {
 	c.conf = conf
 
 	// read the whole config to []byte.
-	var s []byte
+	var d *json.Decoder
 	if f, err := os.Open(conf); err != nil {
 		return err
-	} else if s, err = ioutil.ReadAll(f); err != nil {
-		return err
+	} else {
+		defer f.Close()
+
+		d = json.NewDecoder(NewReader(f))
+		//d = json.NewDecoder(f)
 	}
 
-	// parse string to json.
-	if err := json.Unmarshal([]byte(s), c); err != nil {
+	// decode config from stream.
+	if err := d.Decode(c); err != nil {
 		return err
 	}
 
@@ -123,6 +315,10 @@ func (c *Config) Loads(conf string) error {
 func (c *Config) Validate() error {
 	if c.Log.Level == "info" {
 		core.GsWarn.Println("info level hurts performance")
+	}
+
+	if len(c.Stat.Disks) > 0 {
+		core.GsWarn.Println("stat disks not support")
 	}
 
 	if c.Workers <= 0 || c.Workers > 64 {

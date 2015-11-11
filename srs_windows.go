@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+// Copyright (c) 2013-2015 SRS(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -19,16 +19,17 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// Windows to run in daemon.
+package main
 
-package app
+import (
+	"github.com/ossrs/go-srs/app"
+	"github.com/ossrs/go-srs/core"
+)
 
-import "github.com/simple-rtmp-server/go-srs/core"
-
-func (s *Server) daemon() error {
-	return nil
+func run(svr *app.Server) int {
+	return serve(svr)
 }
 
-func (s *Server) daemonOnRunning() {
-	core.GsWarn.Println("windows does not support daemon.")
+func srsMain(svr *app.Server) {
+	core.GsWarn.Println("windows not support daemon.")
 }

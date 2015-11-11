@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+// Copyright (c) 2013-2015 SRS(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -23,7 +23,7 @@ package app
 
 import (
 	"fmt"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/core"
 	"os"
 	"os/signal"
 	"runtime"
@@ -72,7 +72,8 @@ type Server struct {
 	// for system internal to notify quit.
 	quit chan bool
 	wg   sync.WaitGroup
-	// logger.
+	// core components.
+	htbt   *Heartbeat
 	logger *simpleLogger
 	// the locker for state, for instance, the closed.
 	lock sync.Mutex
@@ -84,6 +85,7 @@ func NewServer() *Server {
 		closed:  StateInit,
 		closing: make(chan bool, 1),
 		quit:    make(chan bool, 1),
+		htbt:    NewHeartbeat(),
 		logger:  &simpleLogger{},
 	}
 
@@ -140,12 +142,6 @@ func (s *Server) ParseConfig(conf string) (err error) {
 		return
 	}
 
-	if GsConfig.Daemon {
-		if err = s.daemon(); err != nil {
-			return
-		}
-	}
-
 	return
 }
 
@@ -159,10 +155,6 @@ func (s *Server) PrepareLogger() (err error) {
 
 	if err = s.applyLogger(GsConfig); err != nil {
 		return
-	}
-
-	if GsConfig.Daemon {
-		s.daemonOnRunning()
 	}
 
 	return
@@ -182,6 +174,9 @@ func (s *Server) Initialize() (err error) {
 
 	// reload goroutine
 	s.GFork("reload", GsConfig.reloadCycle)
+	// heartbeat goroutine
+	s.GFork("htbt(discovery)", s.htbt.discoveryCycle)
+	s.GFork("htbt(main)", s.htbt.beatCycle)
 
 	c := GsConfig
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)

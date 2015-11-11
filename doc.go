@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+// Copyright (c) 2013-2015 SRS(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -20,17 +20,17 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /*
-The go-srs project is a go implementation of http://github.com/simple-rtmp-server/srs.
+The go-srs project is a go implementation of http://github.com/ossrs/srs.
 SRS is industrial-strength live streaming cluster, for the best conceptual integrity and the simplest implementation.
 
 Usage
 
 To get and run go-srs:
 
-    go get github.com/simple-rtmp-server/go-srs &&
-    cd $GOPATH/src/github.com/simple-rtmp-server/go-srs &&
+    go get github.com/ossrs/go-srs &&
+    cd $GOPATH/src/github.com/ossrs/go-srs &&
     $GOPATH/bin/go-srs -c conf/srs.json
 
-Please read https://github.com/simple-rtmp-server/go-srs#usage
+Please read https://github.com/ossrs/go-srs#usage
 */
 package main

@@ -1,8 +1,8 @@
 {
   "listen": 1935,
-  "daemon": false,
+  "daemon": true,
   "log": {
-    "tank": "console",
+    "tank": "file",
     "level": "trace"
   }
 }

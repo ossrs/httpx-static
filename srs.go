@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+// Copyright (c) 2013-2015 SRS(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -33,8 +33,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/simple-rtmp-server/go-srs/app"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/app"
+	"github.com/ossrs/go-srs/core"
 	"os"
 )
 
@@ -45,23 +45,15 @@ import (
 //          --c=conf/srs.json
 var confFile = flag.String("c", "conf/srs.json", "the config file.")
 
-func run() int {
-	flag.Parse()
-
-	svr := app.NewServer()
-	defer svr.Close()
-
-	if err := svr.ParseConfig(*confFile); err != nil {
-		core.GsError.Println("parse config from", *confFile, "failed, err is", err)
-		return -1
-	}
-
+func serve(svr *app.Server) int {
 	if err := svr.PrepareLogger(); err != nil {
 		core.GsError.Println("prepare logger failed, err is", err)
 		return -1
 	}
 
-	core.GsTrace.Println("Copyright (c) 2013-2015 SRS(simple-rtmp-server)")
+	srsMain(svr)
+
+	core.GsTrace.Println("Copyright (c) 2013-2015 SRS(ossrs)")
 	core.GsTrace.Println(fmt.Sprintf("GO-SRS/%v is a golang implementation of SRS.", core.Version()))
 
 	if err := svr.Initialize(); err != nil {
@@ -78,6 +70,16 @@ func run() int {
 }
 
 func main() {
-	ret := run()
+	flag.Parse()
+
+	svr := app.NewServer()
+	defer svr.Close()
+
+	if err := svr.ParseConfig(*confFile); err != nil {
+		core.GsError.Println("parse config from", *confFile, "failed, err is", err)
+		os.Exit(-1)
+	}
+
+	ret := run(svr)
 	os.Exit(ret)
 }

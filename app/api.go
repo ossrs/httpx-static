@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 SRS(simple-rtmp-server)
+// Copyright (c) 2013-2015 SRS(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -19,57 +19,32 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
-
-// Unix to run in daemon.
-
 package app
 
 import (
-	"fmt"
-	"github.com/simple-rtmp-server/go-srs/core"
+	"github.com/ossrs/go-srs/core"
 	"os"
-	"runtime"
-	"syscall"
+	"time"
 )
 
-func (s *Server) daemon() error {
-	// set to single thread mode.
-	runtime.GOMAXPROCS(1)
-
-	// lock goroutine to thread.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	// start in daemon if possible.
-	pid, r2, err := syscall.RawSyscall(syscall.SYS_FORK, 0, 0, 0)
-
-	if err != 0 {
-		return fmt.Errorf("fork failed, err is %v", err)
-	}
-
-	if r2 < 0 {
-		return fmt.Errorf("fork failed, r2 is", r2)
-	}
-
-	// for darwin, the child process forked.
-	if runtime.GOOS == "darwin" && r2 == 1 {
-		pid = 0
-	}
-
-	// exit parent process.
-	if pid > 0 {
-		os.Exit(0)
-	}
-
-	// setsid for child process to daemon.
-	if _, err := syscall.Setsid(); err != nil {
-		return err
-	}
-
-	return nil
+type Summary struct {
+	Ok   bool  `json:"ok"`
+	Now  int64 `json:"now_ms"`
+	Self struct {
+		Version string `json:"version"`
+		Pid     int64  `json:"pid"`
+		Ppid    int64  `json:"ppid"`
+	} `json:"self"`
 }
 
-func (s *Server) daemonOnRunning() {
-	core.GsTrace.Println("server in daemon, pid is", os.Getpid(), "and ppid is", os.Getppid())
+func NewSummary() *Summary {
+	s := &Summary{}
+
+	s.Now = time.Now().UnixNano() / int64(time.Millisecond)
+
+	s.Self.Version = core.Version()
+	s.Self.Pid = int64(os.Getpid())
+	s.Self.Ppid = int64(os.Getppid())
+
+	return s
 }
