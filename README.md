@@ -1,7 +1,7 @@
 # go-srs
 
-<a href="https://godoc.org/github.com/simple-rtmp-server/go-srs">
-    <img src="https://godoc.org/github.com/simple-rtmp-server/go-srs?status.svg" alt="GoDoc">
+<a href="https://godoc.org/github.com/ossrs/go-srs">
+    <img src="https://godoc.org/github.com/ossrs/go-srs?status.svg" alt="GoDoc">
 </a>
 
 Focus on real-time live streaming cluster, advanced [srs][srs].
@@ -48,7 +48,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. Supports JSON style config file.
 1. Supports Reload config file.
 1. Standard godoc, gofmt, gotest and TravisCI.
-1. Support daemon over ossrs/go-daemon(fork from sevlyar/go-daemon).
+1. Support daemon over [ossrs/go-daemon][go-daemon](fork from [sevlyar/go-daemon][fork-go-daemon]).
 1. Extend JSON with c++ style comments.
 1. Support heartbeat to report for ARM.
 1. [dev] Supports Publish and Play RTMP stream.
@@ -63,3 +63,5 @@ Winlin 2015.10
 [go-ide]: http://www.jetbrains.com/idea/download
 [go-ide-plugin]: https://github.com/go-lang-plugin-org/go-lang-idea-plugin
 [go-ide-plugin-download]: https://plugins.jetbrains.com/plugin/5047
+[go-daemon]: http://github.com/ossrs/go-daemon
+[fork-go-daemon]: http://github.com/sevlyar/go-daemon
