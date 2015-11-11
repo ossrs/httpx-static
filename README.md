@@ -11,23 +11,23 @@ Focus on real-time live streaming cluster, advanced [srs][srs].
 For linux/unix-like os:
 
 ```
-go get github.com/simple-rtmp-server/go-srs &&
-cd $GOPATH/src/github.com/simple-rtmp-server/go-srs &&
+go get github.com/ossrs/go-srs &&
+cd $GOPATH/src/github.com/ossrs/go-srs &&
 $GOPATH/bin/go-srs -c conf/srs.json
 ```
 
 Or, for windows:
 
 ```
-go get github.com/simple-rtmp-server/go-srs &&
-cd %GOPATH%\src\github.com\simple-rtmp-server\go-srs &&
+go get github.com/ossrs/go-srs &&
+cd %GOPATH%\src\github.com\ossrs\go-srs &&
 %GOPATH%\bin\go-srs.exe -c conf\srs.json
 ```
 
 About how to build and run at current directory:
 
 ```
-cd $GOPATH/src/github.com/simple-rtmp-server/go-srs &&
+cd $GOPATH/src/github.com/ossrs/go-srs &&
 go build . && ./go-srs -c conf/srs.json
 ```
 
@@ -56,7 +56,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 
 Winlin 2015.10
 
-[srs]: https://github.com/simple-rtmp-server/srs
+[srs]: https://github.com/ossrs/srs
 
 [go-download]: http://www.golangtc.com/download
 [go-prepare]: http://blog.csdn.net/win_lin/article/details/40618671
