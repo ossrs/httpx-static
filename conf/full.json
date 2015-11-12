@@ -19,16 +19,16 @@
   "log": {
     // the log tank, console or file.
     // if console, print log to console.
-    // if file, write log to file. requires srs_log_file if log to file.
+    // if file, write log to file. requires file if log to file.
     // default: file
     "tank": "file",
     // the log level, for all log tanks.
     // can be: verbose, info, trace, warn, error
     // default: trace
     "level": "trace",
-    // when srs_log_tank is file, specifies the log file.
-    // default: gsrs.log
-    "file": "gsrs.log"
+    // when tank is file, specifies the log file.
+    // default: oryx.log
+    "file": "oryx.log"
   },
   // heartbeat/stats sections
   // heartbeat to api server
@@ -42,16 +42,16 @@
     // recommend 0.3,0.6,0.9,1.2,1.5,1.8,2.1,2.4,2.7,3,...,6,9,12,....
     // default: 9.9
     "interval": 9.3,
-    // when startup, srs will heartbeat to this api.
-    // @remark: must be a restful http api url, where SRS will POST with following data:
+    // when startup, oryx will heartbeat to this api.
+    // @remark: must be a restful http api url, where oryx will POST with following data:
     //   {
-    //       "device_id": "my-srs-device",
+    //       "device_id": "my-oryx-device",
     //       "ip": "192.168.1.100"
     //   }
     // default: http://127.0.0.1:8085/api/v1/servers
     "url": "http://127.0.0.1:8085/api/v1/servers",
     // the id of devide.
-    "device_id": "my-srs-device",
+    "device_id": "my-oryx-device",
     // whether report with summaries
     // if on, put /api/v1/summaries to the request data:
     //   {

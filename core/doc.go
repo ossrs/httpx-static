@@ -20,7 +20,7 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /*
-The core package provides public feature for srs,
+The core package provides public feature for oryx,
 for example, the config, logger and the utility.
 */
 package core

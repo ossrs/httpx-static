@@ -4,6 +4,6 @@
   "log": {
     "tank": "file",
     "level": "trace",
-    "file": "gsrs.log"
+    "file": "oryx.log"
   }
 }

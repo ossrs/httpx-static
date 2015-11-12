@@ -48,7 +48,7 @@ func TestBasicLogger(t *testing.T) {
 	GsError = log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags)
 
 	GsInfo.Println("test logger.")
-	if !strings.HasPrefix(tank, "[gsrs][info]") {
+	if !strings.HasPrefix(tank, "[oryx][info]") {
 		t.Error("logger format failed.")
 	}
 	if !strings.HasSuffix(tank, "test logger.\n") {
@@ -56,7 +56,7 @@ func TestBasicLogger(t *testing.T) {
 	}
 
 	GsTrace.Println("test logger.")
-	if !strings.HasPrefix(tank, "[gsrs][trace]") {
+	if !strings.HasPrefix(tank, "[oryx][trace]") {
 		t.Error("logger format failed.")
 	}
 	if !strings.HasSuffix(tank, "test logger.\n") {
@@ -64,7 +64,7 @@ func TestBasicLogger(t *testing.T) {
 	}
 
 	GsWarn.Println("test logger.")
-	if !strings.HasPrefix(tank, "[gsrs][warn]") {
+	if !strings.HasPrefix(tank, "[oryx][warn]") {
 		t.Error("logger format failed.")
 	}
 	if !strings.HasSuffix(tank, "test logger.\n") {
@@ -72,7 +72,7 @@ func TestBasicLogger(t *testing.T) {
 	}
 
 	GsError.Println("test logger.")
-	if !strings.HasPrefix(tank, "[gsrs][error]") {
+	if !strings.HasPrefix(tank, "[oryx][error]") {
 		t.Error("logger format failed.")
 	}
 	if !strings.HasSuffix(tank, "test logger.\n") {

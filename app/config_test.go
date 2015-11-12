@@ -53,7 +53,7 @@ func TestConfigBasic(t *testing.T) {
 		t.Error("log level failed.")
 	}
 
-	if c.Log.File != "gsrs.log" {
+	if c.Log.File != "oryx.log" {
 		t.Error("log file failed.")
 	}
 

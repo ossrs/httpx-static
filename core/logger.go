@@ -28,7 +28,7 @@ import (
 )
 
 const (
-	logLabel      = "[gsrs]"
+	logLabel      = "[oryx]"
 	LogInfoLabel  = logLabel + "[info] "
 	LogTraceLabel = logLabel + "[trace] "
 	LogWarnLabel  = logLabel + "[warn] "

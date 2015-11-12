@@ -282,7 +282,7 @@ func NewConfig() *Config {
 
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
-	c.Log.File = "gsrs.log"
+	c.Log.File = "oryx.log"
 
 	return c
 }

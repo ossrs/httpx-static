@@ -29,7 +29,7 @@ To get and run go-oryx:
 
     go get github.com/ossrs/go-oryx &&
     cd $GOPATH/src/github.com/ossrs/go-oryx &&
-    $GOPATH/bin/go-oryx -c conf/srs.json
+    $GOPATH/bin/go-oryx -c conf/oryx.json
 
 Please read https://github.com/ossrs/go-oryx#usage
 */

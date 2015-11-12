@@ -51,6 +51,6 @@ func run(svr *app.Server) int {
 	return serve(svr)
 }
 
-func srsMain(svr *app.Server) {
-	core.GsTrace.Println("SRS start serve, pid is", os.Getpid(), "and ppid is", os.Getppid())
+func oryxMain(svr *app.Server) {
+	core.GsTrace.Println("Oryx start serve, pid is", os.Getpid(), "and ppid is", os.Getppid())
 }
