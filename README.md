@@ -1,7 +1,7 @@
-# go-srs
+# go-oryx
 
-<a href="https://godoc.org/github.com/ossrs/go-srs">
-    <img src="https://godoc.org/github.com/ossrs/go-srs?status.svg" alt="GoDoc">
+<a href="https://godoc.org/github.com/ossrs/go-oryx">
+    <img src="https://godoc.org/github.com/ossrs/go-oryx?status.svg" alt="GoDoc">
 </a>
 
 Focus on real-time live streaming cluster, advanced [srs][srs].
@@ -11,24 +11,24 @@ Focus on real-time live streaming cluster, advanced [srs][srs].
 For linux/unix-like os:
 
 ```
-go get github.com/ossrs/go-srs &&
-cd $GOPATH/src/github.com/ossrs/go-srs &&
-$GOPATH/bin/go-srs -c conf/srs.json
+go get github.com/ossrs/go-oryx &&
+cd $GOPATH/src/github.com/ossrs/go-oryx &&
+$GOPATH/bin/go-oryx -c conf/srs.json
 ```
 
 Or, for windows:
 
 ```
-go get github.com/ossrs/go-srs &&
-cd %GOPATH%\src\github.com\ossrs\go-srs &&
-%GOPATH%\bin\go-srs.exe -c conf\srs.json
+go get github.com/ossrs/go-oryx &&
+cd %GOPATH%\src\github.com\ossrs\go-oryx &&
+%GOPATH%\bin\go-oryx.exe -c conf\srs.json
 ```
 
 About how to build and run at current directory:
 
 ```
-cd $GOPATH/src/github.com/ossrs/go-srs &&
-go build . && ./go-srs -c conf/srs.json
+cd $GOPATH/src/github.com/ossrs/go-oryx &&
+go build . && ./go-oryx -c conf/srs.json
 ```
 
 About how to set $GOPATH, read [prepare go][go-prepare].
