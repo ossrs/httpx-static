@@ -218,11 +218,8 @@ func (s *Server) Run() (err error) {
 		case signal := <-s.sigs:
 			core.GsTrace.Println("got signal", signal)
 			switch signal {
-			case os.Interrupt:
-				// SIGINT
-				s.Quit()
-			case syscall.SIGTERM:
-				// SIGTERM
+			case os.Interrupt, syscall.SIGTERM:
+				// SIGINT, SIGTERM
 				s.Quit()
 			}
 		case <-s.QC():
