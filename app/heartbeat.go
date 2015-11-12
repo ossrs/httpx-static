@@ -52,16 +52,16 @@ func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
 			w.Quit()
 			return
 		case <-time.After(interval):
-			core.GsInfo.Println("start to discovery network every", interval)
+			core.Info.Println("start to discovery network every", interval)
 
 			if err := h.discovery(); err != nil {
-				core.GsWarn.Println("heartbeat discovery failed, err is", err)
+				core.Warn.Println("heartbeat discovery failed, err is", err)
 			} else {
 				if len(h.ips) <= 0 {
 					interval = 3 * time.Second
 					continue
 				}
-				core.GsTrace.Println("local ip is", h.ips, "exported", h.exportIp)
+				core.Trace.Println("local ip is", h.ips, "exported", h.exportIp)
 				interval = 300 * time.Second
 			}
 		}
@@ -72,7 +72,7 @@ func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
 
 func (h *Heartbeat) beatCycle(w WorkerContainer) {
 	for {
-		c := &GsConfig.Heartbeat
+		c := &Conf.Heartbeat
 
 		select {
 		case <-w.QC():
@@ -83,12 +83,12 @@ func (h *Heartbeat) beatCycle(w WorkerContainer) {
 				continue
 			}
 
-			core.GsInfo.Println("start to heartbeat every", c.Interval)
+			core.Info.Println("start to heartbeat every", c.Interval)
 
 			if err := h.beat(); err != nil {
-				core.GsWarn.Println("heartbeat to", c.Url, "every", c.Interval, "failed, err is", err)
+				core.Warn.Println("heartbeat to", c.Url, "every", c.Interval, "failed, err is", err)
 			} else {
-				core.GsInfo.Println("heartbeat to", c.Url, "every", c.Interval)
+				core.Info.Println("heartbeat to", c.Url, "every", c.Interval)
 			}
 		}
 	}
@@ -129,17 +129,17 @@ func (h *Heartbeat) discovery() (err error) {
 		// dumps all network interfaces.
 		for _, addr := range addrs {
 			if v, ok := ipf(addr); ok {
-				core.GsTrace.Println("iface", iface.Name, "ip is", v)
+				core.Trace.Println("iface", iface.Name, "ip is", v)
 				h.ips = append(h.ips, v)
 			} else {
-				core.GsInfo.Println("iface", iface.Name, addr, reflect.TypeOf(addr))
+				core.Info.Println("iface", iface.Name, addr, reflect.TypeOf(addr))
 			}
 		}
 	}
 
 	// choose one as exported network address.
 	if len(h.ips) > 0 {
-		h.exportIp = h.ips[GsConfig.Stat.Network%len(h.ips)]
+		h.exportIp = h.ips[Conf.Stat.Network%len(h.ips)]
 	}
 	return
 }
@@ -149,7 +149,7 @@ func (h *Heartbeat) beat() (err error) {
 	defer h.lock.Unlock()
 
 	if len(h.exportIp) <= 0 {
-		core.GsInfo.Println("heartbeat not ready.")
+		core.Info.Println("heartbeat not ready.")
 		return
 	}
 
@@ -159,7 +159,7 @@ func (h *Heartbeat) beat() (err error) {
 		Summary  interface{} `json:"summaries,omitempty"`
 	}{}
 
-	c := &GsConfig.Heartbeat
+	c := &Conf.Heartbeat
 	v.DeviceId = c.DeviceId
 	v.Ip = h.exportIp
 
@@ -180,7 +180,7 @@ func (h *Heartbeat) beat() (err error) {
 	if b, err = json.Marshal(&v); err != nil {
 		return
 	}
-	core.GsInfo.Println("heartbeat info is", string(b))
+	core.Info.Println("heartbeat info is", string(b))
 
 	var resp *http.Response
 	if resp, err = http.Post(c.Url, core.HttpJson, bytes.NewReader(b)); err != nil {
@@ -188,6 +188,6 @@ func (h *Heartbeat) beat() (err error) {
 	}
 	defer resp.Body.Close()
 
-	core.GsInfo.Println("heartbeat to", c.Url, "ok")
+	core.Info.Println("heartbeat to", c.Url, "ok")
 	return
 }

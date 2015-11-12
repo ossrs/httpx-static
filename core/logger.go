@@ -37,16 +37,16 @@ const (
 
 // the application loggers
 // info, the verbose info level, very detail log, the lowest level, to discard.
-var GsInfo Logger = log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags)
+var Info Logger = log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags)
 
 // trace, the trace level, something important, the default log level, to stdout.
-var GsTrace Logger = log.New(os.Stdout, LogTraceLabel, log.LstdFlags)
+var Trace Logger = log.New(os.Stdout, LogTraceLabel, log.LstdFlags)
 
 // warn, the warning level, dangerous information, to stderr.
-var GsWarn Logger = log.New(os.Stderr, LogWarnLabel, log.LstdFlags)
+var Warn Logger = log.New(os.Stderr, LogWarnLabel, log.LstdFlags)
 
 // error, the error level, fatal error things, ot stderr.
-var GsError Logger = log.New(os.Stderr, LogErrorLabel, log.LstdFlags)
+var Error Logger = log.New(os.Stderr, LogErrorLabel, log.LstdFlags)
 
 // the logger for gsrs.
 type Logger interface {

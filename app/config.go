@@ -261,7 +261,7 @@ type Config struct {
 }
 
 // the current global config.
-var GsConfig = NewConfig()
+var Conf = NewConfig()
 
 func NewConfig() *Config {
 	c := &Config{
@@ -314,11 +314,11 @@ func (c *Config) Loads(conf string) error {
 // validate the config whether ok.
 func (c *Config) Validate() error {
 	if c.Log.Level == "info" {
-		core.GsWarn.Println("info level hurts performance")
+		core.Warn.Println("info level hurts performance")
 	}
 
 	if len(c.Stat.Disks) > 0 {
-		core.GsWarn.Println("stat disks not support")
+		core.Warn.Println("stat disks not support")
 	}
 
 	if c.Workers <= 0 || c.Workers > 64 {
@@ -407,9 +407,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		core.GsTrace.Println("reload apply workers ok")
+		core.Trace.Println("reload apply workers ok")
 	} else {
-		core.GsInfo.Println("reload ignore workers")
+		core.Info.Println("reload ignore workers")
 	}
 
 	if cc.Log.File != pc.Log.File || cc.Log.Level != pc.Log.Level || cc.Log.Tank != pc.Log.Tank {
@@ -418,9 +418,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		core.GsTrace.Println("reload apply log ok")
+		core.Trace.Println("reload apply log ok")
 	} else {
-		core.GsInfo.Println("reload ignore log")
+		core.Info.Println("reload ignore log")
 	}
 
 	return

@@ -31,5 +31,5 @@ func run(svr *app.Server) int {
 }
 
 func oryxMain(svr *app.Server) {
-	core.GsWarn.Println("windows not support daemon.")
+	core.Warn.Println("windows not support daemon.")
 }

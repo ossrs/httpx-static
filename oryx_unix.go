@@ -33,10 +33,10 @@ import (
 func run(svr *app.Server) int {
 	d := new(daemon.Context)
 	var c *os.Process
-	if app.GsConfig.Daemon {
-		core.GsTrace.Println("run in daemon mode, log file", app.GsConfig.Log.File)
+	if app.Conf.Daemon {
+		core.Trace.Println("run in daemon mode, log file", app.Conf.Log.File)
 		if child, err := d.Reborn(); err != nil {
-			core.GsError.Println("daemon failed. err is", err)
+			core.Error.Println("daemon failed. err is", err)
 			return -1
 		} else {
 			c = child
@@ -52,5 +52,5 @@ func run(svr *app.Server) int {
 }
 
 func oryxMain(svr *app.Server) {
-	core.GsTrace.Println("Oryx start serve, pid is", os.Getpid(), "and ppid is", os.Getppid())
+	core.Trace.Println("Oryx start serve, pid is", os.Getpid(), "and ppid is", os.Getppid())
 }

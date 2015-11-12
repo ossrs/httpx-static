@@ -34,29 +34,29 @@ type simpleLogger struct {
 }
 
 func (l *simpleLogger) open(c *Config) (err error) {
-	core.GsInfo.Println("apply log tank", c.Log.Tank)
-	core.GsInfo.Println("apply log level", c.Log.Level)
+	core.Info.Println("apply log tank", c.Log.Tank)
+	core.Info.Println("apply log level", c.Log.Level)
 
 	if c.LogToFile() {
-		core.GsTrace.Println("apply log", c.Log.Tank, c.Log.Level, c.Log.File)
-		core.GsTrace.Println("please see detail of log: tailf", c.Log.File)
+		core.Trace.Println("apply log", c.Log.Tank, c.Log.Level, c.Log.File)
+		core.Trace.Println("please see detail of log: tailf", c.Log.File)
 
 		if l.file, err = os.OpenFile(c.Log.File, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
-			core.GsError.Println("open log file", c.Log.File, "failed, err is", err)
+			core.Error.Println("open log file", c.Log.File, "failed, err is", err)
 			return
 		} else {
-			core.GsInfo = log.New(c.LogTank("info", l.file), core.LogInfoLabel, log.LstdFlags)
-			core.GsTrace = log.New(c.LogTank("trace", l.file), core.LogTraceLabel, log.LstdFlags)
-			core.GsWarn = log.New(c.LogTank("warn", l.file), core.LogWarnLabel, log.LstdFlags)
-			core.GsError = log.New(c.LogTank("error", l.file), core.LogErrorLabel, log.LstdFlags)
+			core.Info = log.New(c.LogTank("info", l.file), core.LogInfoLabel, log.LstdFlags)
+			core.Trace = log.New(c.LogTank("trace", l.file), core.LogTraceLabel, log.LstdFlags)
+			core.Warn = log.New(c.LogTank("warn", l.file), core.LogWarnLabel, log.LstdFlags)
+			core.Error = log.New(c.LogTank("error", l.file), core.LogErrorLabel, log.LstdFlags)
 		}
 	} else {
-		core.GsTrace.Println("apply log", c.Log.Tank, c.Log.Level)
+		core.Trace.Println("apply log", c.Log.Tank, c.Log.Level)
 
-		core.GsInfo = log.New(c.LogTank("info", os.Stdout), core.LogInfoLabel, log.LstdFlags)
-		core.GsTrace = log.New(c.LogTank("trace", os.Stdout), core.LogTraceLabel, log.LstdFlags)
-		core.GsWarn = log.New(c.LogTank("warn", os.Stderr), core.LogWarnLabel, log.LstdFlags)
-		core.GsError = log.New(c.LogTank("error", os.Stderr), core.LogErrorLabel, log.LstdFlags)
+		core.Info = log.New(c.LogTank("info", os.Stdout), core.LogInfoLabel, log.LstdFlags)
+		core.Trace = log.New(c.LogTank("trace", os.Stdout), core.LogTraceLabel, log.LstdFlags)
+		core.Warn = log.New(c.LogTank("warn", os.Stderr), core.LogWarnLabel, log.LstdFlags)
+		core.Error = log.New(c.LogTank("error", os.Stderr), core.LogErrorLabel, log.LstdFlags)
 	}
 
 	return
@@ -68,13 +68,13 @@ func (l *simpleLogger) close(c *Config) (err error) {
 	}
 
 	// when log closed, set the logger warn to stderr for file closed.
-	core.GsWarn = log.New(os.Stderr, core.LogWarnLabel, log.LstdFlags)
+	core.Warn = log.New(os.Stderr, core.LogWarnLabel, log.LstdFlags)
 
 	// try to close the log file.
 	if err = l.file.Close(); err != nil {
-		core.GsWarn.Println("gracefully close log file", c.Log.File, "failed, err is", err)
+		core.Warn.Println("gracefully close log file", c.Log.File, "failed, err is", err)
 	} else {
-		core.GsWarn.Println("close log file", c.Log.File, "ok")
+		core.Warn.Println("close log file", c.Log.File, "ok")
 	}
 
 	return

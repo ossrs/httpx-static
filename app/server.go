@@ -89,7 +89,7 @@ func NewServer() *Server {
 		logger:  &simpleLogger{},
 	}
 
-	GsConfig.Subscribe(svr)
+	Conf.Subscribe(svr)
 
 	return svr
 }
@@ -102,13 +102,13 @@ func (s *Server) Close() {
 
 	// closed?
 	if s.closed == StateClosed {
-		core.GsInfo.Println("server already closed.")
+		core.Info.Println("server already closed.")
 		return
 	}
 
 	// notify to close.
 	if s.closed == StateRunning {
-		core.GsInfo.Println("notify server to stop.")
+		core.Info.Println("notify server to stop.")
 		select {
 		case s.quit <- true:
 		default:
@@ -121,11 +121,11 @@ func (s *Server) Close() {
 	}
 
 	// do cleanup when stopped.
-	GsConfig.Unsubscribe(s)
+	Conf.Unsubscribe(s)
 
 	// ok, closed.
 	s.closed = StateClosed
-	core.GsInfo.Println("server closed")
+	core.Info.Println("server closed")
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
@@ -137,8 +137,8 @@ func (s *Server) ParseConfig(conf string) (err error) {
 	}
 	s.closed = StateReady
 
-	core.GsTrace.Println("start to parse config file", conf)
-	if err = GsConfig.Loads(conf); err != nil {
+	core.Trace.Println("start to parse config file", conf)
+	if err = Conf.Loads(conf); err != nil {
 		return
 	}
 
@@ -153,7 +153,7 @@ func (s *Server) PrepareLogger() (err error) {
 		panic("server invalid state.")
 	}
 
-	if err = s.applyLogger(GsConfig); err != nil {
+	if err = s.applyLogger(Conf); err != nil {
 		return
 	}
 
@@ -173,17 +173,17 @@ func (s *Server) Initialize() (err error) {
 	signal.Notify(s.sigs)
 
 	// reload goroutine
-	s.GFork("reload", GsConfig.reloadCycle)
+	s.GFork("reload", Conf.reloadCycle)
 	// heartbeat goroutine
 	s.GFork("htbt(discovery)", s.htbt.discoveryCycle)
 	s.GFork("htbt(main)", s.htbt.beatCycle)
 
-	c := GsConfig
+	c := Conf
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
-	core.GsTrace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v, gc=%v, daemon=%v",
+	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v, gc=%v, daemon=%v",
 		c.conf, l, c.Workers, c.Go.GcInterval, c.Daemon))
 
 	return
@@ -208,16 +208,16 @@ func (s *Server) Run() (err error) {
 		}
 	}()
 
-	core.GsInfo.Println("server running")
+	core.Info.Println("server running")
 
 	// run server, apply settings.
-	s.applyMultipleProcesses(GsConfig.Workers)
+	s.applyMultipleProcesses(Conf.Workers)
 
 	var wc WorkerContainer = s
 	for {
 		select {
 		case signal := <-s.sigs:
-			core.GsTrace.Println("got signal", signal)
+			core.Trace.Println("got signal", signal)
 			switch signal {
 			case os.Interrupt, syscall.SIGTERM:
 				// SIGINT, SIGTERM
@@ -228,11 +228,11 @@ func (s *Server) Run() (err error) {
 
 			// wait for all goroutines quit.
 			s.wg.Wait()
-			core.GsWarn.Println("server quit")
+			core.Warn.Println("server quit")
 			return
-		case <-time.After(time.Second * time.Duration(GsConfig.Go.GcInterval)):
+		case <-time.After(time.Second * time.Duration(Conf.Go.GcInterval)):
 			runtime.GC()
-			core.GsInfo.Println("go runtime gc every", GsConfig.Go.GcInterval, "seconds")
+			core.Info.Println("go runtime gc every", Conf.Go.GcInterval, "seconds")
 		}
 	}
 
@@ -258,13 +258,13 @@ func (s *Server) GFork(name string, f func(WorkerContainer)) {
 
 		defer func() {
 			if r := recover(); r != nil {
-				core.GsError.Println(name, "worker panic:", r)
+				core.Error.Println(name, "worker panic:", r)
 				s.Quit()
 			}
 		}()
 
 		f(s)
-		core.GsTrace.Println(name, "worker terminated.")
+		core.Trace.Println(name, "worker terminated.")
 	}()
 }
 
@@ -283,9 +283,9 @@ func (s *Server) applyMultipleProcesses(workers int) {
 	pv := runtime.GOMAXPROCS(workers)
 
 	if pv != workers {
-		core.GsTrace.Println("apply workers", workers, "and previous is", pv)
+		core.Trace.Println("apply workers", workers, "and previous is", pv)
 	} else {
-		core.GsInfo.Println("apply workers", workers, "and previous is", pv)
+		core.Info.Println("apply workers", workers, "and previous is", pv)
 	}
 }
 
@@ -293,12 +293,12 @@ func (s *Server) applyLogger(c *Config) (err error) {
 	if err = s.logger.close(c); err != nil {
 		return
 	}
-	core.GsInfo.Println("close logger ok")
+	core.Info.Println("close logger ok")
 
 	if err = s.logger.open(c); err != nil {
 		return
 	}
-	core.GsInfo.Println("open logger ok")
+	core.Info.Println("open logger ok")
 
 	return
 }

@@ -28,7 +28,7 @@ import (
 )
 
 func (c *Config) reloadCycle(wc WorkerContainer) {
-	core.GsWarn.Println("windows does not support reload with signal.")
+	core.Warn.Println("windows does not support reload with signal.")
 
 	// wait for server to quit.
 	<-wc.QC()

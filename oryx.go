@@ -47,22 +47,22 @@ var confFile = flag.String("c", "conf/oryx.json", "the config file.")
 
 func serve(svr *app.Server) int {
 	if err := svr.PrepareLogger(); err != nil {
-		core.GsError.Println("prepare logger failed, err is", err)
+		core.Error.Println("prepare logger failed, err is", err)
 		return -1
 	}
 
 	oryxMain(svr)
 
-	core.GsTrace.Println("Copyright (c) 2013-2015 Oryx(ossrs)")
-	core.GsTrace.Println(fmt.Sprintf("go-oryx/%v is advanced SRS, focus on realtime live streaming.", core.Version()))
+	core.Trace.Println("Copyright (c) 2013-2015 Oryx(ossrs)")
+	core.Trace.Println(fmt.Sprintf("go-oryx/%v is advanced SRS, focus on realtime live streaming.", core.Version()))
 
 	if err := svr.Initialize(); err != nil {
-		core.GsError.Println("initialize server failed, err is", err)
+		core.Error.Println("initialize server failed, err is", err)
 		return -1
 	}
 
 	if err := svr.Run(); err != nil {
-		core.GsError.Println("run server failed, err is", err)
+		core.Error.Println("run server failed, err is", err)
 		return -1
 	}
 
@@ -76,7 +76,7 @@ func main() {
 	defer svr.Close()
 
 	if err := svr.ParseConfig(*confFile); err != nil {
-		core.GsError.Println("parse config from", *confFile, "failed, err is", err)
+		core.Error.Println("parse config from", *confFile, "failed, err is", err)
 		os.Exit(-1)
 	}
 
