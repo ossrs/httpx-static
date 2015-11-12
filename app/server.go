@@ -213,6 +213,7 @@ func (s *Server) Run() (err error) {
 	// run server, apply settings.
 	s.applyMultipleProcesses(GsConfig.Workers)
 
+	var wc WorkerContainer = s
 	for {
 		select {
 		case signal := <-s.sigs:
@@ -220,10 +221,12 @@ func (s *Server) Run() (err error) {
 			switch signal {
 			case os.Interrupt, syscall.SIGTERM:
 				// SIGINT, SIGTERM
-				s.Quit()
+				wc.Quit()
 			}
-		case <-s.QC():
-			s.Quit()
+		case <-wc.QC():
+			wc.Quit()
+
+			// wait for all goroutines quit.
 			s.wg.Wait()
 			core.GsWarn.Println("server quit")
 			return
