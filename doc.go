@@ -20,17 +20,17 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /*
-The go-srs project is a go implementation of http://github.com/ossrs/srs.
+The go-oryx project is a go implementation of http://github.com/ossrs/srs.
 SRS is industrial-strength live streaming cluster, for the best conceptual integrity and the simplest implementation.
 
 Usage
 
-To get and run go-srs:
+To get and run go-oryx:
 
-    go get github.com/ossrs/go-srs &&
-    cd $GOPATH/src/github.com/ossrs/go-srs &&
-    $GOPATH/bin/go-srs -c conf/srs.json
+    go get github.com/ossrs/go-oryx &&
+    cd $GOPATH/src/github.com/ossrs/go-oryx &&
+    $GOPATH/bin/go-oryx -c conf/srs.json
 
-Please read https://github.com/ossrs/go-srs#usage
+Please read https://github.com/ossrs/go-oryx#usage
 */
 package main

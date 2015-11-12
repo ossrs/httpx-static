@@ -25,8 +25,8 @@ package main
 
 import (
 	"github.com/ossrs/go-daemon"
-	"github.com/ossrs/go-srs/app"
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/app"
+	"github.com/ossrs/go-oryx/core"
 	"os"
 )
 

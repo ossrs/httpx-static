@@ -23,7 +23,7 @@ package app
 
 import (
 	"fmt"
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/core"
 	"os"
 	"os/signal"
 	"runtime"

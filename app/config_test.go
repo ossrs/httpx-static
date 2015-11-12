@@ -24,7 +24,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/core"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -151,7 +151,7 @@ func TestConfigComments(t *testing.T) {
             "daemon": false,
             /**
             * the go runtime config.
-            * for go-srs specified.
+            * for go-oryx specified.
             */
             "go": {
                 "gc_interval": 300,

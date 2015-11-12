@@ -24,7 +24,7 @@
 package app
 
 import (
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/core"
 )
 
 func (c *Config) reloadCycle(wc WorkerContainer) {

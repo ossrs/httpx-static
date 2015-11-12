@@ -25,7 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/core"
 	"io"
 	"io/ioutil"
 	"os"

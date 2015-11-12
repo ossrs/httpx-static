@@ -22,8 +22,8 @@
 package main
 
 import (
-	"github.com/ossrs/go-srs/app"
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/app"
+	"github.com/ossrs/go-oryx/core"
 )
 
 func run(svr *app.Server) int {

@@ -33,8 +33,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/ossrs/go-srs/app"
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/app"
+	"github.com/ossrs/go-oryx/core"
 	"os"
 )
 

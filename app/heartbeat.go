@@ -24,7 +24,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
-	"github.com/ossrs/go-srs/core"
+	"github.com/ossrs/go-oryx/core"
 	"net"
 	"net/http"
 	"reflect"
