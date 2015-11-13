@@ -51,7 +51,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. Support daemon over [ossrs/go-daemon][go-daemon](fork from [sevlyar/go-daemon][fork-go-daemon]).
 1. Extend JSON with c++ style comments.
 1. Support heartbeat to report for ARM.
-1. [dev] Supports Publish and Play RTMP stream.
+1. Supports Publish and Play VP6+Speex RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
 
 Winlin 2015.10
