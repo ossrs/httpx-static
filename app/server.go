@@ -183,8 +183,8 @@ func (s *Server) Initialize() (err error) {
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
-	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v, gc=%v, daemon=%v",
-		c.conf, l, c.Workers, c.Go.GcInterval, c.Daemon))
+	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v, daemon=%v",
+		c.conf, l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Daemon))
 
 	return
 }
@@ -280,13 +280,16 @@ func (s *Server) OnReloadGlobal(scope int, cc, pc *Config) (err error) {
 }
 
 func (s *Server) applyMultipleProcesses(workers int) {
+	if workers < 0 {
+		panic("should not be negative workers")
+	}
+
+	if workers == 0 {
+		workers = runtime.NumCPU()
+	}
 	pv := runtime.GOMAXPROCS(workers)
 
-	if pv != workers {
-		core.Trace.Println("apply workers", workers, "and previous is", pv)
-	} else {
-		core.Info.Println("apply workers", workers, "and previous is", pv)
-	}
+	core.Trace.Println("apply workers", workers, "and previous is", pv)
 }
 
 func (s *Server) applyLogger(c *Config) (err error) {

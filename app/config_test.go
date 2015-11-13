@@ -33,7 +33,7 @@ import (
 func TestConfigBasic(t *testing.T) {
 	c := NewConfig()
 
-	if c.Workers != 1 {
+	if c.Workers != 0 {
 		t.Error("workers failed.")
 	}
 

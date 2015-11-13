@@ -1,7 +1,8 @@
 {
   // the multiple processes to use.
-  // default: 1
-  "workers": 1,
+  // 0 to use runtime.NumCPU() as workers.
+  // default: 0
+  "workers": 0,
   // the RTMP listen port.
   // default: 1935
   "listen": 1935,

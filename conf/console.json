@@ -1,6 +1,7 @@
 {
   "listen": 1935,
   "daemon": false,
+  "workers": 1,
   "log": {
     "tank": "console",
     "level": "trace"

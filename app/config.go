@@ -269,7 +269,7 @@ func NewConfig() *Config {
 	}
 
 	c.Listen = core.RtmpListen
-	c.Workers = 1
+	c.Workers = 0
 	c.Daemon = true
 	c.Go.GcInterval = 300
 
@@ -321,8 +321,8 @@ func (c *Config) Validate() error {
 		core.Warn.Println("stat disks not support")
 	}
 
-	if c.Workers <= 0 || c.Workers > 64 {
-		return errors.New(fmt.Sprintf("workers must in (0, 64], actual is %v", c.Workers))
+	if c.Workers < 0 || c.Workers > 64 {
+		return errors.New(fmt.Sprintf("workers must in [0, 64], actual is %v", c.Workers))
 	}
 	if c.Listen <= 0 || c.Listen > 65535 {
 		return errors.New(fmt.Sprintf("listen must in (0, 65535], actual is %v", c.Listen))

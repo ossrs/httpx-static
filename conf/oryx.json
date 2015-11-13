@@ -1,5 +1,4 @@
 {
-  "workers": 4,
   "listen": 1935,
   "log": {
     "tank": "file",
