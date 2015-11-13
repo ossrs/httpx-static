@@ -99,7 +99,7 @@ func ExampleConfig_Loads() {
 
 	// Output:
 	// listen at 1935
-	// workers is 1
+	// workers is 0
 	// go gc every 300 seconds
 }
 
