@@ -32,6 +32,9 @@ type Message struct {
 // to ingest message from upstream sink
 // then produce to channel.
 type Source interface {
+	// tie the source to sink
+	// 		agent.Sink => agent.Source
+	Tie(sink Sink) (err error)
 }
 
 // the sink of agent,
@@ -51,15 +54,4 @@ type Agent interface {
 	Channel() chan *Message
 	// the sink of agent.
 	Sink() Sink
-
-	// tie the current to agent
-	// where agent is the upstream of current
-	// and current is the downstream of agent.
-	// 		agent.Sink => current.Source
-	Tie(agent Agent) (err error)
-	// flow the current to agent
-	// where current is the upstream of agent
-	// and agent is the downstream of current.
-	//		current.Sink => agent.Source
-	Flow(agent Agent) (err error)
 }
