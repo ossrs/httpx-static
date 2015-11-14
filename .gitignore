@@ -2,10 +2,14 @@
 *.o
 *.a
 *.so
+*.json
+go-oryx
 
 # Folders
 _obj
 _test
+.idea
+objs
 
 # Architecture specific extensions/prefixes
 *.[568vq]
