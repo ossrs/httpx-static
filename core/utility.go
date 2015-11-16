@@ -20,3 +20,19 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 package core
+
+import (
+	"math/rand"
+	"time"
+)
+
+// the random object to fill bytes.
+var random *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+
+// randome fill the bytes.
+func RandomFill(b []byte) {
+	for i := 0; i < len(b); i++ {
+		// the common value in [0x0f, 0xf0]
+		b[i] = byte(0x0f + (random.Int() % (256 - 0x0f - 0x0f)))
+	}
+}

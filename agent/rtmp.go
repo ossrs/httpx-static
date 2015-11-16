@@ -24,6 +24,7 @@ package agent
 import (
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
+	"github.com/ossrs/go-oryx/protocol"
 	"net"
 )
 
@@ -118,6 +119,14 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 
 func (v *Rtmp) identify(c net.Conn) (err error) {
 	core.Trace.Println("rtmp accept", c.RemoteAddr())
+
+	sdk := protocol.NewRtmp(c)
+	if err = sdk.Handshake(); err != nil {
+		core.Error.Println("rtmp handshake failed. err is", err)
+		return
+	}
+
+	// TODO: FIXME: should set the TCP_NODELAY to false.
 	return
 }
 
