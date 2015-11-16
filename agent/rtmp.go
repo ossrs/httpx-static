@@ -19,61 +19,43 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
-
-// Unix reload by signal.
-
-package app
+package agent
 
 import (
 	"github.com/ossrs/go-oryx/core"
-	"os"
-	"os/signal"
-	"syscall"
+	"net"
+	"fmt"
 )
 
-func (c *Config) reloadCycle(wc WorkerContainer) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGHUP)
-
-	core.Trace.Println("wait for reload signals: kill -1", os.Getpid())
-	for {
-		select {
-		case signal := <-signals:
-			core.Trace.Println("start reload by", signal)
-
-			if err := c.doReload(); err != nil {
-				core.Error.Println("quit for reload failed. err is", err)
-				wc.Quit()
-				return
-			}
-
-		case <-wc.QC():
-			core.Warn.Println("user stop reload")
-			wc.Quit()
-			return
-		}
-	}
+// the rtmp publish agent,
+// to listen at RTMP(tcp://1935) and recv data from RTMP publisher,
+// for example, the FMLE publisher.
+type RtmpPublish struct {
+	l net.Listener
 }
 
-func (c *Config) doReload() (err error) {
-	pc := c
-	cc := NewConfig()
-	cc.reloadHandlers = pc.reloadHandlers[:]
-	if err = cc.Loads(c.conf); err != nil {
-		core.Error.Println("reload config failed. err is", err)
+func NewRtmpPublish(wc core.WorkerContainer) (agent core.Agent, err error) {
+	r := &RtmpPublish{}
+
+	ep := fmt.Sprintf(":%v", core.Conf.Listen)
+	if r.l,err = net.Listen("tcp", ep); err != nil {
+		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
 		return
 	}
-	core.Info.Println("reload parse fresh config ok")
+	core.Trace.Println("rtmp listen at", ep)
 
-	if err = pc.Reload(cc); err != nil {
-		core.Error.Println("apply reload failed. err is", err)
-		return
-	}
-	core.Info.Println("reload completed work")
+	return r,nil
+}
 
-	Conf = cc
-	core.Trace.Println("reload config ok")
+// interface core.Agent
+func (v *RtmpPublish) Source() core.Source {
+	return nil
+}
 
-	return
+func (v *RtmpPublish) Channel() chan *core.Message {
+	return nil
+}
+
+func (v *RtmpPublish) Sink() core.Sink {
+	return nil
 }

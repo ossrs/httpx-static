@@ -33,7 +33,7 @@ type simpleLogger struct {
 	file *os.File
 }
 
-func (l *simpleLogger) open(c *Config) (err error) {
+func (l *simpleLogger) open(c *core.Config) (err error) {
 	core.Info.Println("apply log tank", c.Log.Tank)
 	core.Info.Println("apply log level", c.Log.Level)
 
@@ -62,7 +62,7 @@ func (l *simpleLogger) open(c *Config) (err error) {
 	return
 }
 
-func (l *simpleLogger) close(c *Config) (err error) {
+func (l *simpleLogger) close(c *core.Config) (err error) {
 	if l.file == nil {
 		return
 	}

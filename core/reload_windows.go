@@ -19,38 +19,14 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
+// Windows reload by signal.
 
-package main
+package core
 
-import (
-	"github.com/ossrs/go-daemon"
-	"github.com/ossrs/go-oryx/app"
-	"github.com/ossrs/go-oryx/core"
-	"os"
-)
+func (c *Config) ReloadCycle(wc WorkerContainer) {
+	Warn.Println("windows does not support reload with signal.")
 
-func run(svr *app.Server) int {
-	d := new(daemon.Context)
-	var c *os.Process
-	if core.Conf.Daemon {
-		core.Trace.Println("run in daemon mode, log file", core.Conf.Log.File)
-		if child, err := d.Reborn(); err != nil {
-			core.Error.Println("daemon failed. err is", err)
-			return -1
-		} else {
-			c = child
-		}
-	}
-	defer d.Release()
-
-	if c != nil {
-		os.Exit(0)
-	}
-
-	return serve(svr)
-}
-
-func oryxMain(svr *app.Server) {
-	core.Trace.Println("Oryx start serve, pid is", os.Getpid(), "and ppid is", os.Getppid())
+	// wait for server to quit.
+	<-wc.QC()
+	wc.Quit()
 }

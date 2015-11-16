@@ -19,13 +19,12 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package app
+package core
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ossrs/go-oryx/core"
 	"io"
 	"io/ioutil"
 	"os"
@@ -268,7 +267,7 @@ func NewConfig() *Config {
 		reloadHandlers: []ReloadHandler{},
 	}
 
-	c.Listen = core.RtmpListen
+	c.Listen = RtmpListen
 	c.Workers = 0
 	c.Daemon = true
 	c.Go.GcInterval = 300
@@ -285,6 +284,11 @@ func NewConfig() *Config {
 	c.Log.File = "oryx.log"
 
 	return c
+}
+
+// get the config file path.
+func (c *Config) Conf() string {
+	return c.conf
 }
 
 // loads and validate config from config file.
@@ -314,11 +318,11 @@ func (c *Config) Loads(conf string) error {
 // validate the config whether ok.
 func (c *Config) Validate() error {
 	if c.Log.Level == "info" {
-		core.Warn.Println("info level hurts performance")
+		Warn.Println("info level hurts performance")
 	}
 
 	if len(c.Stat.Disks) > 0 {
-		core.Warn.Println("stat disks not support")
+		Warn.Println("stat disks not support")
 	}
 
 	if c.Workers < 0 || c.Workers > 64 {
@@ -407,9 +411,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		core.Trace.Println("reload apply workers ok")
+		Trace.Println("reload apply workers ok")
 	} else {
-		core.Info.Println("reload ignore workers")
+		Info.Println("reload ignore workers")
 	}
 
 	if cc.Log.File != pc.Log.File || cc.Log.Level != pc.Log.Level || cc.Log.Tank != pc.Log.Tank {
@@ -418,9 +422,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		core.Trace.Println("reload apply log ok")
+		Trace.Println("reload apply log ok")
 	} else {
-		core.Info.Println("reload ignore log")
+		Info.Println("reload ignore log")
 	}
 
 	return

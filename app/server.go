@@ -30,26 +30,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"github.com/ossrs/go-oryx/agent"
 )
-
-// the container for all worker,
-// which provides the quit and cleanup methods.
-type WorkerContainer interface {
-	// get the quit channel,
-	// worker can fetch the quit signal.
-	// please use Quit to notify the container to quit.
-	QC() <-chan bool
-	// notify the container to quit.
-	// for example, when goroutine fatal error,
-	// which can't be recover, notify server to cleanup and quit.
-	// @remark when got quit signal, the goroutine must notify the
-	//      container to Quit(), for which others goroutines wait.
-	Quit()
-	// fork a new goroutine with work container.
-	// the param f can be a global func or object method.
-	// the param name is the goroutine name.
-	GFork(name string, f func(WorkerContainer))
-}
 
 // the state of server, state graph:
 //      Init => Normal(Ready => Running)
@@ -75,6 +57,7 @@ type Server struct {
 	// core components.
 	htbt   *Heartbeat
 	logger *simpleLogger
+	rtmp core.Agent
 	// the locker for state, for instance, the closed.
 	lock sync.Mutex
 }
@@ -89,7 +72,7 @@ func NewServer() *Server {
 		logger:  &simpleLogger{},
 	}
 
-	Conf.Subscribe(svr)
+	core.Conf.Subscribe(svr)
 
 	return svr
 }
@@ -121,7 +104,7 @@ func (s *Server) Close() {
 	}
 
 	// do cleanup when stopped.
-	Conf.Unsubscribe(s)
+	core.Conf.Unsubscribe(s)
 
 	// ok, closed.
 	s.closed = StateClosed
@@ -138,7 +121,7 @@ func (s *Server) ParseConfig(conf string) (err error) {
 	s.closed = StateReady
 
 	core.Trace.Println("start to parse config file", conf)
-	if err = Conf.Loads(conf); err != nil {
+	if err = core.Conf.Loads(conf); err != nil {
 		return
 	}
 
@@ -153,7 +136,7 @@ func (s *Server) PrepareLogger() (err error) {
 		panic("server invalid state.")
 	}
 
-	if err = s.applyLogger(Conf); err != nil {
+	if err = s.applyLogger(core.Conf); err != nil {
 		return
 	}
 
@@ -172,19 +155,27 @@ func (s *Server) Initialize() (err error) {
 	// TODO: FIXME: when process the current signal, others may drop.
 	signal.Notify(s.sigs)
 
-	// reload goroutine
-	s.GFork("reload", Conf.reloadCycle)
-	// heartbeat goroutine
-	s.GFork("htbt(discovery)", s.htbt.discoveryCycle)
-	s.GFork("htbt(main)", s.htbt.beatCycle)
+	// use worker container to fork.
+	var wc core.WorkerContainer = s
 
-	c := Conf
+	// reload goroutine
+	wc.GFork("reload", core.Conf.ReloadCycle)
+	// heartbeat goroutine
+	wc.GFork("htbt(discovery)", s.htbt.discoveryCycle)
+	wc.GFork("htbt(main)", s.htbt.beatCycle)
+	// rtmp agent.
+	if s.rtmp,err = agent.NewRtmpPublish(wc); err != nil {
+		core.Error.Println("create rtmp agent failed. err is", err)
+		return
+	}
+
+	c := core.Conf
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
 	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v, daemon=%v",
-		c.conf, l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Daemon))
+		c.Conf(), l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Daemon))
 
 	return
 }
@@ -211,9 +202,9 @@ func (s *Server) Run() (err error) {
 	core.Info.Println("server running")
 
 	// run server, apply settings.
-	s.applyMultipleProcesses(Conf.Workers)
+	s.applyMultipleProcesses(core.Conf.Workers)
 
-	var wc WorkerContainer = s
+	var wc core.WorkerContainer = s
 	for {
 		select {
 		case signal := <-s.sigs:
@@ -230,9 +221,9 @@ func (s *Server) Run() (err error) {
 			s.wg.Wait()
 			core.Warn.Println("server quit")
 			return
-		case <-time.After(time.Second * time.Duration(Conf.Go.GcInterval)):
+		case <-time.After(time.Second * time.Duration(core.Conf.Go.GcInterval)):
 			runtime.GC()
-			core.Info.Println("go runtime gc every", Conf.Go.GcInterval, "seconds")
+			core.Info.Println("go runtime gc every", core.Conf.Go.GcInterval, "seconds")
 		}
 	}
 
@@ -251,7 +242,7 @@ func (s *Server) Quit() {
 	}
 }
 
-func (s *Server) GFork(name string, f func(WorkerContainer)) {
+func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
@@ -269,10 +260,10 @@ func (s *Server) GFork(name string, f func(WorkerContainer)) {
 }
 
 // interface ReloadHandler
-func (s *Server) OnReloadGlobal(scope int, cc, pc *Config) (err error) {
-	if scope == ReloadWorkers {
+func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+	if scope == core.ReloadWorkers {
 		s.applyMultipleProcesses(cc.Workers)
-	} else if scope == ReloadLog {
+	} else if scope == core.ReloadLog {
 		s.applyLogger(cc)
 	}
 
@@ -292,7 +283,7 @@ func (s *Server) applyMultipleProcesses(workers int) {
 	core.Trace.Println("apply workers", workers, "and previous is", pv)
 }
 
-func (s *Server) applyLogger(c *Config) (err error) {
+func (s *Server) applyLogger(c *core.Config) (err error) {
 	if err = s.logger.close(c); err != nil {
 		return
 	}
