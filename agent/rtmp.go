@@ -31,8 +31,9 @@ import (
 // to listen at RTMP(tcp://1935) and recv data from RTMP publisher,
 // for example, the FMLE publisher.
 type RtmpPublish struct {
-	wc core.WorkerContainer
-	l  net.Listener
+	endpoint string
+	wc       core.WorkerContainer
+	l        net.Listener
 }
 
 func NewRtmpPublish(wc core.WorkerContainer) (agent core.Agent) {
@@ -72,12 +73,19 @@ func (v *RtmpPublish) close() (err error) {
 		return
 	}
 
-	return v.l.Close()
+	if err = v.l.Close(); err != nil {
+		core.Error.Println("close rtmp listener failed. err is", err)
+		return
+	}
+
+	core.Trace.Println("close rtmp listen", v.endpoint, "ok")
+	return
 }
 
 func (v *RtmpPublish) applyListen(c *core.Config) (err error) {
-	ep := fmt.Sprintf(":%v", c.Listen)
+	v.endpoint = fmt.Sprintf(":%v", c.Listen)
 
+	ep := v.endpoint
 	if v.l, err = net.Listen("tcp", ep); err != nil {
 		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
 		return
