@@ -77,6 +77,7 @@ func (v *RtmpPublish) close() (err error) {
 		core.Error.Println("close rtmp listener failed. err is", err)
 		return
 	}
+	v.l = nil
 
 	core.Trace.Println("close rtmp listen", v.endpoint, "ok")
 	return
@@ -91,6 +92,29 @@ func (v *RtmpPublish) applyListen(c *core.Config) (err error) {
 		return
 	}
 	core.Trace.Println("rtmp listen at", ep)
+
+	// accept cycle
+	v.wc.GFork("", func(wc core.WorkerContainer) {
+		for v.l != nil {
+			var c net.Conn
+			if c, err = v.l.Accept(); err != nil {
+				if v.l != nil {
+					core.Warn.Println("accept failed. err is", err)
+				}
+				return
+			}
+
+			// TODO: FIXME: implements it.
+			core.Trace.Println("rtmp accept", c.RemoteAddr())
+		}
+	})
+
+	// should quit?
+	v.wc.GFork("", func(wc core.WorkerContainer) {
+		<-wc.QC()
+		_ = v.close()
+		wc.Quit()
+	})
 
 	return
 }
