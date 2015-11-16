@@ -36,7 +36,7 @@ type Rtmp struct {
 	l        net.Listener
 }
 
-func NewRtmp(wc core.WorkerContainer) (agent core.Agent) {
+func NewRtmp(wc core.WorkerContainer) (agent core.OpenCloser) {
 	v := &Rtmp{
 		wc: wc,
 	}
@@ -54,18 +54,6 @@ func (v *Rtmp) Open() (err error) {
 func (v *Rtmp) Close() (err error) {
 	core.Conf.Unsubscribe(v)
 	return v.close()
-}
-
-func (v *Rtmp) Source() (ss core.Source) {
-	return nil
-}
-
-func (v *Rtmp) Channel() (c chan *core.Message) {
-	return nil
-}
-
-func (v *Rtmp) Sink() (sk core.Sink) {
-	return nil
 }
 
 func (v *Rtmp) close() (err error) {

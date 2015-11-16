@@ -57,7 +57,7 @@ type Server struct {
 	// core components.
 	htbt   *Heartbeat
 	logger *simpleLogger
-	rtmp   core.Agent
+	rtmp   core.OpenCloser
 	// the locker for state, for instance, the closed.
 	lock sync.Mutex
 }

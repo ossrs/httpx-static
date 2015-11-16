@@ -21,6 +21,8 @@
 
 package core
 
+import "io"
+
 // the message for oryx
 // the common structure for RTMP/FLV/HLS/MP4 or any
 // message, it can be media message or control message.
@@ -43,15 +45,25 @@ type Source interface {
 type Sink interface {
 }
 
+// the opener to open the resource.
+type Opener interface {
+	// open the resource.
+	Open() error
+}
+
+// the open and closer for resource manage.
+type OpenCloser interface {
+	Opener
+	io.Closer
+}
+
 // the agent contains a source
 // which ingest message from upstream sink
 // write message to channel
 // finally delivery to downstream sink.
 type Agent interface {
-	// open the agent, for instance, do some cycle.
-	Open() (err error)
-	// close the agent, for instance, stop cycle.
-	Close() (err error)
+	// an agent is a resource manager.
+	OpenCloser
 
 	// the source of agent.
 	Source() (ss Source)
