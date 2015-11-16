@@ -23,6 +23,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/ossrs/go-oryx/agent"
 	"github.com/ossrs/go-oryx/core"
 	"os"
 	"os/signal"
@@ -30,7 +31,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"github.com/ossrs/go-oryx/agent"
 )
 
 // the state of server, state graph:
@@ -57,7 +57,7 @@ type Server struct {
 	// core components.
 	htbt   *Heartbeat
 	logger *simpleLogger
-	rtmp core.Agent
+	rtmp   core.Agent
 	// the locker for state, for instance, the closed.
 	lock sync.Mutex
 }
@@ -164,7 +164,7 @@ func (s *Server) Initialize() (err error) {
 	wc.GFork("htbt(discovery)", s.htbt.discoveryCycle)
 	wc.GFork("htbt(main)", s.htbt.beatCycle)
 	// rtmp agent.
-	if s.rtmp,err = agent.NewRtmpPublish(wc); err != nil {
+	if s.rtmp, err = agent.NewRtmpPublish(wc); err != nil {
 		core.Error.Println("create rtmp agent failed. err is", err)
 		return
 	}

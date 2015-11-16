@@ -22,9 +22,9 @@
 package agent
 
 import (
+	"fmt"
 	"github.com/ossrs/go-oryx/core"
 	"net"
-	"fmt"
 )
 
 // the rtmp publish agent,
@@ -38,24 +38,32 @@ func NewRtmpPublish(wc core.WorkerContainer) (agent core.Agent, err error) {
 	r := &RtmpPublish{}
 
 	ep := fmt.Sprintf(":%v", core.Conf.Listen)
-	if r.l,err = net.Listen("tcp", ep); err != nil {
+	if r.l, err = net.Listen("tcp", ep); err != nil {
 		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
 		return
 	}
 	core.Trace.Println("rtmp listen at", ep)
 
-	return r,nil
+	return r, nil
 }
 
 // interface core.Agent
-func (v *RtmpPublish) Source() core.Source {
+func (v *RtmpPublish) Open() (err error) {
+	return
+}
+
+func (v *RtmpPublish) Close() (err error) {
+	return
+}
+
+func (v *RtmpPublish) Source() (ss core.Source) {
 	return nil
 }
 
-func (v *RtmpPublish) Channel() chan *core.Message {
+func (v *RtmpPublish) Channel() (c chan *core.Message) {
 	return nil
 }
 
-func (v *RtmpPublish) Sink() core.Sink {
+func (v *RtmpPublish) Sink() (sk core.Sink) {
 	return nil
 }

@@ -48,10 +48,15 @@ type Sink interface {
 // write message to channel
 // finally delivery to downstream sink.
 type Agent interface {
+	// open the agent, for instance, do some cycle.
+	Open() (err error)
+	// close the agent, for instance, stop cycle.
+	Close() (err error)
+
 	// the source of agent.
-	Source() Source
+	Source() (ss Source)
 	// the channel of agent.
-	Channel() chan *Message
+	Channel() (c chan *Message)
 	// the sink of agent.
-	Sink() Sink
+	Sink() (sk Sink)
 }
