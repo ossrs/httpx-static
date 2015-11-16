@@ -71,6 +71,7 @@ func NewServer() *Server {
 		htbt:    NewHeartbeat(),
 		logger:  &simpleLogger{},
 	}
+	svr.rtmp = agent.NewRtmpPublish(svr)
 
 	core.Conf.Subscribe(svr)
 
@@ -105,6 +106,11 @@ func (s *Server) Close() {
 
 	// do cleanup when stopped.
 	core.Conf.Unsubscribe(s)
+
+	// close the rtmp agent.
+	if err := s.rtmp.Close(); err != nil {
+		core.Warn.Println("close rtmp agent failed. err is", err)
+	}
 
 	// ok, closed.
 	s.closed = StateClosed
@@ -163,9 +169,9 @@ func (s *Server) Initialize() (err error) {
 	// heartbeat goroutine
 	wc.GFork("htbt(discovery)", s.htbt.discoveryCycle)
 	wc.GFork("htbt(main)", s.htbt.beatCycle)
-	// rtmp agent.
-	if s.rtmp, err = agent.NewRtmpPublish(wc); err != nil {
-		core.Error.Println("create rtmp agent failed. err is", err)
+	// open rtmp agent.
+	if err = s.rtmp.Open(); err != nil {
+		core.Error.Println("open rtmp agent failed. err is", err)
 		return
 	}
 
@@ -259,17 +265,6 @@ func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
 	}()
 }
 
-// interface ReloadHandler
-func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
-	if scope == core.ReloadWorkers {
-		s.applyMultipleProcesses(cc.Workers)
-	} else if scope == core.ReloadLog {
-		s.applyLogger(cc)
-	}
-
-	return
-}
-
 func (s *Server) applyMultipleProcesses(workers int) {
 	if workers < 0 {
 		panic("should not be negative workers")
@@ -293,6 +288,17 @@ func (s *Server) applyLogger(c *core.Config) (err error) {
 		return
 	}
 	core.Info.Println("open logger ok")
+
+	return
+}
+
+// interface ReloadHandler
+func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+	if scope == core.ReloadWorkers {
+		s.applyMultipleProcesses(cc.Workers)
+	} else if scope == core.ReloadLog {
+		s.applyLogger(cc)
+	}
 
 	return
 }

@@ -34,6 +34,7 @@ import (
 const (
 	ReloadWorkers = iota
 	ReloadLog
+	ReloadListen
 )
 
 // the reload handler,
@@ -425,6 +426,17 @@ func (pc *Config) Reload(cc *Config) (err error) {
 		Trace.Println("reload apply log ok")
 	} else {
 		Info.Println("reload ignore log")
+	}
+
+	if cc.Listen != pc.Listen {
+		for _, h := range cc.reloadHandlers {
+			if err = h.OnReloadGlobal(ReloadListen, cc, pc); err != nil {
+				return
+			}
+		}
+		Trace.Println("reload apply listen ok")
+	} else {
+		Info.Println("reload ignore listen")
 	}
 
 	return

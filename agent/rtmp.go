@@ -31,29 +31,28 @@ import (
 // to listen at RTMP(tcp://1935) and recv data from RTMP publisher,
 // for example, the FMLE publisher.
 type RtmpPublish struct {
-	l net.Listener
+	wc core.WorkerContainer
+	l  net.Listener
 }
 
-func NewRtmpPublish(wc core.WorkerContainer) (agent core.Agent, err error) {
-	r := &RtmpPublish{}
-
-	ep := fmt.Sprintf(":%v", core.Conf.Listen)
-	if r.l, err = net.Listen("tcp", ep); err != nil {
-		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
-		return
+func NewRtmpPublish(wc core.WorkerContainer) (agent core.Agent) {
+	v := &RtmpPublish{
+		wc: wc,
 	}
-	core.Trace.Println("rtmp listen at", ep)
 
-	return r, nil
+	core.Conf.Subscribe(v)
+
+	return v
 }
 
 // interface core.Agent
 func (v *RtmpPublish) Open() (err error) {
-	return
+	return v.applyListen(core.Conf)
 }
 
 func (v *RtmpPublish) Close() (err error) {
-	return
+	core.Conf.Unsubscribe(v)
+	return v.close()
 }
 
 func (v *RtmpPublish) Source() (ss core.Source) {
@@ -66,4 +65,41 @@ func (v *RtmpPublish) Channel() (c chan *core.Message) {
 
 func (v *RtmpPublish) Sink() (sk core.Sink) {
 	return nil
+}
+
+func (v *RtmpPublish) close() (err error) {
+	if v.l == nil {
+		return
+	}
+
+	return v.l.Close()
+}
+
+func (v *RtmpPublish) applyListen(c *core.Config) (err error) {
+	ep := fmt.Sprintf(":%v", c.Listen)
+
+	if v.l, err = net.Listen("tcp", ep); err != nil {
+		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
+		return
+	}
+	core.Trace.Println("rtmp listen at", ep)
+
+	return
+}
+
+// interface ReloadHandler
+func (v *RtmpPublish) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+	if scope != core.ReloadListen {
+		return
+	}
+
+	if err = v.close(); err != nil {
+		return
+	}
+
+	if err = v.applyListen(cc); err != nil {
+		return
+	}
+
+	return
 }
