@@ -27,17 +27,17 @@ import (
 	"net"
 )
 
-// the rtmp publish agent,
-// to listen at RTMP(tcp://1935) and recv data from RTMP publisher,
-// for example, the FMLE publisher.
-type RtmpPublish struct {
+// the rtmp publish or play agent,
+// to listen at RTMP(tcp://1935) and recv data from RTMP publisher or player,
+// when identified the client type, redirect to the specified agent.
+type Rtmp struct {
 	endpoint string
 	wc       core.WorkerContainer
 	l        net.Listener
 }
 
-func NewRtmpPublish(wc core.WorkerContainer) (agent core.Agent) {
-	v := &RtmpPublish{
+func NewRtmp(wc core.WorkerContainer) (agent core.Agent) {
+	v := &Rtmp{
 		wc: wc,
 	}
 
@@ -47,28 +47,28 @@ func NewRtmpPublish(wc core.WorkerContainer) (agent core.Agent) {
 }
 
 // interface core.Agent
-func (v *RtmpPublish) Open() (err error) {
+func (v *Rtmp) Open() (err error) {
 	return v.applyListen(core.Conf)
 }
 
-func (v *RtmpPublish) Close() (err error) {
+func (v *Rtmp) Close() (err error) {
 	core.Conf.Unsubscribe(v)
 	return v.close()
 }
 
-func (v *RtmpPublish) Source() (ss core.Source) {
+func (v *Rtmp) Source() (ss core.Source) {
 	return nil
 }
 
-func (v *RtmpPublish) Channel() (c chan *core.Message) {
+func (v *Rtmp) Channel() (c chan *core.Message) {
 	return nil
 }
 
-func (v *RtmpPublish) Sink() (sk core.Sink) {
+func (v *Rtmp) Sink() (sk core.Sink) {
 	return nil
 }
 
-func (v *RtmpPublish) close() (err error) {
+func (v *Rtmp) close() (err error) {
 	if v.l == nil {
 		return
 	}
@@ -83,7 +83,7 @@ func (v *RtmpPublish) close() (err error) {
 	return
 }
 
-func (v *RtmpPublish) applyListen(c *core.Config) (err error) {
+func (v *Rtmp) applyListen(c *core.Config) (err error) {
 	v.endpoint = fmt.Sprintf(":%v", c.Listen)
 
 	ep := v.endpoint
@@ -120,7 +120,7 @@ func (v *RtmpPublish) applyListen(c *core.Config) (err error) {
 }
 
 // interface ReloadHandler
-func (v *RtmpPublish) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	if scope != core.ReloadListen {
 		return
 	}

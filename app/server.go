@@ -71,7 +71,7 @@ func NewServer() *Server {
 		htbt:    NewHeartbeat(),
 		logger:  &simpleLogger{},
 	}
-	svr.rtmp = agent.NewRtmpPublish(svr)
+	svr.rtmp = agent.NewRtmp(svr)
 
 	core.Conf.Subscribe(svr)
 
