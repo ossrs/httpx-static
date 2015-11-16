@@ -72,14 +72,17 @@ func serve(svr *app.Server) int {
 func main() {
 	flag.Parse()
 
-	svr := app.NewServer()
-	defer svr.Close()
+	ret := func() int {
+		svr := app.NewServer()
+		defer svr.Close()
 
-	if err := svr.ParseConfig(*confFile); err != nil {
-		core.Error.Println("parse config from", *confFile, "failed, err is", err)
-		os.Exit(-1)
-	}
+		if err := svr.ParseConfig(*confFile); err != nil {
+			core.Error.Println("parse config from", *confFile, "failed, err is", err)
+			return -1
+		}
 
-	ret := run(svr)
+		return run(svr)
+	}()
+
 	os.Exit(ret)
 }

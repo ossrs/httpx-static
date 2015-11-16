@@ -84,9 +84,14 @@ func (s *Server) Close() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
+	// only create?
+	if s.closed == StateInit {
+		return
+	}
+
 	// closed?
 	if s.closed == StateClosed {
-		core.Info.Println("server already closed.")
+		core.Warn.Println("server already closed.")
 		return
 	}
 
@@ -114,7 +119,7 @@ func (s *Server) Close() {
 
 	// ok, closed.
 	s.closed = StateClosed
-	core.Info.Println("server closed")
+	core.Trace.Println("server closed")
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
@@ -124,7 +129,6 @@ func (s *Server) ParseConfig(conf string) (err error) {
 	if s.closed != StateInit {
 		panic("server invalid state.")
 	}
-	s.closed = StateReady
 
 	core.Trace.Println("start to parse config file", conf)
 	if err = core.Conf.Loads(conf); err != nil {
@@ -138,7 +142,7 @@ func (s *Server) PrepareLogger() (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.closed != StateReady {
+	if s.closed != StateInit {
 		panic("server invalid state.")
 	}
 
@@ -153,7 +157,7 @@ func (s *Server) Initialize() (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.closed != StateReady {
+	if s.closed != StateInit {
 		panic("server invalid state.")
 	}
 
@@ -183,6 +187,9 @@ func (s *Server) Initialize() (err error) {
 	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v, daemon=%v",
 		c.Conf(), l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Daemon))
 
+	// set to ready, requires cleanup.
+	s.closed = StateReady
+
 	return
 }
 
@@ -205,7 +212,7 @@ func (s *Server) Run() (err error) {
 		}
 	}()
 
-	core.Info.Println("server running")
+	core.Info.Println("server cycle running")
 
 	// run server, apply settings.
 	s.applyMultipleProcesses(core.Conf.Workers)
@@ -225,7 +232,7 @@ func (s *Server) Run() (err error) {
 
 			// wait for all goroutines quit.
 			s.wg.Wait()
-			core.Warn.Println("server quit")
+			core.Warn.Println("server cycle ok")
 			return
 		case <-time.After(time.Second * time.Duration(core.Conf.Go.GcInterval)):
 			runtime.GC()
@@ -261,7 +268,10 @@ func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
 		}()
 
 		f(s)
-		core.Trace.Println(name, "worker terminated.")
+
+		if name != "" {
+			core.Trace.Println(name, "worker terminated.")
+		}
 	}()
 }
 
