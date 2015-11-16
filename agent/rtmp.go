@@ -125,6 +125,13 @@ func (v *Rtmp) identify(c net.Conn) (err error) {
 		core.Error.Println("rtmp handshake failed. err is", err)
 		return
 	}
+	core.Info.Println("rtmp handshake ok.")
+
+	var r *protocol.RtmpRequest
+	if r, err = sdk.ConnectApp(); err != nil {
+		core.Error.Println("rtmp connnect app failed. err is", err)
+	}
+	core.Info.Println("rtmp connect app ok, tcUrl is", r.TcUrl)
 
 	// TODO: FIXME: should set the TCP_NODELAY to false.
 	return

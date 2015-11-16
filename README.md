@@ -54,6 +54,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. Use agent(source+channel+sink) to build complex stream river.
 1. [dev] Supports Publish and Play VP6+Speex RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
+1. [dev] Supports Connection Oriented Traceable log.
 
 Winlin 2015.10
 

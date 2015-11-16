@@ -135,7 +135,7 @@ func (v *hsBytes) readC0C1(r io.Reader) (err error) {
 	}
 
 	v.c0c1Ok = true
-	core.Trace.Println("read c0c1 ok.")
+	core.Info.Println("read c0c1 ok.")
 	return
 }
 
@@ -151,7 +151,7 @@ func (v *hsBytes) readC2(r io.Reader) (err error) {
 	}
 
 	v.c2Ok = true
-	core.Trace.Println("read c2 ok.")
+	core.Info.Println("read c2 ok.")
 	return
 }
 
@@ -174,6 +174,12 @@ func (v *hsBytes) createS0S1S2(c1 []byte) {
 	// if c1 specified, copy c1 to s2.
 	// @see: https://github.com/ossrs/srs/issues/46
 	_ = copy(b[1537:], c1)
+}
+
+// rtmp request.
+type RtmpRequest struct {
+	// the tcUrl in RTMP connect app request.
+	TcUrl string
 }
 
 // rtmp protocol stack.
@@ -214,5 +220,12 @@ func (v *Rtmp) Handshake() (err error) {
 		return
 	}
 
+	return
+}
+
+func (v *Rtmp) ConnectApp() (r *RtmpRequest, err error) {
+	r = &RtmpRequest{}
+
+	// TODO: FIXME: implements it.
 	return
 }
