@@ -44,6 +44,11 @@ func NewHeartbeat() *Heartbeat {
 	}
 }
 
+const (
+	discoveryEmptyInterval   = 3 * time.Second
+	discoveryRefreshInterval = 3600 * time.Second
+)
+
 func (h *Heartbeat) discoveryCycle(w core.WorkerContainer) {
 	interval := time.Duration(0)
 	for {
@@ -58,11 +63,11 @@ func (h *Heartbeat) discoveryCycle(w core.WorkerContainer) {
 				core.Warn.Println("heartbeat discovery failed, err is", err)
 			} else {
 				if len(h.ips) <= 0 {
-					interval = 3 * time.Second
+					interval = discoveryEmptyInterval
 					continue
 				}
 				core.Trace.Println("local ip is", h.ips, "exported", h.exportIp)
-				interval = 300 * time.Second
+				interval = discoveryRefreshInterval
 			}
 		}
 	}
