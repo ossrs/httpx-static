@@ -177,3 +177,142 @@ func TestRtmpStack_readBasicHeader(t *testing.T) {
 	fn([]byte{0xC1, 0x0F, 0xFF}, 3, 0xff*256+0x0f+64)
 	fn([]byte{0xC1, 0xFF, 0xFF}, 3, 0xff*256+0xff+64)
 }
+
+func TestRtmpStack_readMessageHeader_extendedTimestamp(t *testing.T) {
+	c := NewRtmpChunk(2)
+	if b, err := NewRtmpStack(bytes.NewReader([]byte{
+		0xff, 0xff, 0xff,
+		0x00, 0x00, 0x0e,
+		0x0d,
+		0x00, 0x00, 0x00, 0x0c,
+		0x00, 0x00, 0x00, 0x0f,
+	}), nil).readMessageHeader(0, c); err != nil || b != nil {
+		t.Error("invalid message")
+	}
+	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
+		t.Error("invalid timestamp")
+	}
+
+	if b, err := NewRtmpStack(bytes.NewReader([]byte{
+		0x00, 0x00, 0x00, 0x0f,
+	}), nil).readMessageHeader(3, c); err != nil || b != nil {
+		t.Error("invalid message")
+	}
+	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
+		t.Error("invalid timestamp")
+	}
+
+	if b, err := NewRtmpStack(bytes.NewReader([]byte{
+		0x00, 0x00, 0x00, 0x0e,
+	}), nil).readMessageHeader(3, c); err != nil || len(b) != 4 {
+		t.Error("invalid message")
+	}
+	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
+		t.Error("invalid timestamp")
+	}
+
+	return
+}
+
+func TestRtmpStack_readMessageHeader(t *testing.T) {
+	fn := func(b []byte, fmt uint8, c *RtmpChunk, f func([]byte, *RtmpChunk)) {
+		r := NewRtmpStack(bytes.NewReader(b), nil)
+		if b, err := r.readMessageHeader(fmt, c); err != nil || b != nil {
+			t.Error("invalid message header")
+		} else {
+			if b != nil || c.fmt != fmt {
+				t.Error("invalid chunk")
+			}
+
+			f(b, c)
+		}
+	}
+
+	// fmt is 0
+	f0 := NewRtmpChunk(2)
+	fn([]byte{
+		0x00, 0x00, 0x0f,
+		0x00, 0x00, 0x0e,
+		0x0d,
+		0x00, 0x00, 0x00, 0x0c,
+	}, 0, f0, func(b []byte, c *RtmpChunk) {
+		if c.payloadLength != 0x0e || c.messageType != 0x0d || c.streamId != 0x0c {
+			t.Error("invalid message")
+		}
+		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
+			t.Error("invalid timestamp")
+		}
+	})
+
+	// fmt is 1
+	f1 := NewRtmpChunk(2)
+	fn([]byte{
+		0x00, 0x00, 0x0f,
+		0x00, 0x00, 0x0e,
+		0x0d,
+	}, 1, f1, func(b []byte, c *RtmpChunk) {
+		if c.payloadLength != 0x0e || c.messageType != 0x0d {
+			t.Error("invalid message")
+		}
+		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
+			t.Error("invalid timestamp")
+		}
+	})
+
+	// fmt is 2
+	f2 := NewRtmpChunk(2)
+	fn([]byte{
+		0x00, 0x00, 0x0f,
+	}, 1, f2, func(b []byte, c *RtmpChunk) {
+		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
+			t.Error("invalid timestamp")
+		}
+	})
+
+	// fmt0 => fmt1
+	fn([]byte{
+		0x00, 0x00, 0x03,
+		0x00, 0x00, 0x0f,
+		0x0e,
+	}, 1, f0, func(b []byte, c *RtmpChunk) {
+		if c.streamId != 0x0c {
+			t.Error("invalid message")
+		}
+		if c.payloadLength != 0x0f || c.messageType != 0x0e {
+			t.Error("invalid message")
+		}
+		if c.timestamp != 0x0f+0x03 || c.timestampDelta != 0x03 {
+			t.Error("invalid timestamp")
+		}
+	})
+
+	// fmt0=>fmt1=>fmt2
+	fn([]byte{
+		0x00, 0x00, 0x05,
+	}, 1, f0, func(b []byte, c *RtmpChunk) {
+		if c.streamId != 0x0c {
+			t.Error("invalid message")
+		}
+		if c.payloadLength != 0x0f || c.messageType != 0x0e {
+			t.Error("invalid message")
+		}
+		if c.timestamp != 0x0f+0x03+0x05 || c.timestampDelta != 0x05 {
+			t.Error("invalid timestamp")
+		}
+	})
+
+	// fmt0=>fmt1=>fmt2=>fm3
+	fn([]byte{}, 1, f0, func(b []byte, c *RtmpChunk) {
+		if c.streamId != 0x0c {
+			t.Error("invalid message")
+		}
+		if c.payloadLength != 0x0f || c.messageType != 0x0e {
+			t.Error("invalid message")
+		}
+		if c.timestamp != 0x0f+0x03+0x05+0x05 || c.timestampDelta != 0x05 {
+			t.Error("invalid timestamp")
+		}
+	})
+
+	return
+}

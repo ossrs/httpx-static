@@ -501,10 +501,55 @@ func (v *RtmpConnection) sender() (err error) {
 	return
 }
 
+// incoming chunk stream maybe interlaced,
+// use the chunk stream to cache the input RTMP chunk streams.
+type RtmpChunk struct {
+	// the fmt of basic header.
+	fmt uint8
+	// the cid of basic header.
+	cid uint32
+	// the calculated timestamp.
+	timestamp uint64
+	// whether this chunk stream has extended timestamp.
+	hasExtendedTimestamp bool
+	// the partial message which not completed.
+	partialMessage *RtmpMessage
+	// whether this chunk stream is fresh.
+	isFresh bool
+
+	// 4.1. Message Header
+	// 3bytes.
+	// Three-byte field that contains a timestamp delta of the message.
+	// @remark, only used for decoding message from chunk stream.
+	timestampDelta uint32
+	// 3bytes.
+	// Three-byte field that represents the size of the payload in bytes.
+	// It is set in big-endian format.
+	payloadLength uint32
+	// 1byte.
+	// One byte field to represent the message type. A range of type IDs
+	// (1-7) are reserved for protocol control messages.
+	messageType uint8
+	// 4bytes.
+	// Four-byte field that identifies the stream of the message. These
+	// bytes are set in little-endian format.
+	streamId uint32
+}
+
+func NewRtmpChunk(cid uint32) *RtmpChunk {
+	return &RtmpChunk{
+		cid:     cid,
+		isFresh: true,
+	}
+}
+
 // RTMP protocol stack.
 type RtmpStack struct {
 	in  io.Reader
 	out io.Writer
+	// the chunks for RTMP,
+	// key is the cid from basic header.
+	chunks map[uint32]*RtmpChunk
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
@@ -515,15 +560,31 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 }
 
 func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
-	var fmt uint8
-	var cid uint32
-	if fmt, cid, err = v.readBasicHeader(); err != nil {
-		core.Warn.Println("read basic header failed. err is", err)
-		return
-	}
+	for m == nil {
+		// chunk stream basic header.
+		var fmt uint8
+		var cid uint32
+		if fmt, cid, err = v.readBasicHeader(); err != nil {
+			core.Warn.Println("read basic header failed. err is", err)
+			return
+		}
 
-	panic(fmt)
-	panic(cid)
+		var chunk *RtmpChunk
+		if c, ok := v.chunks[cid]; !ok {
+			chunk = NewRtmpChunk(cid)
+			v.chunks[cid] = chunk
+		} else {
+			chunk = c
+		}
+
+		// chunk stream message header
+		var b []byte
+		if b, err = v.readMessageHeader(fmt, chunk); err != nil {
+			return
+		}
+
+		panic(b)
+	}
 
 	return
 }
@@ -542,6 +603,16 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 //   fmt=1, 0x4X
 //   fmt=2, 0x8X
 //   fmt=3, 0xCX
+// @remark we return the b which indicates the body read in this process,
+// 		for the c3 header, we try to read more bytes which maybe header
+// 		or the body.
+func (v *RtmpStack) readMessageHeader(fmt uint8, chunk *RtmpChunk) (b []byte, err error) {
+	// TODO: FIMXE: implements it.
+
+	// update chunk information.
+	chunk.fmt = fmt
+	return
+}
 
 // 6.1.1. Chunk Basic Header
 // The Chunk Basic Header encodes the chunk stream ID and the chunk
