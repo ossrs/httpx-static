@@ -43,6 +43,10 @@ func NewBytesWriter(b []byte) io.Writer {
 }
 
 func (v *bytesWriter) Write(p []byte) (n int, err error) {
+	if p == nil || len(p) == 0 {
+		return
+	}
+
 	// check left space.
 	left := len(v.b) - v.pos
 	if left < len(p) {
@@ -119,8 +123,12 @@ func (v *hsBytes) S0S1S2() []byte {
 	return v.s0s1s2[:]
 }
 
-func (v *hsBytes) Plaintext() bool {
-	return v.c0c1c2[0] == 0x03
+func (v *hsBytes) ClientPlaintext() bool {
+	return v.C0()[0] == 0x03
+}
+
+func (v *hsBytes) ServerPlaintext() bool {
+	return v.S0()[0] == 0x03
 }
 
 func (v *hsBytes) readC0C1(r io.Reader) (err error) {
@@ -155,25 +163,39 @@ func (v *hsBytes) readC2(r io.Reader) (err error) {
 	return
 }
 
-func (v *hsBytes) createS0S1S2(c1 []byte) {
+func (v *hsBytes) s1Time1() []byte {
+	return v.S1()[0:4]
+}
+
+func (v *hsBytes) s1Time2() []byte {
+	return v.S1()[4:8]
+}
+
+func (v *hsBytes) c1Time() []byte {
+	return v.C1()[0:4]
+}
+
+func (v *hsBytes) createS0S1S2() {
 	if v.s0s1s2Ok {
 		return
 	}
 
-	b := v.S0S1S2()
-	core.RandomFill(b)
+	core.RandomFill(v.S0S1S2())
 
-	b[0] = 0x03
-	binary.BigEndian.PutUint32(b[1:5], uint32(time.Now().Unix()))
+	// s0
+	v.S0()[0] = 0x03
+
+	// s1 time1
+	binary.BigEndian.PutUint32(v.s1Time1(), uint32(time.Now().Unix()))
 
 	// s1 time2 copy from c1
 	if v.c0c1Ok {
-		_ = copy(b[5:9], c1[0:4])
+		_ = copy(v.s1Time2(), v.c1Time())
 	}
 
 	// if c1 specified, copy c1 to s2.
 	// @see: https://github.com/ossrs/srs/issues/46
-	_ = copy(b[1537:], c1)
+	_ = copy(v.S2(), v.C1())
 }
 
 // rtmp request.
@@ -202,12 +224,12 @@ func (v *Rtmp) Handshake() (err error) {
 	}
 
 	// plain text required.
-	if !v.handshake.Plaintext() {
+	if !v.handshake.ClientPlaintext() {
 		return fmt.Errorf("only support rtmp plain text.")
 	}
 
 	// create s0s1s2 from c1.
-	v.handshake.createS0S1S2(v.handshake.C1())
+	v.handshake.createS0S1S2()
 
 	// write s0s1s2 to client.
 	r := bytes.NewReader(v.handshake.S0S1S2())
