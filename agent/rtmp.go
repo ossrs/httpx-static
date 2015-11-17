@@ -97,16 +97,20 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 			// conn when identify it, that is, there must
 			// never open any resource which need to cleanup,
 			// and goroutine will quit when server stop.
-			go func(c net.Conn) {
-				conn, err := v.identify(c)
-				defer conn.Close()
+			go core.Recover("", func() error {
+				return func(c net.Conn) (err error) {
+					conn, err := v.identify(c)
+					defer conn.Close()
 
-				if err != nil {
-					core.Warn.Println("ignore error when identify rtmp. err is", err)
+					if err != nil {
+						core.Warn.Println("ignore error when identify rtmp. err is", err)
+						return
+					}
+					core.Info.Println("rtmp identify ok.")
+
 					return
-				}
-				core.Info.Println("rtmp identify ok.")
-			}(c)
+				}(c)
+			})
 		}
 	})
 

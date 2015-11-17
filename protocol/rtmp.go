@@ -303,20 +303,21 @@ func NewRtmpConnection(transport io.ReadWriteCloser) *RtmpConnection {
 	// start the receiver and sender.
 	// directly use raw goroutine, for donot cause the container to quit.
 	v.quit.Add(2)
-	go core.Recover(v.receiver)
-	go core.Recover(v.sender)
+	go core.Recover("rtmp receiver", v.receiver)
+	go core.Recover("rtmp sender", v.sender)
 
 	return v
 }
 
 // close the connection to client.
-func (v *RtmpConnection) Close() (err error) {
+// TODO: FIXME: should be thread safe.
+func (v *RtmpConnection) Close() {
 	if v.transport == nil {
 		return
 	}
 
-	if err = v.transport.Close(); err != nil {
-		return
+	if err := v.transport.Close(); err != nil {
+		core.Warn.Println("ignore transport close err", err)
 	}
 	v.transport = nil
 
