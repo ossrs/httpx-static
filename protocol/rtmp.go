@@ -453,25 +453,23 @@ func (v *RtmpConnection) receiver() (err error) {
 
 	// message loop.
 	for !v.closed {
-		fn := func() (m *RtmpMessage, err error) {
-			v.lock.Lock()
-			defer v.lock.Unlock()
-
-			if v.closed {
-				core.Warn.Println("receiver break for closed.")
-				return
-			}
-
-			if m, err = v.stack.ReadMessage(); err != nil {
-				return
-			}
-
+		// got a message or error.
+		var m *RtmpMessage
+		if m, err = v.stack.ReadMessage(); err != nil {
 			return
 		}
 
-		var m *RtmpMessage
-		if m, err = fn(); err != nil {
-			return
+		// check state.
+		var closed bool
+		func() {
+			v.lock.Lock()
+			defer v.lock.Unlock()
+
+			closed = v.closed
+		}()
+
+		if closed {
+			break
 		}
 
 		// cache the message.
