@@ -93,23 +93,26 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 				return
 			}
 
-			// we directly start goroutine for the
-			// conn when identify it, that is, there must
-			// never open any resource which need to cleanup,
-			// and goroutine will quit when server stop.
-			go core.Recover("", func() error {
-				return func(c net.Conn) (err error) {
-					conn, err := v.identify(c)
-					defer conn.Close()
-
-					if err != nil {
-						core.Warn.Println("ignore error when identify rtmp. err is", err)
-						return
+			// use gfork to serve the connection.
+			v.wc.GFork("", func(wc core.WorkerContainer) {
+				defer func() {
+					if r := recover(); r != nil {
+						if r, ok := r.(error); ok && r == core.Quit {
+							// ignore.
+						} else {
+							core.Warn.Println("rtmp ignore", r)
+						}
 					}
-					core.Info.Println("rtmp identify ok.")
+				}()
 
+				conn, err := v.identify(c)
+				defer conn.Close()
+
+				if err != nil && err != core.Quit {
+					core.Warn.Println("ignore error when identify rtmp. err is", err)
 					return
-				}(c)
+				}
+				core.Info.Println("rtmp identify ok.")
 			})
 		}
 	})
@@ -125,7 +128,7 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 }
 
 func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
-	conn = protocol.NewRtmpConnection(c)
+	conn = protocol.NewRtmpConnection(c, v.wc)
 
 	core.Trace.Println("rtmp accept", c.RemoteAddr())
 

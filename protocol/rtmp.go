@@ -277,6 +277,8 @@ func NewRtmpMessage() *RtmpMessage {
 
 // rtmp protocol stack.
 type RtmpConnection struct {
+	// to receive the quit message from server.
+	wc core.WorkerContainer
 	// the handshake bytes for RTMP.
 	handshake *hsBytes
 	// the underlayer transport.
@@ -291,8 +293,9 @@ type RtmpConnection struct {
 	quit sync.WaitGroup
 }
 
-func NewRtmpConnection(transport io.ReadWriteCloser) *RtmpConnection {
+func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
+		wc:        wc,
 		handshake: NewHsBytes(),
 		transport: transport,
 		stack:     NewRtmpStack(transport),
@@ -330,8 +333,13 @@ func (v *RtmpConnection) Close() {
 
 func (v *RtmpConnection) Handshake() (err error) {
 	// read c0c2
-	if err = v.handshake.readC0C1(v.transport); err != nil {
-		return
+	select {
+	case <-v.handshake.in:
+		// ok.
+	case <-time.After(1600 * time.Millisecond):
+		return fmt.Errorf("handshake timeout")
+	case <-v.wc.QC():
+		return v.wc.Quit()
 	}
 
 	// plain text required.

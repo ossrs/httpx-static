@@ -248,11 +248,13 @@ func (s *Server) QC() <-chan bool {
 	return s.quit
 }
 
-func (s *Server) Quit() {
+func (s *Server) Quit() error {
 	select {
 	case s.quit <- true:
 	default:
 	}
+
+	return core.Quit
 }
 
 func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
@@ -262,7 +264,11 @@ func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
 
 		defer func() {
 			if r := recover(); r != nil {
-				core.Error.Println(name, "worker panic:", r)
+				if r, ok := r.(error); ok && r == core.Quit {
+					// ignore.
+				} else {
+					core.Error.Println(name, "worker panic:", r)
+				}
 				s.Quit()
 			}
 		}()
