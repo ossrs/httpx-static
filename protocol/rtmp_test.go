@@ -153,3 +153,27 @@ func TestHsBytes_createS0S1S2(t *testing.T) {
 		t.Error("invalid time")
 	}
 }
+
+func TestRtmpStack_readBasicHeader(t *testing.T) {
+	fn := func(b []byte, fmt uint8, cid uint32) {
+		r := NewRtmpStack(bytes.NewReader(b), nil)
+		if f, c, err := r.readBasicHeader(); err != nil || f != fmt || c != cid {
+			t.Error("invalid chunk,", b, "fmt", fmt, "!=", f, "and cid", cid, "!=", c)
+		}
+	}
+
+	fn([]byte{0x02}, 0, 2)
+	fn([]byte{0x42}, 1, 2)
+	fn([]byte{0x82}, 2, 2)
+	fn([]byte{0xC2}, 3, 2)
+
+	fn([]byte{0xC2}, 3, 2)
+	fn([]byte{0xCF}, 3, 0xf)
+	fn([]byte{0xFF}, 3, 63)
+	fn([]byte{0xC0, 0x00}, 3, 0+64)
+	fn([]byte{0xC0, 0x0F}, 3, 0x0f+64)
+	fn([]byte{0xC0, 0xFF}, 3, 0xff+64)
+	fn([]byte{0xC1, 0x00, 0x00}, 3, 0*256+0+64)
+	fn([]byte{0xC1, 0x0F, 0xFF}, 3, 0xff*256+0x0f+64)
+	fn([]byte{0xC1, 0xFF, 0xFF}, 3, 0xff*256+0xff+64)
+}

@@ -319,7 +319,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		wc:        wc,
 		handshake: NewHsBytes(),
 		transport: transport,
-		stack:     NewRtmpStack(transport),
+		stack:     NewRtmpStack(transport, transport),
 		in:        make(chan *RtmpMessage, 1),
 		out:       make(chan *RtmpMessage, 1),
 	}
@@ -472,8 +472,8 @@ func (v *RtmpConnection) receiver() (err error) {
 			break
 		}
 
-		// cache the message.
-		if m != nil {
+		// cache the message when got non empty one.
+		if m != nil && len(m.payload) > 0 {
 			v.in <- m
 		}
 	}
@@ -503,22 +503,45 @@ func (v *RtmpConnection) sender() (err error) {
 
 // RTMP protocol stack.
 type RtmpStack struct {
-	transport io.ReadWriter
+	in  io.Reader
+	out io.Writer
 }
 
-func NewRtmpStack(transport io.ReadWriter) *RtmpStack {
+func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	return &RtmpStack{
-		transport: transport,
+		in:  r,
+		out: w,
 	}
 }
 
 func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
+	var fmt uint8
+	var cid uint32
+	if fmt, cid, err = v.readBasicHeader(); err != nil {
+		core.Warn.Println("read basic header failed. err is", err)
+		return
+	}
+
+	panic(fmt)
+	panic(cid)
+
 	return
 }
 
 func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 	return
 }
+
+// parse the message header.
+//   3bytes: timestamp delta,    fmt=0,1,2
+//   3bytes: payload length,     fmt=0,1
+//   1bytes: message type,       fmt=0,1
+//   4bytes: stream id,          fmt=0
+// where:
+//   fmt=0, 0x0X
+//   fmt=1, 0x4X
+//   fmt=2, 0x8X
+//   fmt=3, 0xCX
 
 // 6.1.1. Chunk Basic Header
 // The Chunk Basic Header encodes the chunk stream ID and the chunk
@@ -562,6 +585,37 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 //
 // Chunk stream IDs with values 64-319 could be represented by both 2-
 // byte version and 3-byte version of this field.
-func (v *RtmpStack) readBasicHeader() (fmt, cid uint8, err error) {
+func (v *RtmpStack) readBasicHeader() (fmt uint8, cid uint32, err error) {
+	ch := make([]byte, 3)
+	if _, err = io.CopyN(NewBytesWriter(ch[:1]), v.in, 1); err != nil {
+		return
+	}
+
+	fmt = uint8(ch[0])
+	cid = uint32(fmt & 0x3f)
+	fmt = (fmt >> 6) & 0x03
+
+	// 2-63, 1B chunk header
+	if cid >= 2 {
+		return
+	}
+
+	// 64-319, 2B chunk header
+	if cid == 0 {
+		if _, err = io.CopyN(NewBytesWriter(ch[1:2]), v.in, 1); err != nil {
+			return
+		}
+
+		cid = uint32(ch[1]) + 64
+		return
+	}
+
+	// 64-65599, 3B chunk header
+	// cid is 1
+	if _, err = io.CopyN(NewBytesWriter(ch[1:]), v.in, 2); err != nil {
+		return
+	}
+	cid = uint32(ch[2])*256 + uint32(ch[1]) + 64
+
 	return
 }
