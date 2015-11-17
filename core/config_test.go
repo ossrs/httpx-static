@@ -36,7 +36,7 @@ func TestConfigBasic(t *testing.T) {
 		t.Error("workers failed.")
 	}
 
-	if c.Listen != core.RtmpListen {
+	if c.Listen != RtmpListen {
 		t.Error("listen failed.")
 	}
 

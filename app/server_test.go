@@ -22,13 +22,14 @@
 package app
 
 import (
+	"github.com/ossrs/go-oryx/core"
 	"time"
 )
 
 // the goroutine cycle ignore any error.
 func ExampleWorkerContainer_recoverable() {
-	var wc WorkerContainer
-	wc.GFork("myservice", func(wc WorkerContainer) {
+	var wc core.WorkerContainer
+	wc.GFork("myservice", func(wc core.WorkerContainer) {
 		for {
 			select {
 			case <-time.After(3 * time.Second):
@@ -50,8 +51,8 @@ func ExampleWorkerContainer_recoverable() {
 
 // the goroutine cycle absolutely safe, no panic no error to quit.
 func ExampleWorkerContainer_safe() {
-	var wc WorkerContainer
-	wc.GFork("myservice", func(wc WorkerContainer) {
+	var wc core.WorkerContainer
+	wc.GFork("myservice", func(wc core.WorkerContainer) {
 		defer func() {
 			if r := recover(); r != nil {
 				// log the r and ignore.
@@ -80,8 +81,8 @@ func ExampleWorkerContainer_safe() {
 
 // the goroutine cycle notify container to quit when error.
 func ExampleWorkerContainer_fatal() {
-	var wc WorkerContainer
-	wc.GFork("myservice", func(wc WorkerContainer) {
+	var wc core.WorkerContainer
+	wc.GFork("myservice", func(wc core.WorkerContainer) {
 		for {
 			select {
 			case <-time.After(3 * time.Second):
