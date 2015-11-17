@@ -96,19 +96,15 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 			// use gfork to serve the connection.
 			v.wc.GFork("", func(wc core.WorkerContainer) {
 				defer func() {
-					if r := recover(); r != nil {
-						if r, ok := r.(error); ok && r == core.Quit {
-							// ignore.
-						} else {
-							core.Warn.Println("rtmp ignore", r)
-						}
+					if r := recover(); !core.IsNormalQuit(r) {
+						core.Warn.Println("rtmp ignore", r)
 					}
 				}()
 
 				conn, err := v.identify(c)
 				defer conn.Close()
 
-				if err != nil && err != core.Quit {
+				if !core.IsNormalQuit(err) {
 					core.Warn.Println("ignore error when identify rtmp. err is", err)
 					return
 				}

@@ -264,10 +264,8 @@ func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
 
 		defer func() {
 			if r := recover(); r != nil {
-				if r, ok := r.(error); ok && r == core.Quit {
-					// ignore.
-				} else {
-					core.Error.Println(name, "worker panic:", r)
+				if !core.IsNormalQuit(r) {
+					core.Warn.Println("rtmp ignore", r)
 				}
 				s.Quit()
 			}

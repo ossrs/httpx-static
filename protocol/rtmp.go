@@ -144,6 +144,17 @@ func (v *hsBytes) ServerPlaintext() bool {
 	return v.S0()[0] == 0x03
 }
 
+func (v *hsBytes) inCacheC0C1() (err error) {
+	select {
+	case v.in <- v.C0C1():
+	default:
+		return core.Overflow
+	}
+
+	core.Info.Println("cache c0c1 ok.")
+	return
+}
+
 func (v *hsBytes) readC0C1(r io.Reader) (err error) {
 	if v.c0c1Ok {
 		return
@@ -155,13 +166,19 @@ func (v *hsBytes) readC0C1(r io.Reader) (err error) {
 		return
 	}
 
-	select {
-	case v.in <- v.C0C1():
-	default:
-	}
-
 	v.c0c1Ok = true
 	core.Info.Println("read c0c1 ok.")
+	return
+}
+
+func (v *hsBytes) outCacheS0S1S2() (err error) {
+	select {
+	case v.out <- v.S0S1S2():
+	default:
+		return core.Overflow
+	}
+
+	core.Info.Println("cache s0s1s2 ok.")
 	return
 }
 
@@ -171,12 +188,18 @@ func (v *hsBytes) writeS0S1S2(w io.Writer) (err error) {
 		return
 	}
 
+	core.Info.Println("write s0s1s2 ok.")
+	return
+}
+
+func (v *hsBytes) inCacheC2() (err error) {
 	select {
-	case v.out <- v.S0S1S2():
+	case v.in <- v.C2():
 	default:
+		return core.Overflow
 	}
 
-	core.Info.Println("write s0s1s2 ok.")
+	core.Info.Println("cache c2 ok.")
 	return
 }
 
@@ -189,11 +212,6 @@ func (v *hsBytes) readC2(r io.Reader) (err error) {
 	if _, err = io.CopyN(w, r, 1536); err != nil {
 		core.Error.Println("read c2 failed. err is", err)
 		return
-	}
-
-	select {
-	case v.in <- v.C2():
-	default:
 	}
 
 	v.c2Ok = true
@@ -319,10 +337,16 @@ func (v *RtmpConnection) Close() {
 		return
 	}
 
+	// close transport,
+	// to notify the wait goroutine to quit.
 	if err := v.transport.Close(); err != nil {
 		core.Warn.Println("ignore transport close err", err)
 	}
 	v.transport = nil
+
+	// close the out channel cache,
+	// to notify the wait goroutine to quit.
+	close(v.handshake.out)
 
 	// wait for sender and receiver to quit.
 	v.quit.Wait()
@@ -332,12 +356,15 @@ func (v *RtmpConnection) Close() {
 }
 
 func (v *RtmpConnection) Handshake() (err error) {
-	// read c0c2
+	// use short handshake timeout.
+	timeout := 2100 * time.Millisecond
+
+	// wait c0c1
 	select {
 	case <-v.handshake.in:
 		// ok.
-	case <-time.After(1600 * time.Millisecond):
-		return fmt.Errorf("handshake timeout")
+	case <-time.After(timeout):
+		return core.Timeout
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -350,14 +377,19 @@ func (v *RtmpConnection) Handshake() (err error) {
 	// create s0s1s2 from c1.
 	v.handshake.createS0S1S2()
 
-	// write s0s1s2 to client.
-	if err = v.handshake.writeS0S1S2(v.transport); err != nil {
+	// cache the s0s1s2 for sender to write.
+	if err = v.handshake.outCacheS0S1S2(); err != nil {
 		return
 	}
 
-	// read c2
-	if err = v.handshake.readC2(v.transport); err != nil {
-		return
+	// wait c2
+	select {
+	case <-v.handshake.in:
+		// ok.
+	case <-time.After(timeout):
+		return core.Timeout
+	case <-v.wc.QC():
+		return v.wc.Quit()
 	}
 
 	return
@@ -371,12 +403,25 @@ func (v *RtmpConnection) receiver() (err error) {
 		return
 	}
 
+	// read c2
+	if err = v.handshake.readC2(v.transport); err != nil {
+		return
+	}
+
+	// TODO: FIMXE: imeplements it.
 	return
 }
 
 func (v *RtmpConnection) sender() (err error) {
 	defer v.quit.Done()
 
+	// write s0s1s2 to client.
+	<-v.handshake.out
+	if err = v.handshake.writeS0S1S2(v.transport); err != nil {
+		return
+	}
+
+	// TODO: FIMXE: imeplements it.
 	return
 }
 

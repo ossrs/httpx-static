@@ -25,3 +25,17 @@ import "errors"
 
 // the quit error, used for goroutine to return.
 var Quit error = errors.New("system quit")
+
+// when channel overflow, for example, the c0c1 never overflow
+// when channel buffer size set to 2.
+var Overflow error = errors.New("system overflow")
+
+// when io timeout to wait.
+var Timeout error = errors.New("io timeout")
+
+// whether the object in recover can ignore,
+// for instance, the error is a Quit error.
+func IsNormalQuit(r interface{}) bool {
+	r, ok := r.(error)
+	return ok && r == Quit
+}
