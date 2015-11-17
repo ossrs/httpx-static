@@ -309,6 +309,9 @@ type RtmpConnection struct {
 	out chan *RtmpMessage
 	// whether receiver and sender already quit.
 	quit sync.WaitGroup
+	// whether closed.
+	closed bool
+	lock   sync.Mutex
 }
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
@@ -333,7 +336,10 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 // close the connection to client.
 // TODO: FIXME: should be thread safe.
 func (v *RtmpConnection) Close() {
-	if v.transport == nil {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	if v.closed {
 		return
 	}
 
@@ -342,11 +348,19 @@ func (v *RtmpConnection) Close() {
 	if err := v.transport.Close(); err != nil {
 		core.Warn.Println("ignore transport close err", err)
 	}
-	v.transport = nil
 
 	// close the out channel cache,
 	// to notify the wait goroutine to quit.
 	close(v.handshake.out)
+
+	// try to read one to unblock the in channel.
+	select {
+	case <-v.in:
+	default:
+	}
+
+	// close output to unblock the sender.
+	close(v.out)
 
 	// wait for sender and receiver to quit.
 	v.quit.Wait()
@@ -395,6 +409,27 @@ func (v *RtmpConnection) Handshake() (err error) {
 	return
 }
 
+func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
+	r = &RtmpRequest{}
+
+	// use longger connect timeout.
+	timeout := 5000 * time.Millisecond
+
+	// connect(tcUrl)
+	select {
+	case m := <-v.in:
+		// ok.
+		panic(m)
+	case <-time.After(timeout):
+		return nil, core.Timeout
+	case <-v.wc.QC():
+		return nil, v.wc.Quit()
+	}
+
+	// TODO: FIXME: implements it.
+	return
+}
+
 func (v *RtmpConnection) receiver() (err error) {
 	defer v.quit.Done()
 
@@ -403,12 +438,49 @@ func (v *RtmpConnection) receiver() (err error) {
 		return
 	}
 
+	if err = v.handshake.inCacheC0C1(); err != nil {
+		return
+	}
+
 	// read c2
 	if err = v.handshake.readC2(v.transport); err != nil {
 		return
 	}
 
-	// TODO: FIMXE: imeplements it.
+	if err = v.handshake.inCacheC2(); err != nil {
+		return
+	}
+
+	// message loop.
+	for !v.closed {
+		fn := func() (m *RtmpMessage, err error) {
+			v.lock.Lock()
+			defer v.lock.Unlock()
+
+			if v.closed {
+				core.Warn.Println("receiver break for closed.")
+				return
+			}
+
+			if m, err = v.stack.ReadMessage(); err != nil {
+				return
+			}
+
+			return
+		}
+
+		var m *RtmpMessage
+		if m, err = fn(); err != nil {
+			return
+		}
+
+		// cache the message.
+		if m != nil {
+			v.in <- m
+		}
+	}
+	core.Warn.Println("receiver ok.")
+
 	return
 }
 
@@ -421,20 +493,13 @@ func (v *RtmpConnection) sender() (err error) {
 		return
 	}
 
-	// TODO: FIMXE: imeplements it.
-	return
-}
-
-func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
-	r = &RtmpRequest{}
-
-	var m *RtmpMessage
-	if m, err = v.stack.ReadMessage(); err != nil {
-		return
+	// send out all messages in cache
+	for m := range v.out {
+		if err = v.stack.SendMessage(m); err != nil {
+			return
+		}
 	}
-	panic(m)
 
-	// TODO: FIXME: implements it.
 	return
 }
 
@@ -450,6 +515,10 @@ func NewRtmpStack(transport io.ReadWriter) *RtmpStack {
 }
 
 func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
+	return
+}
+
+func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 	return
 }
 
