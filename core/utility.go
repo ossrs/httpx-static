@@ -36,3 +36,16 @@ func RandomFill(b []byte) {
 		b[i] = byte(0x0f + (random.Int() % (256 - 0x0f - 0x0f)))
 	}
 }
+
+// invoke the f with recover.
+func Recover(f func() error) {
+	defer func() {
+		if r := recover(); r != nil {
+			Warn.Println("goroutine abort with", r)
+		}
+	}()
+
+	if err := f(); err != nil {
+		Warn.Println("goroutine terminated with err", err)
+	}
+}

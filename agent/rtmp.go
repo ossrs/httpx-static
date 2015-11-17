@@ -98,7 +98,10 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 			// never open any resource which need to cleanup,
 			// and goroutine will quit when server stop.
 			go func(c net.Conn) {
-				if err := v.identify(c); err != nil {
+				conn, err := v.identify(c)
+				defer conn.Close()
+
+				if err != nil {
 					core.Warn.Println("ignore error when identify rtmp. err is", err)
 					return
 				}
@@ -117,18 +120,19 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 	return
 }
 
-func (v *Rtmp) identify(c net.Conn) (err error) {
+func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
+	conn = protocol.NewRtmpConnection(c)
+
 	core.Trace.Println("rtmp accept", c.RemoteAddr())
 
-	sdk := protocol.NewRtmp(c)
-	if err = sdk.Handshake(); err != nil {
+	if err = conn.Handshake(); err != nil {
 		core.Error.Println("rtmp handshake failed. err is", err)
 		return
 	}
 	core.Info.Println("rtmp handshake ok.")
 
 	var r *protocol.RtmpRequest
-	if r, err = sdk.ConnectApp(); err != nil {
+	if r, err = conn.ConnectApp(); err != nil {
 		core.Error.Println("rtmp connnect app failed. err is", err)
 	}
 	core.Info.Println("rtmp connect app ok, tcUrl is", r.TcUrl)

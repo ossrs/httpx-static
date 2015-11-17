@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
 	"io"
+	"sync"
 	"time"
 )
 
@@ -74,12 +75,24 @@ type hsBytes struct {
 	c0c1c2 []byte
 	// 1 + 1536 + 1536 = 3073
 	s0s1s2 []byte
+
+	// the input channel,
+	// when got message from peer, write to this channel.
+	// for example, c0c1 and c2 for server, or s0s1s2 for client.
+	in chan []byte
+	// the output channel,
+	// when need to send to peer, write to this channel.
+	// for example, c0c1 and c2 for client, or s0s1s2 for server.
+	out chan []byte
 }
 
 func NewHsBytes() *hsBytes {
 	return &hsBytes{
 		c0c1c2: make([]byte, 3073),
 		s0s1s2: make([]byte, 3073),
+		// use buffer size 2 for we atmost got 2 messages to in/out.
+		in:  make(chan []byte, 2),
+		out: make(chan []byte, 2),
 	}
 }
 
@@ -142,8 +155,28 @@ func (v *hsBytes) readC0C1(r io.Reader) (err error) {
 		return
 	}
 
+	select {
+	case v.in <- v.C0C1():
+	default:
+	}
+
 	v.c0c1Ok = true
 	core.Info.Println("read c0c1 ok.")
+	return
+}
+
+func (v *hsBytes) writeS0S1S2(w io.Writer) (err error) {
+	r := bytes.NewReader(v.S0S1S2())
+	if _, err = io.CopyN(w, r, 3073); err != nil {
+		return
+	}
+
+	select {
+	case v.out <- v.S0S1S2():
+	default:
+	}
+
+	core.Info.Println("write s0s1s2 ok.")
 	return
 }
 
@@ -156,6 +189,11 @@ func (v *hsBytes) readC2(r io.Reader) (err error) {
 	if _, err = io.CopyN(w, r, 1536); err != nil {
 		core.Error.Println("read c2 failed. err is", err)
 		return
+	}
+
+	select {
+	case v.in <- v.C2():
+	default:
 	}
 
 	v.c2Ok = true
@@ -204,20 +242,92 @@ type RtmpRequest struct {
 	TcUrl string
 }
 
-// rtmp protocol stack.
-type Rtmp struct {
-	handshake *hsBytes
-	transport io.ReadWriter
+// Rtmp message,
+// which decode from RTMP chunked stream with raw body.
+type RtmpMessage struct {
+	// Four-byte field that contains a timestamp of the message.
+	// The 4 bytes are packed in the big-endian order.
+	// @remark, used as calc timestamp when decode and encode time.
+	// @remark, we use 64bits for large time for jitter detect and hls.
+	timestamp uint64
+	// 4bytes.
+	// Four-byte field that identifies the stream of the message. These
+	// bytes are set in little-endian format.
+	streamId uint32
+	// 1byte.
+	// One byte field to represent the message type. A range of type IDs
+	// (1-7) are reserved for protocol control messages.
+	messageType uint8
+	// get the perfered cid(chunk stream id) which sendout over.
+	// set at decoding, and canbe used for directly send message,
+	// for example, dispatch to all connections.
+	preferCid uint32
+	// the payload of message, the SrsCommonMessage never know about the detail of payload,
+	// user must use SrsProtocol.decode_message to get concrete packet.
+	// @remark, not all message payload can be decoded to packet. for example,
+	//       video/audio packet use raw bytes, no video/audio packet.
+	payload []byte
 }
 
-func NewRtmp(transport io.ReadWriter) *Rtmp {
-	return &Rtmp{
-		handshake: NewHsBytes(),
-		transport: transport,
+func NewRtmpMessage() *RtmpMessage {
+	return &RtmpMessage{
+		payload: make([]byte, 0),
 	}
 }
 
-func (v *Rtmp) Handshake() (err error) {
+// rtmp protocol stack.
+type RtmpConnection struct {
+	// the handshake bytes for RTMP.
+	handshake *hsBytes
+	// the underlayer transport.
+	transport io.ReadWriteCloser
+	// the RTMP protocol stack.
+	stack *RtmpStack
+	// input channel, receive message from client.
+	in chan *RtmpMessage
+	// output channel, to send to client.
+	out chan *RtmpMessage
+	// whether receiver and sender already quit.
+	quit sync.WaitGroup
+}
+
+func NewRtmpConnection(transport io.ReadWriteCloser) *RtmpConnection {
+	v := &RtmpConnection{
+		handshake: NewHsBytes(),
+		transport: transport,
+		stack:     NewRtmpStack(transport),
+		in:        make(chan *RtmpMessage, 1),
+		out:       make(chan *RtmpMessage, 1),
+	}
+
+	// start the receiver and sender.
+	// directly use raw goroutine, for donot cause the container to quit.
+	v.quit.Add(2)
+	go core.Recover(v.receiver)
+	go core.Recover(v.sender)
+
+	return v
+}
+
+// close the connection to client.
+func (v *RtmpConnection) Close() (err error) {
+	if v.transport == nil {
+		return
+	}
+
+	if err = v.transport.Close(); err != nil {
+		return
+	}
+	v.transport = nil
+
+	// wait for sender and receiver to quit.
+	v.quit.Wait()
+	core.Warn.Println("rtmp receiver and sender quit.")
+
+	return
+}
+
+func (v *RtmpConnection) Handshake() (err error) {
 	// read c0c2
 	if err = v.handshake.readC0C1(v.transport); err != nil {
 		return
@@ -232,8 +342,7 @@ func (v *Rtmp) Handshake() (err error) {
 	v.handshake.createS0S1S2()
 
 	// write s0s1s2 to client.
-	r := bytes.NewReader(v.handshake.S0S1S2())
-	if _, err = io.CopyN(v.transport, r, 3073); err != nil {
+	if err = v.handshake.writeS0S1S2(v.transport); err != nil {
 		return
 	}
 
@@ -245,9 +354,93 @@ func (v *Rtmp) Handshake() (err error) {
 	return
 }
 
-func (v *Rtmp) ConnectApp() (r *RtmpRequest, err error) {
+func (v *RtmpConnection) receiver() (err error) {
+	defer v.quit.Done()
+
+	// read c0c2
+	if err = v.handshake.readC0C1(v.transport); err != nil {
+		return
+	}
+
+	return
+}
+
+func (v *RtmpConnection) sender() (err error) {
+	defer v.quit.Done()
+
+	return
+}
+
+func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 	r = &RtmpRequest{}
 
+	var m *RtmpMessage
+	if m, err = v.stack.ReadMessage(); err != nil {
+		return
+	}
+	panic(m)
+
 	// TODO: FIXME: implements it.
+	return
+}
+
+// RTMP protocol stack.
+type RtmpStack struct {
+	transport io.ReadWriter
+}
+
+func NewRtmpStack(transport io.ReadWriter) *RtmpStack {
+	return &RtmpStack{
+		transport: transport,
+	}
+}
+
+func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
+	return
+}
+
+// 6.1.1. Chunk Basic Header
+// The Chunk Basic Header encodes the chunk stream ID and the chunk
+// type(represented by fmt field in the figure below). Chunk type
+// determines the format of the encoded message header. Chunk Basic
+// Header field may be 1, 2, or 3 bytes, depending on the chunk stream
+// ID.
+//
+// The bits 0-5 (least significant) in the chunk basic header represent
+// the chunk stream ID.
+//
+// Chunk stream IDs 2-63 can be encoded in the 1-byte version of this
+// field.
+//    0 1 2 3 4 5 6 7
+//   +-+-+-+-+-+-+-+-+
+//   |fmt|   cs id   |
+//   +-+-+-+-+-+-+-+-+
+//   Figure 6 Chunk basic header 1
+//
+// Chunk stream IDs 64-319 can be encoded in the 2-byte version of this
+// field. ID is computed as (the second byte + 64).
+//   0                   1
+//   0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |fmt|    0      | cs id - 64    |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   Figure 7 Chunk basic header 2
+//
+// Chunk stream IDs 64-65599 can be encoded in the 3-byte version of
+// this field. ID is computed as ((the third byte)*256 + the second byte
+// + 64).
+//    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   |fmt|     1     |         cs id - 64            |
+//   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+//   Figure 8 Chunk basic header 3
+//
+// cs id: 6 bits
+// fmt: 2 bits
+// cs id - 64: 8 or 16 bits
+//
+// Chunk stream IDs with values 64-319 could be represented by both 2-
+// byte version and 3-byte version of this field.
+func (v *RtmpStack) readBasicHeader() (fmt, cid uint8, err error) {
 	return
 }
