@@ -25,3 +25,6 @@ import "errors"
 
 // when read RTMP chunk error.
 var RtmpChunkError = errors.New("rtmp chunk error")
+
+// when got RTMP msg invalid payload.
+var RtmpPayloadError = errors.New("rtmp msg payload error")

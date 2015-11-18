@@ -64,6 +64,43 @@ func (v *bytesWriter) Write(p []byte) (n int, err error) {
 	return
 }
 
+// mix []byte and io.Reader
+type mixReader struct {
+	b io.Reader
+	r io.Reader
+}
+
+func NewMixReader(b []byte, r io.Reader) io.Reader {
+	return &mixReader{
+		b: bytes.NewReader(b),
+		r: r,
+	}
+}
+
+func (v *mixReader) Read(p []byte) (n int, err error) {
+	for {
+		if v.b != nil {
+			n, err = v.b.Read(p)
+			if err == io.EOF {
+				v.b = nil
+				continue
+			}
+			return
+		}
+
+		if v.r != nil {
+			n, err = v.r.Read(p)
+			if err == io.EOF {
+				v.r = nil
+				continue
+			}
+			return
+		}
+
+		return 0, io.EOF
+	}
+}
+
 // bytes for handshake.
 type hsBytes struct {
 	// whether the
@@ -289,7 +326,7 @@ type RtmpMessage struct {
 
 func NewRtmpMessage() *RtmpMessage {
 	return &RtmpMessage{
-		payload: make([]byte, 0),
+		payload: nil,
 	}
 }
 
@@ -512,10 +549,13 @@ type RtmpChunk struct {
 	timestamp uint64
 	// whether this chunk stream has extended timestamp.
 	hasExtendedTimestamp bool
-	// the partial message which not completed.
-	partialMessage *RtmpMessage
 	// whether this chunk stream is fresh.
 	isFresh bool
+
+	// the partial message which not completed.
+	partialMessage *RtmpMessage
+	// the position for partition payload.
+	pos int
 
 	// 4.1. Message Header
 	// 3bytes.
@@ -687,6 +727,12 @@ const (
 // 0xffffff and the extended timestamp MUST be sent.
 const RtmpExtendedTimestamp = 0xFFFFFF
 
+// the default chunk size for system.
+const RtmpServerChunkSize = 60000
+
+// 6. Chunking, RTMP protocol default chunk size.
+const RtmpProtocolChunkSize = 128
+
 // RTMP protocol stack.
 type RtmpStack struct {
 	in  io.Reader
@@ -694,12 +740,15 @@ type RtmpStack struct {
 	// the chunks for RTMP,
 	// key is the cid from basic header.
 	chunks map[uint32]*RtmpChunk
+	// input chunk size, default to 128, set by peer packet.
+	inChunkSize uint32
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	return &RtmpStack{
-		in:  r,
-		out: w,
+		in:          r,
+		out:         w,
+		inChunkSize: RtmpProtocolChunkSize,
 	}
 }
 
@@ -727,7 +776,15 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 			return
 		}
 
-		panic(b)
+		// read msg payload from chunk stream.
+		if m, err = RtmpReadMessagePayload(v.inChunkSize, v.in, b, chunk); err != nil {
+			return
+		}
+
+		// not got an entire RTMP message, try next chunk.
+		if m != nil {
+			break
+		}
 	}
 
 	return
@@ -735,6 +792,52 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 
 func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 	return
+}
+
+// read the RTMP message from input reader and preloaded b.
+// return the completed message from chunk partial message..
+func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, b []byte, chunk *RtmpChunk) (m *RtmpMessage, err error) {
+	m = chunk.partialMessage
+	if m == nil {
+		panic("chunk message should never be nil")
+	}
+
+	// the p is the left payload to read.
+	p := m.payload[chunk.pos:]
+	r := NewMixReader(b, in)
+
+	if len(b) > len(p) {
+		core.Error.Println("empty payload should never preload body")
+		return nil, RtmpPayloadError
+	}
+
+	if len(m.payload) == 0 {
+		// empty message
+		chunk.partialMessage = nil
+		return nil, nil
+	}
+
+	// the chunk payload to read this time.
+	if int(chunkSize) < len(p) {
+		p = p[:chunkSize]
+	}
+	chunk.pos += len(p)
+
+	// read payload to buffer
+	if _, err = io.CopyN(NewBytesWriter(p), r, int64(len(p))); err != nil {
+		core.Error.Println("read body failed. err is", err)
+		return
+	}
+
+	// got entire RTMP message?
+	if chunk.pos == len(m.payload) {
+		chunk.pos = 0
+		chunk.partialMessage = nil
+		return
+	}
+
+	// partial message.
+	return nil, nil
 }
 
 // parse the message header.
@@ -980,6 +1083,9 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 	chunk.partialMessage.timestamp = chunk.timestamp
 	chunk.partialMessage.preferCid = chunk.cid
 	chunk.partialMessage.streamId = chunk.streamId
+	if chunk.partialMessage.payload == nil {
+		chunk.partialMessage.payload = make([]byte, chunk.payloadLength)
+	}
 
 	// update chunk information.
 	chunk.fmt = fmt
