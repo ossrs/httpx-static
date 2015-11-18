@@ -19,23 +19,21 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+package protocol
 
-import "errors"
+import (
+	"github.com/ossrs/go-oryx/core"
+	"io/ioutil"
+	"log"
+	"os"
+	"testing"
+)
 
-// the quit error, used for goroutine to return.
-var QuitError error = errors.New("system quit")
+func TestMain(m *testing.M) {
+	core.Info = log.New(ioutil.Discard, core.LogInfoLabel, log.LstdFlags)
+	core.Trace = log.New(ioutil.Discard, core.LogTraceLabel, log.LstdFlags)
+	core.Warn = log.New(ioutil.Discard, core.LogWarnLabel, log.LstdFlags)
+	core.Error = log.New(ioutil.Discard, core.LogErrorLabel, log.LstdFlags)
 
-// when channel overflow, for example, the c0c1 never overflow
-// when channel buffer size set to 2.
-var OverflowError error = errors.New("system overflow")
-
-// when io timeout to wait.
-var TimeoutError error = errors.New("io timeout")
-
-// whether the object in recover can ignore,
-// for instance, the error is a Quit error.
-func IsNormalQuit(r interface{}) bool {
-	r, ok := r.(error)
-	return ok && r == QuitError
+	os.Exit(m.Run())
 }

@@ -21,21 +21,18 @@
 
 package core
 
-import "errors"
+import (
+	"io/ioutil"
+	"log"
+	"os"
+	"testing"
+)
 
-// the quit error, used for goroutine to return.
-var QuitError error = errors.New("system quit")
+func TestMain(m *testing.M) {
+	Info = log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags)
+	Trace = log.New(ioutil.Discard, LogTraceLabel, log.LstdFlags)
+	Warn = log.New(ioutil.Discard, LogWarnLabel, log.LstdFlags)
+	Error = log.New(ioutil.Discard, LogErrorLabel, log.LstdFlags)
 
-// when channel overflow, for example, the c0c1 never overflow
-// when channel buffer size set to 2.
-var OverflowError error = errors.New("system overflow")
-
-// when io timeout to wait.
-var TimeoutError error = errors.New("io timeout")
-
-// whether the object in recover can ignore,
-// for instance, the error is a Quit error.
-func IsNormalQuit(r interface{}) bool {
-	r, ok := r.(error)
-	return ok && r == QuitError
+	os.Exit(m.Run())
 }

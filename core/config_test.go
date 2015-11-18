@@ -103,13 +103,14 @@ func ExampleConfig_Loads() {
 }
 
 func TestConfigReader(t *testing.T) {
-	f := func(vs []string, eh func(string, string, string)) {
+	f := func(vs []string, eh func(string, string, string), ef func(error)) {
 		for i := 0; i < len(vs)-1; i += 2 {
 			o := vs[i]
 			e := vs[i+1]
 
 			if b, err := ioutil.ReadAll(NewReader(strings.NewReader(o))); err != nil {
 				t.Error("read", o, "failed, err is", err)
+				ef(err)
 			} else {
 				eh(o, e, string(b))
 			}
@@ -128,6 +129,8 @@ func TestConfigReader(t *testing.T) {
 		if e != o {
 			t.Error("for", v, "expect", len(e), "size", e, "but got", len(o), "size", o)
 		}
+	}, func(err error) {
+		t.Error(err)
 	})
 }
 

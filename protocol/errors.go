@@ -19,23 +19,9 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+package protocol
 
 import "errors"
 
-// the quit error, used for goroutine to return.
-var QuitError error = errors.New("system quit")
-
-// when channel overflow, for example, the c0c1 never overflow
-// when channel buffer size set to 2.
-var OverflowError error = errors.New("system overflow")
-
-// when io timeout to wait.
-var TimeoutError error = errors.New("io timeout")
-
-// whether the object in recover can ignore,
-// for instance, the error is a Quit error.
-func IsNormalQuit(r interface{}) bool {
-	r, ok := r.(error)
-	return ok && r == QuitError
-}
+// when read RTMP chunk error.
+var RtmpChunkError = errors.New("rtmp chunk error")

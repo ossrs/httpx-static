@@ -154,57 +154,58 @@ func TestHsBytes_createS0S1S2(t *testing.T) {
 	}
 }
 
-func TestRtmpStack_readBasicHeader(t *testing.T) {
-	fn := func(b []byte, fmt uint8, cid uint32) {
-		r := NewRtmpStack(bytes.NewReader(b), nil)
-		if f, c, err := r.readBasicHeader(); err != nil || f != fmt || c != cid {
+func TestRtmpStack_rtmpReadBasicHeader(t *testing.T) {
+	fn := func(b []byte, fmt uint8, cid uint32, ef func(error)) {
+		r := bytes.NewReader(b)
+		if f, c, err := rtmpReadBasicHeader(r); err != nil || f != fmt || c != cid {
 			t.Error("invalid chunk,", b, "fmt", fmt, "!=", f, "and cid", cid, "!=", c)
+			ef(err)
 		}
 	}
 
-	fn([]byte{0x02}, 0, 2)
-	fn([]byte{0x42}, 1, 2)
-	fn([]byte{0x82}, 2, 2)
-	fn([]byte{0xC2}, 3, 2)
+	fn([]byte{0x02}, 0, 2, func(err error) { t.Error(err) })
+	fn([]byte{0x42}, 1, 2, func(err error) { t.Error(err) })
+	fn([]byte{0x82}, 2, 2, func(err error) { t.Error(err) })
+	fn([]byte{0xC2}, 3, 2, func(err error) { t.Error(err) })
 
-	fn([]byte{0xC2}, 3, 2)
-	fn([]byte{0xCF}, 3, 0xf)
-	fn([]byte{0xFF}, 3, 63)
-	fn([]byte{0xC0, 0x00}, 3, 0+64)
-	fn([]byte{0xC0, 0x0F}, 3, 0x0f+64)
-	fn([]byte{0xC0, 0xFF}, 3, 0xff+64)
-	fn([]byte{0xC1, 0x00, 0x00}, 3, 0*256+0+64)
-	fn([]byte{0xC1, 0x0F, 0xFF}, 3, 0xff*256+0x0f+64)
-	fn([]byte{0xC1, 0xFF, 0xFF}, 3, 0xff*256+0xff+64)
+	fn([]byte{0xC2}, 3, 2, func(err error) { t.Error(err) })
+	fn([]byte{0xCF}, 3, 0xf, func(err error) { t.Error(err) })
+	fn([]byte{0xFF}, 3, 63, func(err error) { t.Error(err) })
+	fn([]byte{0xC0, 0x00}, 3, 0+64, func(err error) { t.Error(err) })
+	fn([]byte{0xC0, 0x0F}, 3, 0x0f+64, func(err error) { t.Error(err) })
+	fn([]byte{0xC0, 0xFF}, 3, 0xff+64, func(err error) { t.Error(err) })
+	fn([]byte{0xC1, 0x00, 0x00}, 3, 0*256+0+64, func(err error) { t.Error(err) })
+	fn([]byte{0xC1, 0x0F, 0xFF}, 3, 0xff*256+0x0f+64, func(err error) { t.Error(err) })
+	fn([]byte{0xC1, 0xFF, 0xFF}, 3, 0xff*256+0xff+64, func(err error) { t.Error(err) })
 }
 
-func TestRtmpStack_readMessageHeader_extendedTimestamp(t *testing.T) {
+func TestRtmpStack_rtmpReadMessageHeader_extendedTimestamp(t *testing.T) {
 	c := NewRtmpChunk(2)
-	if b, err := NewRtmpStack(bytes.NewReader([]byte{
+	if b, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
 		0xff, 0xff, 0xff,
 		0x00, 0x00, 0x0e,
 		0x0d,
 		0x00, 0x00, 0x00, 0x0c,
 		0x00, 0x00, 0x00, 0x0f,
-	}), nil).readMessageHeader(0, c); err != nil || b != nil {
+	}), 0, c); err != nil || b != nil {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
 		t.Error("invalid timestamp")
 	}
 
-	if b, err := NewRtmpStack(bytes.NewReader([]byte{
+	if b, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x00, 0x0f,
-	}), nil).readMessageHeader(3, c); err != nil || b != nil {
+	}), 3, c); err != nil || b != nil {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
 		t.Error("invalid timestamp")
 	}
 
-	if b, err := NewRtmpStack(bytes.NewReader([]byte{
+	if b, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x00, 0x0e,
-	}), nil).readMessageHeader(3, c); err != nil || len(b) != 4 {
+	}), 3, c); err != nil || len(b) != 4 {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
@@ -214,11 +215,74 @@ func TestRtmpStack_readMessageHeader_extendedTimestamp(t *testing.T) {
 	return
 }
 
-func TestRtmpStack_readMessageHeader(t *testing.T) {
-	fn := func(b []byte, fmt uint8, c *RtmpChunk, f func([]byte, *RtmpChunk)) {
-		r := NewRtmpStack(bytes.NewReader(b), nil)
-		if b, err := r.readMessageHeader(fmt, c); err != nil || b != nil {
-			t.Error("invalid message header")
+func TestRtmpStack_rtmpReadMessageHeader_exceptions(t *testing.T) {
+	// fmt is 1, cid 2
+	f1 := NewRtmpChunk(2)
+	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+		0x00, 0x00, 0x0f,
+		0x00, 0x00, 0x0e,
+		0x0d,
+	}), 1, f1); err != nil {
+		t.Error("fresh chunk should ok for fmt=1 and cid=2")
+	}
+
+	// fmt is 1, cid not 2
+	f1 = NewRtmpChunk(3)
+	if _, err := rtmpReadMessageHeader(nil, 1, f1); err == nil {
+		t.Error("fresh chunk should error for fmt=1 and cid!=2")
+	}
+
+	// fmt is 2
+	f2 := NewRtmpChunk(2)
+	if _, err := rtmpReadMessageHeader(nil, 3, f2); err == nil {
+		t.Error("fresh chunk should error for fmt=2")
+	}
+
+	// fmt is 3
+	f3 := NewRtmpChunk(2)
+	if _, err := rtmpReadMessageHeader(nil, 3, f3); err == nil {
+		t.Error("fresh chunk should error for fmt=3")
+	}
+
+	// fmt0=>fmt1, change payload length
+	c := NewRtmpChunk(2)
+	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+		0x00, 0x00, 0x0f,
+		0x00, 0x00, 0x0e,
+		0x0d,
+		0x00, 0x00, 0x00, 0x0c,
+	}), 0, c); err != nil {
+		t.Error("invalid chunk.")
+	}
+	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+		0x00, 0x00, 0x0e,
+		0x00, 0x00, 0x0e,
+		0x0d,
+	}), 1, c); err == nil {
+		t.Error("fmt1 should never change timestamp delta")
+	}
+	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+		0x00, 0x00, 0x0f,
+		0x00, 0x00, 0x0f,
+		0x0d,
+	}), 1, c); err == nil {
+		t.Error("fmt1 should never change payload length")
+	}
+	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+		0x00, 0x00, 0x0f,
+		0x00, 0x00, 0x0e,
+		0x0e,
+	}), 1, c); err == nil {
+		t.Error("fmt1 should never change message type")
+	}
+}
+
+func TestRtmpStack_rtmpReadMessageHeader(t *testing.T) {
+	fn := func(b []byte, fmt uint8, c *RtmpChunk, f func([]byte, *RtmpChunk), ef func(error)) {
+		r := bytes.NewReader(b)
+		if b, err := rtmpReadMessageHeader(r, fmt, c); err != nil || b != nil {
+			t.Error("error for fmt", fmt)
+			ef(err)
 		} else {
 			if b != nil || c.fmt != fmt {
 				t.Error("invalid chunk")
@@ -242,9 +306,11 @@ func TestRtmpStack_readMessageHeader(t *testing.T) {
 		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
 			t.Error("invalid timestamp")
 		}
+	}, func(err error) {
+		t.Error("invalid message header. err is", err)
 	})
 
-	// fmt is 1
+	// fmt is 1, cid 2
 	f1 := NewRtmpChunk(2)
 	fn([]byte{
 		0x00, 0x00, 0x0f,
@@ -257,16 +323,8 @@ func TestRtmpStack_readMessageHeader(t *testing.T) {
 		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
 			t.Error("invalid timestamp")
 		}
-	})
-
-	// fmt is 2
-	f2 := NewRtmpChunk(2)
-	fn([]byte{
-		0x00, 0x00, 0x0f,
-	}, 1, f2, func(b []byte, c *RtmpChunk) {
-		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
-			t.Error("invalid timestamp")
-		}
+	}, func(err error) {
+		t.Error("invalid message header. err is", err)
 	})
 
 	// fmt0 => fmt1
@@ -284,6 +342,8 @@ func TestRtmpStack_readMessageHeader(t *testing.T) {
 		if c.timestamp != 0x0f+0x03 || c.timestampDelta != 0x03 {
 			t.Error("invalid timestamp")
 		}
+	}, func(err error) {
+		t.Error("invalid message header. err is", err)
 	})
 
 	// fmt0=>fmt1=>fmt2
@@ -299,6 +359,8 @@ func TestRtmpStack_readMessageHeader(t *testing.T) {
 		if c.timestamp != 0x0f+0x03+0x05 || c.timestampDelta != 0x05 {
 			t.Error("invalid timestamp")
 		}
+	}, func(err error) {
+		t.Error("invalid message header. err is", err)
 	})
 
 	// fmt0=>fmt1=>fmt2=>fm3
@@ -312,6 +374,8 @@ func TestRtmpStack_readMessageHeader(t *testing.T) {
 		if c.timestamp != 0x0f+0x03+0x05+0x05 || c.timestampDelta != 0x05 {
 			t.Error("invalid timestamp")
 		}
+	}, func(err error) {
+		t.Error("invalid message header. err is", err)
 	})
 
 	return

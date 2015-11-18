@@ -148,7 +148,7 @@ func (v *hsBytes) inCacheC0C1() (err error) {
 	select {
 	case v.in <- v.C0C1():
 	default:
-		return core.Overflow
+		return core.OverflowError
 	}
 
 	core.Info.Println("cache c0c1 ok.")
@@ -175,7 +175,7 @@ func (v *hsBytes) outCacheS0S1S2() (err error) {
 	select {
 	case v.out <- v.S0S1S2():
 	default:
-		return core.Overflow
+		return core.OverflowError
 	}
 
 	core.Info.Println("cache s0s1s2 ok.")
@@ -196,7 +196,7 @@ func (v *hsBytes) inCacheC2() (err error) {
 	select {
 	case v.in <- v.C2():
 	default:
-		return core.Overflow
+		return core.OverflowError
 	}
 
 	core.Info.Println("cache c2 ok.")
@@ -378,7 +378,7 @@ func (v *RtmpConnection) Handshake() (err error) {
 	case <-v.handshake.in:
 		// ok.
 	case <-time.After(timeout):
-		return core.Timeout
+		return core.TimeoutError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -401,7 +401,7 @@ func (v *RtmpConnection) Handshake() (err error) {
 	case <-v.handshake.in:
 		// ok.
 	case <-time.After(timeout):
-		return core.Timeout
+		return core.TimeoutError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -421,7 +421,7 @@ func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 		// ok.
 		panic(m)
 	case <-time.After(timeout):
-		return nil, core.Timeout
+		return nil, core.TimeoutError
 	case <-v.wc.QC():
 		return nil, v.wc.Quit()
 	}
@@ -543,6 +543,150 @@ func NewRtmpChunk(cid uint32) *RtmpChunk {
 	}
 }
 
+// 6.1.2. Chunk Message Header
+// There are four different formats for the chunk message header,
+// selected by the "fmt" field in the chunk basic header.
+const (
+	// 6.1.2.1. Type 0
+	// Chunks of Type 0 are 11 bytes long. This type MUST be used at the
+	// start of a chunk stream, and whenever the stream timestamp goes
+	// backward (e.g., because of a backward seek).
+	RtmpFmtType0 = iota
+	// 6.1.2.2. Type 1
+	// Chunks of Type 1 are 7 bytes long. The message stream ID is not
+	// included; this chunk takes the same stream ID as the preceding chunk.
+	// Streams with variable-sized messages (for example, many video
+	// formats) SHOULD use this format for the first chunk of each new
+	// message after the first.
+	RtmpFmtType1
+	// 6.1.2.3. Type 2
+	// Chunks of Type 2 are 3 bytes long. Neither the stream ID nor the
+	// message length is included; this chunk has the same stream ID and
+	// message length as the preceding chunk. Streams with constant-sized
+	// messages (for example, some audio and data formats) SHOULD use this
+	// format for the first chunk of each message after the first.
+	RtmpFmtType2
+	// 6.1.2.4. Type 3
+	// Chunks of Type 3 have no header. Stream ID, message length and
+	// timestamp delta are not present; chunks of this type take values from
+	// the preceding chunk. When a single message is split into chunks, all
+	// chunks of a message except the first one, SHOULD use this type. Refer
+	// to example 2 in section 6.2.2. Stream consisting of messages of
+	// exactly the same size, stream ID and spacing in time SHOULD use this
+	// type for all chunks after chunk of Type 2. Refer to example 1 in
+	// section 6.2.1. If the delta between the first message and the second
+	// message is same as the time stamp of first message, then chunk of
+	// type 3 would immediately follow the chunk of type 0 as there is no
+	// need for a chunk of type 2 to register the delta. If Type 3 chunk
+	// follows a Type 0 chunk, then timestamp delta for this Type 3 chunk is
+	// the same as the timestamp of Type 0 chunk.
+	RtmpFmtType3
+)
+
+const (
+	// 5. Protocol Control Messages
+	// RTMP reserves message type IDs 1-7 for protocol control messages.
+	// These messages contain information needed by the RTM Chunk Stream
+	// protocol or RTMP itself. Protocol messages with IDs 1 & 2 are
+	// reserved for usage with RTM Chunk Stream protocol. Protocol messages
+	// with IDs 3-6 are reserved for usage of RTMP. Protocol message with ID
+	// 7 is used between edge server and origin server.
+	RtmpMsgSetChunkSize               = 0x01
+	RtmpMsgAbortMessage               = 0x02
+	RtmpMsgAcknowledgement            = 0x03
+	RtmpMsgUserControlMessage         = 0x04
+	RtmpMsgWindowAcknowledgementSize  = 0x05
+	RtmpMsgSetPeerBandwidth           = 0x06
+	RtmpMsgEdgeAndOriginServerCommand = 0x07
+	// 3. Types of messages
+	// The server and the client send messages over the network to
+	// communicate with each other. The messages can be of any type which
+	// includes audio messages, video messages, command messages, shared
+	// object messages, data messages, and user control messages.
+	// 3.1. Command message
+	// Command messages carry the AMF-encoded commands between the client
+	// and the server. These messages have been assigned message type value
+	// of 20 for AMF0 encoding and message type value of 17 for AMF3
+	// encoding. These messages are sent to perform some operations like
+	// connect, createStream, publish, play, pause on the peer. Command
+	// messages like onstatus, result etc. are used to inform the sender
+	// about the status of the requested commands. A command message
+	// consists of command name, transaction ID, and command object that
+	// contains related parameters. A client or a server can request Remote
+	// Procedure Calls (RPC) over streams that are communicated using the
+	// command messages to the peer.
+	RtmpMsgAMF3CommandMessage = 17 // 0x11
+	RtmpMsgAMF0CommandMessage = 20 // 0x14
+	// 3.2. Data message
+	// The client or the server sends this message to send Metadata or any
+	// user data to the peer. Metadata includes details about the
+	// data(audio, video etc.) like creation time, duration, theme and so
+	// on. These messages have been assigned message type value of 18 for
+	// AMF0 and message type value of 15 for AMF3.
+	RtmpMsgAMF0DataMessage = 18 // 0x12
+	RtmpMsgAMF3DataMessage = 15 // 0x0F
+	// 3.3. Shared object message
+	// A shared object is a Flash object (a collection of name value pairs)
+	// that are in synchronization across multiple clients, instances, and
+	// so on. The message types kMsgContainer=19 for AMF0 and
+	// kMsgContainerEx=16 for AMF3 are reserved for shared object events.
+	// Each message can contain multiple events.
+	RtmpMsgAMF3SharedObject = 16 // 0x10
+	RtmpMsgAMF0SharedObject = 19 // 0x13
+	// 3.4. Audio message
+	// The client or the server sends this message to send audio data to the
+	// peer. The message type value of 8 is reserved for audio messages.
+	RtmpMsgAudioMessage = 8 // 0x08
+	// 3.5. Video message
+	// The client or the server sends this message to send video data to the
+	// peer. The message type value of 9 is reserved for video messages.
+	// These messages are large and can delay the sending of other type of
+	// messages. To avoid such a situation, the video message is assigned
+	// the lowest priority.
+	RtmpMsgVideoMessage = 9 // 0x09
+	// 3.6. Aggregate message
+	// An aggregate message is a single message that contains a list of submessages.
+	// The message type value of 22 is reserved for aggregate
+	// messages.
+	RtmpMsgAggregateMessage = 22 // 0x16
+)
+
+const (
+	// the chunk stream id used for some under-layer message,
+	// for example, the PC(protocol control) message.
+	RtmpCidProtocolControl = 0x02 + iota
+	// the AMF0/AMF3 command message, invoke method and return the result, over NetConnection.
+	// generally use 0x03.
+	RtmpCidOverConnection
+	// the AMF0/AMF3 command message, invoke method and return the result, over NetConnection,
+	// the midst state(we guess).
+	// rarely used, e.g. onStatus(NetStream.Play.Reset).
+	RtmpCidOverConnection2
+	// the stream message(amf0/amf3), over NetStream.
+	// generally use 0x05.
+	RtmpCidOverStream
+	// the stream message(amf0/amf3), over NetStream, the midst state(we guess).
+	// rarely used, e.g. play("mp4:mystram.f4v")
+	RtmpCidOverStream2
+	// the stream message(video), over NetStream
+	// generally use 0x06.
+	RtmpCidVideo
+	// the stream message(audio), over NetStream.
+	// generally use 0x07.
+	RtmpCidAudio
+)
+
+// 6.1. Chunk Format
+// Extended timestamp: 0 or 4 bytes
+// This field MUST be sent when the normal timsestamp is set to
+// 0xffffff, it MUST NOT be sent if the normal timestamp is set to
+// anything else. So for values less than 0xffffff the normal
+// timestamp field SHOULD be used in which case the extended timestamp
+// MUST NOT be present. For values greater than or equal to 0xffffff
+// the normal timestamp field MUST NOT be used and MUST be set to
+// 0xffffff and the extended timestamp MUST be sent.
+const RtmpExtendedTimestamp = 0xFFFFFF
+
 // RTMP protocol stack.
 type RtmpStack struct {
 	in  io.Reader
@@ -564,7 +708,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		// chunk stream basic header.
 		var fmt uint8
 		var cid uint32
-		if fmt, cid, err = v.readBasicHeader(); err != nil {
+		if fmt, cid, err = rtmpReadBasicHeader(v.in); err != nil {
 			core.Warn.Println("read basic header failed. err is", err)
 			return
 		}
@@ -579,7 +723,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 
 		// chunk stream message header
 		var b []byte
-		if b, err = v.readMessageHeader(fmt, chunk); err != nil {
+		if b, err = rtmpReadMessageHeader(v.in, fmt, chunk); err != nil {
 			return
 		}
 
@@ -606,11 +750,235 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 // @remark we return the b which indicates the body read in this process,
 // 		for the c3 header, we try to read more bytes which maybe header
 // 		or the body.
-func (v *RtmpStack) readMessageHeader(fmt uint8, chunk *RtmpChunk) (b []byte, err error) {
-	// TODO: FIMXE: implements it.
+func rtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte, err error) {
+	// we should not assert anything about fmt, for the first packet.
+	// (when first packet, the chunk->msg is NULL).
+	// the fmt maybe 0/1/2/3, the FMLE will send a 0xC4 for some audio packet.
+	// the previous packet is:
+	//     04                // fmt=0, cid=4
+	//     00 00 1a          // timestamp=26
+	//     00 00 9d          // payload_length=157
+	//     08                // message_type=8(audio)
+	//     01 00 00 00       // stream_id=1
+	// the current packet maybe:
+	//     c4             // fmt=3, cid=4
+	// it's ok, for the packet is audio, and timestamp delta is 26.
+	// the current packet must be parsed as:
+	//     fmt=0, cid=4
+	//     timestamp=26+26=52
+	//     payload_length=157
+	//     message_type=8(audio)
+	//     stream_id=1
+	// so we must update the timestamp even fmt=3 for first packet.
+	//
+	// fresh packet used to update the timestamp even fmt=3 for first packet.
+	// fresh packet always means the chunk is the first one of message.
+	isFirstMsgOfChunk := bool(chunk.partialMessage == nil)
+
+	// but, we can ensure that when a chunk stream is fresh,
+	// the fmt must be 0, a new stream.
+	if chunk.isFresh && fmt != RtmpFmtType0 {
+		// for librtmp, if ping, it will send a fresh stream with fmt=1,
+		// 0x42             where: fmt=1, cid=2, protocol contorl user-control message
+		// 0x00 0x00 0x00   where: timestamp=0
+		// 0x00 0x00 0x06   where: payload_length=6
+		// 0x04             where: message_type=4(protocol control user-control message)
+		// 0x00 0x06            where: event Ping(0x06)
+		// 0x00 0x00 0x0d 0x0f  where: event data 4bytes ping timestamp.
+		// @see: https://github.com/ossrs/srs/issues/98
+		if chunk.cid == RtmpCidProtocolControl && fmt == RtmpFmtType1 {
+			core.Warn.Println("accept cid=2,fmt=1 to make librtmp happy.")
+		} else {
+			// must be a RTMP protocol level error.
+			core.Error.Println("fresh chunk fmt must be", RtmpFmtType0, "actual is", fmt)
+			return nil, RtmpChunkError
+		}
+	}
+
+	// when exists cache msg, means got an partial message,
+	// the fmt must not be type0 which means new message.
+	if !isFirstMsgOfChunk && fmt == RtmpFmtType0 {
+		core.Error.Println("chunk partial msg, fmt must be", RtmpFmtType0, "actual is", fmt)
+		return nil, RtmpChunkError
+	}
+
+	// create msg when new chunk stream start
+	if chunk.partialMessage == nil {
+		chunk.partialMessage = NewRtmpMessage()
+	}
+
+	// read message header from socket to buffer.
+	nbhs := [4]int{11, 7, 3, 0}
+	nbh := nbhs[fmt]
+
+	var bh []byte
+	if nbh > 0 {
+		bh = make([]byte, nbh)
+		if _, err = io.CopyN(NewBytesWriter(bh), in, int64(nbh)); err != nil {
+			core.Error.Println("read", nbh, "bytes header failed. err is", err)
+			return
+		}
+	}
+
+	// parse the message header.
+	//   3bytes: timestamp delta,    fmt=0,1,2
+	//   3bytes: payload length,     fmt=0,1
+	//   1bytes: message type,       fmt=0,1
+	//   4bytes: stream id,          fmt=0
+	// where:
+	//   fmt=0, 0x0X
+	//   fmt=1, 0x4X
+	//   fmt=2, 0x8X
+	//   fmt=3, 0xCX
+	// see also: ngx_rtmp_recv
+	if fmt <= RtmpFmtType2 {
+		delta := uint32(bh[2]) | uint32(bh[1])<<8 | uint32(bh[0])<<16
+
+		// for a message, if msg exists in cache, the delta must not changed.
+		if !isFirstMsgOfChunk && chunk.timestampDelta != delta {
+			core.Error.Println("chunk msg exists, should not change the delta.")
+			return nil, RtmpChunkError
+		}
+		chunk.timestampDelta = delta
+
+		// fmt: 0
+		// timestamp: 3 bytes
+		// If the timestamp is greater than or equal to 16777215
+		// (hexadecimal 0x00ffffff), this value MUST be 16777215, and the
+		// 'extended timestamp header' MUST be present. Otherwise, this value
+		// SHOULD be the entire timestamp.
+		//
+		// fmt: 1 or 2
+		// timestamp delta: 3 bytes
+		// If the delta is greater than or equal to 16777215 (hexadecimal
+		// 0x00ffffff), this value MUST be 16777215, and the 'extended
+		// timestamp header' MUST be present. Otherwise, this value SHOULD be
+		// the entire delta.
+		if chunk.hasExtendedTimestamp = bool(delta > RtmpExtendedTimestamp); !chunk.hasExtendedTimestamp {
+			// Extended timestamp: 0 or 4 bytes
+			// This field MUST be sent when the normal timsestamp is set to
+			// 0xffffff, it MUST NOT be sent if the normal timestamp is set to
+			// anything else. So for values less than 0xffffff the normal
+			// timestamp field SHOULD be used in which case the extended timestamp
+			// MUST NOT be present. For values greater than or equal to 0xffffff
+			// the normal timestamp field MUST NOT be used and MUST be set to
+			// 0xffffff and the extended timestamp MUST be sent.
+			if fmt == RtmpFmtType0 {
+				// 6.1.2.1. Type 0
+				// For a type-0 chunk, the absolute timestamp of the message is sent
+				// here.
+				chunk.timestamp = uint64(delta)
+			} else {
+				// 6.1.2.2. Type 1
+				// 6.1.2.3. Type 2
+				// For a type-1 or type-2 chunk, the difference between the previous
+				// chunk's timestamp and the current chunk's timestamp is sent here.
+				chunk.timestamp += uint64(delta)
+			}
+		}
+
+		if fmt <= RtmpFmtType1 {
+			payloadLength := uint32(bh[5]) | uint32(bh[4])<<8 | uint32(bh[3])<<16
+			mtype := uint8(bh[6])
+
+			// for a message, if msg exists in cache, the size must not changed.
+			if !isFirstMsgOfChunk && chunk.payloadLength != payloadLength {
+				core.Error.Println("chunk msg exists, payload length should not be changed.")
+				return nil, RtmpChunkError
+			}
+			// for a message, if msg exists in cache, the type must not changed.
+			if !isFirstMsgOfChunk && chunk.messageType != mtype {
+				core.Error.Println("chunk msg exists, type should not be changed.")
+				return nil, RtmpChunkError
+			}
+			chunk.payloadLength = payloadLength
+			chunk.messageType = mtype
+
+			if fmt == RtmpFmtType0 {
+				// little-endian
+				chunk.streamId = uint32(bh[7]) | uint32(bh[8])<<8 | uint32(bh[9])<<16 | uint32(bh[10])<<24
+			}
+		}
+	} else {
+		// update the timestamp even fmt=3 for first chunk packet
+		if isFirstMsgOfChunk && !chunk.hasExtendedTimestamp {
+			chunk.timestamp += uint64(chunk.timestampDelta)
+		}
+	}
+
+	// read extended-timestamp
+	if chunk.hasExtendedTimestamp {
+		// try to read 4 bytes from stream,
+		// which maybe the body or the extended-timestamp.
+		b = make([]byte, 4)
+		if _, err = io.CopyN(NewBytesWriter(b), in, 4); err != nil {
+			core.Error.Println("read extended timestamp failed. err is", err)
+			return nil, err
+		}
+
+		// parse the extended-timestamp
+		timestamp := uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24
+		// always use 31bits timestamp, for some server may use 32bits extended timestamp.
+		// @see https://github.com/ossrs/srs/issues/111
+		timestamp &= 0x7fffffff
+
+		// RTMP specification and ffmpeg/librtmp is false,
+		// but, adobe changed the specification, so flash/FMLE/FMS always true.
+		// default to true to support flash/FMLE/FMS.
+		//
+		// ffmpeg/librtmp may donot send this filed, need to detect the value.
+		// @see also: http://blog.csdn.net/win_lin/article/details/13363699
+		// compare to the chunk timestamp, which is set by chunk message header
+		// type 0,1 or 2.
+		//
+		// @remark, nginx send the extended-timestamp in sequence-header,
+		// and timestamp delta in continue C1 chunks, and so compatible with ffmpeg,
+		// that is, there is no continue chunks and extended-timestamp in nginx-rtmp.
+		//
+		// @remark, srs always send the extended-timestamp, to keep simple,
+		// and compatible with adobe products.
+		ctimestamp := uint32(chunk.timestamp) & 0x7fffffff
+
+		// if ctimestamp<=0, the chunk previous packet has no extended-timestamp,
+		// always use the extended timestamp.
+		// @remark for the first chunk of message, always use the extended timestamp.
+		// @remark in this situation, the timestamp in chunk always equals to timestamp.
+		if isFirstMsgOfChunk || ctimestamp <= 0 || ctimestamp == timestamp {
+			b = nil
+		}
+	}
+
+	// the extended-timestamp must be unsigned-int,
+	//         24bits timestamp: 0xffffff = 16777215ms = 16777.215s = 4.66h
+	//         32bits timestamp: 0xffffffff = 4294967295ms = 4294967.295s = 1193.046h = 49.71d
+	// because the rtmp protocol says the 32bits timestamp is about "50 days":
+	//         3. Byte Order, Alignment, and Time Format
+	//                Because timestamps are generally only 32 bits long, they will roll
+	//                over after fewer than 50 days.
+	//
+	// but, its sample says the timestamp is 31bits:
+	//         An application could assume, for example, that all
+	//        adjacent timestamps are within 2^31 milliseconds of each other, so
+	//        10000 comes after 4000000000, while 3000000000 comes before
+	//        4000000000.
+	// and flv specification says timestamp is 31bits:
+	//        Extension of the Timestamp field to form a SI32 value. This
+	//        field represents the upper 8 bits, while the previous
+	//        Timestamp field represents the lower 24 bits of the time in
+	//        milliseconds.
+	// in a word, 31bits timestamp is ok.
+	// convert extended timestamp to 31bits.
+	chunk.timestamp &= 0x7fffffff
+
+	// copy header to msg
+	chunk.partialMessage.messageType = chunk.messageType
+	chunk.partialMessage.timestamp = chunk.timestamp
+	chunk.partialMessage.preferCid = chunk.cid
+	chunk.partialMessage.streamId = chunk.streamId
 
 	// update chunk information.
 	chunk.fmt = fmt
+	chunk.isFresh = false
 	return
 }
 
@@ -656,9 +1024,9 @@ func (v *RtmpStack) readMessageHeader(fmt uint8, chunk *RtmpChunk) (b []byte, er
 //
 // Chunk stream IDs with values 64-319 could be represented by both 2-
 // byte version and 3-byte version of this field.
-func (v *RtmpStack) readBasicHeader() (fmt uint8, cid uint32, err error) {
+func rtmpReadBasicHeader(in io.Reader) (fmt uint8, cid uint32, err error) {
 	ch := make([]byte, 3)
-	if _, err = io.CopyN(NewBytesWriter(ch[:1]), v.in, 1); err != nil {
+	if _, err = io.CopyN(NewBytesWriter(ch[:1]), in, 1); err != nil {
 		return
 	}
 
@@ -673,7 +1041,7 @@ func (v *RtmpStack) readBasicHeader() (fmt uint8, cid uint32, err error) {
 
 	// 64-319, 2B chunk header
 	if cid == 0 {
-		if _, err = io.CopyN(NewBytesWriter(ch[1:2]), v.in, 1); err != nil {
+		if _, err = io.CopyN(NewBytesWriter(ch[1:2]), in, 1); err != nil {
 			return
 		}
 
@@ -683,7 +1051,7 @@ func (v *RtmpStack) readBasicHeader() (fmt uint8, cid uint32, err error) {
 
 	// 64-65599, 3B chunk header
 	// cid is 1
-	if _, err = io.CopyN(NewBytesWriter(ch[1:]), v.in, 2); err != nil {
+	if _, err = io.CopyN(NewBytesWriter(ch[1:]), in, 2); err != nil {
 		return
 	}
 	cid = uint32(ch[2])*256 + uint32(ch[1]) + 64
