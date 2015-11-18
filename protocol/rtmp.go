@@ -538,51 +538,6 @@ func (v *RtmpConnection) sender() (err error) {
 	return
 }
 
-// incoming chunk stream maybe interlaced,
-// use the chunk stream to cache the input RTMP chunk streams.
-type RtmpChunk struct {
-	// the fmt of basic header.
-	fmt uint8
-	// the cid of basic header.
-	cid uint32
-	// the calculated timestamp.
-	timestamp uint64
-	// whether this chunk stream has extended timestamp.
-	hasExtendedTimestamp bool
-	// whether this chunk stream is fresh.
-	isFresh bool
-
-	// the partial message which not completed.
-	partialMessage *RtmpMessage
-	// the position for partition payload.
-	pos int
-
-	// 4.1. Message Header
-	// 3bytes.
-	// Three-byte field that contains a timestamp delta of the message.
-	// @remark, only used for decoding message from chunk stream.
-	timestampDelta uint32
-	// 3bytes.
-	// Three-byte field that represents the size of the payload in bytes.
-	// It is set in big-endian format.
-	payloadLength uint32
-	// 1byte.
-	// One byte field to represent the message type. A range of type IDs
-	// (1-7) are reserved for protocol control messages.
-	messageType uint8
-	// 4bytes.
-	// Four-byte field that identifies the stream of the message. These
-	// bytes are set in little-endian format.
-	streamId uint32
-}
-
-func NewRtmpChunk(cid uint32) *RtmpChunk {
-	return &RtmpChunk{
-		cid:     cid,
-		isFresh: true,
-	}
-}
-
 // 6.1.2. Chunk Message Header
 // There are four different formats for the chunk message header,
 // selected by the "fmt" field in the chunk basic header.
@@ -732,6 +687,51 @@ const RtmpServerChunkSize = 60000
 
 // 6. Chunking, RTMP protocol default chunk size.
 const RtmpProtocolChunkSize = 128
+
+// incoming chunk stream maybe interlaced,
+// use the chunk stream to cache the input RTMP chunk streams.
+type RtmpChunk struct {
+	// the fmt of basic header.
+	fmt uint8
+	// the cid of basic header.
+	cid uint32
+	// the calculated timestamp.
+	timestamp uint64
+	// whether this chunk stream has extended timestamp.
+	hasExtendedTimestamp bool
+	// whether this chunk stream is fresh.
+	isFresh bool
+
+	// the partial message which not completed.
+	partialMessage *RtmpMessage
+	// the position for partition payload.
+	pos int
+
+	// 4.1. Message Header
+	// 3bytes.
+	// Three-byte field that contains a timestamp delta of the message.
+	// @remark, only used for decoding message from chunk stream.
+	timestampDelta uint32
+	// 3bytes.
+	// Three-byte field that represents the size of the payload in bytes.
+	// It is set in big-endian format.
+	payloadLength uint32
+	// 1byte.
+	// One byte field to represent the message type. A range of type IDs
+	// (1-7) are reserved for protocol control messages.
+	messageType uint8
+	// 4bytes.
+	// Four-byte field that identifies the stream of the message. These
+	// bytes are set in little-endian format.
+	streamId uint32
+}
+
+func NewRtmpChunk(cid uint32) *RtmpChunk {
+	return &RtmpChunk{
+		cid:     cid,
+		isFresh: true,
+	}
+}
 
 // RTMP protocol stack.
 type RtmpStack struct {
