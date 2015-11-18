@@ -297,39 +297,6 @@ type RtmpRequest struct {
 	TcUrl string
 }
 
-// Rtmp message,
-// which decode from RTMP chunked stream with raw body.
-type RtmpMessage struct {
-	// Four-byte field that contains a timestamp of the message.
-	// The 4 bytes are packed in the big-endian order.
-	// @remark, used as calc timestamp when decode and encode time.
-	// @remark, we use 64bits for large time for jitter detect and hls.
-	timestamp uint64
-	// 4bytes.
-	// Four-byte field that identifies the stream of the message. These
-	// bytes are set in little-endian format.
-	streamId uint32
-	// 1byte.
-	// One byte field to represent the message type. A range of type IDs
-	// (1-7) are reserved for protocol control messages.
-	messageType uint8
-	// get the perfered cid(chunk stream id) which sendout over.
-	// set at decoding, and canbe used for directly send message,
-	// for example, dispatch to all connections.
-	preferCid uint32
-	// the payload of message, the SrsCommonMessage never know about the detail of payload,
-	// user must use SrsProtocol.decode_message to get concrete packet.
-	// @remark, not all message payload can be decoded to packet. for example,
-	//       video/audio packet use raw bytes, no video/audio packet.
-	payload []byte
-}
-
-func NewRtmpMessage() *RtmpMessage {
-	return &RtmpMessage{
-		payload: nil,
-	}
-}
-
 // rtmp protocol stack.
 type RtmpConnection struct {
 	// to receive the quit message from server.
@@ -690,6 +657,39 @@ const RtmpServerChunkSize = 60000
 // 6. Chunking, RTMP protocol default chunk size.
 const RtmpProtocolChunkSize = 128
 
+// Rtmp message,
+// which decode from RTMP chunked stream with raw body.
+type RtmpMessage struct {
+	// Four-byte field that contains a timestamp of the message.
+	// The 4 bytes are packed in the big-endian order.
+	// @remark, used as calc timestamp when decode and encode time.
+	// @remark, we use 64bits for large time for jitter detect and hls.
+	timestamp uint64
+	// 4bytes.
+	// Four-byte field that identifies the stream of the message. These
+	// bytes are set in little-endian format.
+	streamId uint32
+	// 1byte.
+	// One byte field to represent the message type. A range of type IDs
+	// (1-7) are reserved for protocol control messages.
+	messageType uint8
+	// get the perfered cid(chunk stream id) which sendout over.
+	// set at decoding, and canbe used for directly send message,
+	// for example, dispatch to all connections.
+	preferCid uint32
+	// the payload of message, the SrsCommonMessage never know about the detail of payload,
+	// user must use SrsProtocol.decode_message to get concrete packet.
+	// @remark, not all message payload can be decoded to packet. for example,
+	//       video/audio packet use raw bytes, no video/audio packet.
+	payload []byte
+}
+
+func NewRtmpMessage() *RtmpMessage {
+	return &RtmpMessage{
+		payload: nil,
+	}
+}
+
 // incoming chunk stream maybe interlaced,
 // use the chunk stream to cache the input RTMP chunk streams.
 type RtmpChunk struct {
@@ -737,6 +737,7 @@ func NewRtmpChunk(cid uint32) *RtmpChunk {
 
 // RTMP protocol stack.
 type RtmpStack struct {
+	// the input and output stream.
 	in  io.Reader
 	out io.Writer
 	// the chunks for RTMP,
