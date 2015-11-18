@@ -453,14 +453,16 @@ func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 	timeout := 5000 * time.Millisecond
 
 	// connect(tcUrl)
-	select {
-	case m := <-v.in:
-		// ok.
-		panic(m)
-	case <-time.After(timeout):
-		return nil, core.TimeoutError
-	case <-v.wc.QC():
-		return nil, v.wc.Quit()
+	for {
+		select {
+		case m := <-v.in:
+			// ok.
+			panic(m)
+		case <-time.After(timeout):
+			return nil, core.TimeoutError
+		case <-v.wc.QC():
+			return nil, v.wc.Quit()
+		}
 	}
 
 	// TODO: FIXME: implements it.
@@ -748,6 +750,7 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	return &RtmpStack{
 		in:          r,
 		out:         w,
+		chunks:      make(map[uint32]*RtmpChunk),
 		inChunkSize: RtmpProtocolChunkSize,
 	}
 }
