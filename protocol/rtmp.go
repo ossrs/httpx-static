@@ -23,6 +23,7 @@ package protocol
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/binary"
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
@@ -690,6 +691,51 @@ func NewRtmpMessage() *RtmpMessage {
 	}
 }
 
+// RTMP packet, which can be
+// decode from and encode to message payload.
+type RtmpPacket interface {
+	// all packet can marshaler and unmarshaler.
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
+
+	// the cid(chunk id) specifies the chunk to send data over.
+	// generally, each message perfer some cid, for example,
+	// all protocol control messages perfer RTMP_CID_ProtocolControl,
+	// SrsSetWindowAckSizePacket is protocol control message.
+	PreferCid() uint32
+	// subpacket must override to provide the right message type.
+	// the message type set the RTMP message type in header.
+	MessageType() uint8
+}
+
+// 4.1.1. connect
+// The client sends the connect command to the server to request
+// connection to a server application instance.
+type RtmpConnectAppPacket struct {
+}
+
+func NewRtmpConnectAppPacket() RtmpPacket {
+	return &RtmpConnectAppPacket{}
+}
+
+func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
+	// TODO: FIXME: implements it
+	return
+}
+
+func (v *RtmpConnectAppPacket) UnmarshalBinary(data []byte) (err error) {
+	// TODO: FIXME: implements it
+	return
+}
+
+func (v *RtmpConnectAppPacket) PreferCid() uint32 {
+	return RtmpCidOverConnection
+}
+
+func (v *RtmpConnectAppPacket) MessageType() uint8 {
+	return RtmpMsgAMF0CommandMessage
+}
+
 // incoming chunk stream maybe interlaced,
 // use the chunk stream to cache the input RTMP chunk streams.
 type RtmpChunk struct {
@@ -754,6 +800,11 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 		chunks:      make(map[uint32]*RtmpChunk),
 		inChunkSize: RtmpProtocolChunkSize,
 	}
+}
+
+func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
+	// TODO: FIXME: implements it.
+	return
 }
 
 func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {

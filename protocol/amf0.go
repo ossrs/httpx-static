@@ -19,4 +19,45 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package app
+package protocol
+
+import (
+	"bytes"
+	"encoding/binary"
+)
+
+// a amf0 string is a string.
+type Amf0String string
+
+// encoding.BinaryMarshaler
+func (s *Amf0String) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = binary.Write(&b, binary.BigEndian, uint16(len(*s))); err != nil {
+		return
+	}
+
+	if _, err = b.Write(([]byte)(*s)); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+// encoding.BinaryUnmarshaler
+func (s *Amf0String) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var nb uint16
+	if err = binary.Read(b, binary.BigEndian, &nb); err != nil {
+		return
+	}
+
+	v := make([]byte, nb)
+	if _, err = b.Read(v); err != nil {
+		return
+	}
+	*s = Amf0String(string(v))
+
+	return
+}

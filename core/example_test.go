@@ -19,4 +19,23 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package app
+package core
+
+import "fmt"
+
+func ExampleConfig_Loads() {
+	c := NewConfig()
+
+	//if err := c.Loads("config.json"); err != nil {
+	//    panic(err)
+	//}
+
+	fmt.Println("listen at", c.Listen)
+	fmt.Println("workers is", c.Workers)
+	fmt.Println("go gc every", c.Go.GcInterval, "seconds")
+
+	// Output:
+	// listen at 1935
+	// workers is 0
+	// go gc every 300 seconds
+}

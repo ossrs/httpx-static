@@ -19,4 +19,18 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package app
+package protocol
+
+import "testing"
+
+func TestAmf0String(t *testing.T) {
+	s := Amf0String("oryx")
+	if b, err := s.MarshalBinary(); err != nil || len(b) != 6 {
+		t.Error("invalid amf0 string", b)
+	}
+
+	s = Amf0String("")
+	if err := s.UnmarshalBinary([]byte{0x00, 0x04, 'o', 'r', 'y', 'x'}); err != nil || len(s) != 4 {
+		t.Error("invalid amf0 string", ([]byte)(s))
+	}
+}

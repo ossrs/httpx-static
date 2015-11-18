@@ -23,7 +23,6 @@ package core
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -83,23 +82,6 @@ func BenchmarkConfigBasic(b *testing.B) {
 	if err := pc.Reload(cc); err != nil {
 		b.Error("reload failed.")
 	}
-}
-
-func ExampleConfig_Loads() {
-	c := NewConfig()
-
-	//if err := c.Loads("config.json"); err != nil {
-	//    panic(err)
-	//}
-
-	fmt.Println("listen at", c.Listen)
-	fmt.Println("workers is", c.Workers)
-	fmt.Println("go gc every", c.Go.GcInterval, "seconds")
-
-	// Output:
-	// listen at 1935
-	// workers is 0
-	// go gc every 300 seconds
 }
 
 func TestConfigReader(t *testing.T) {
