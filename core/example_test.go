@@ -19,12 +19,16 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+package core_test
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/ossrs/go-oryx/core"
+	"time"
+)
 
 func ExampleConfig_Loads() {
-	c := NewConfig()
+	c := core.NewConfig()
 
 	//if err := c.Loads("config.json"); err != nil {
 	//    panic(err)
@@ -38,4 +42,81 @@ func ExampleConfig_Loads() {
 	// listen at 1935
 	// workers is 0
 	// go gc every 300 seconds
+}
+
+// the goroutine cycle ignore any error.
+func ExampleWorkerContainer_recoverable() {
+	var wc core.WorkerContainer
+	wc.GFork("myservice", func(wc core.WorkerContainer) {
+		for {
+			select {
+			case <-time.After(3 * time.Second):
+				// select other channel, do something cycle to get error.
+				if err := error(nil); err != nil {
+					// recoverable error, log it only and continue or return.
+					continue
+				}
+			case <-wc.QC():
+				// when got a quit signal, break the loop.
+				// and must notify the container again for other workers
+				// in container to quit.
+				wc.Quit()
+				return
+			}
+		}
+	})
+}
+
+// the goroutine cycle absolutely safe, no panic no error to quit.
+func ExampleWorkerContainer_safe() {
+	var wc core.WorkerContainer
+	wc.GFork("myservice", func(wc core.WorkerContainer) {
+		defer func() {
+			if r := recover(); r != nil {
+				// log the r and ignore.
+				return
+			}
+		}()
+
+		for {
+			select {
+			case <-time.After(3 * time.Second):
+				// select other channel, do something cycle to get error.
+				if err := error(nil); err != nil {
+					// recoverable error, log it only and continue or return.
+					continue
+				}
+			case <-wc.QC():
+				// when got a quit signal, break the loop.
+				// and must notify the container again for other workers
+				// in container to quit.
+				wc.Quit()
+				return
+			}
+		}
+	})
+}
+
+// the goroutine cycle notify container to quit when error.
+func ExampleWorkerContainer_fatal() {
+	var wc core.WorkerContainer
+	wc.GFork("myservice", func(wc core.WorkerContainer) {
+		for {
+			select {
+			case <-time.After(3 * time.Second):
+				// select other channel, do something cycle to get error.
+				if err := error(nil); err != nil {
+					// when got none-recoverable error, notify container to quit.
+					wc.Quit()
+					return
+				}
+			case <-wc.QC():
+				// when got a quit signal, break the loop.
+				// and must notify the container again for other workers
+				// in container to quit.
+				wc.Quit()
+				return
+			}
+		}
+	})
 }

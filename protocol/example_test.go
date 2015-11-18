@@ -19,4 +19,40 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package app_test
+package protocol_test
+
+import (
+	"fmt"
+	"github.com/ossrs/go-oryx/protocol"
+)
+
+func ExampleAmf0String_MarshalBinary() {
+	s := protocol.Amf0String("oryx")
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println(b)
+
+	// Output:
+	// 6
+	// [0 4 111 114 121 120]
+}
+
+func ExampleAmf0String_UnmarshalBinary() {
+	b := []byte{0x00, 0x04, 'o', 'r', 'y', 'x'}
+
+	var s protocol.Amf0String
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println(s)
+
+	// Output:
+	// oryx
+}
