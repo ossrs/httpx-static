@@ -154,10 +154,10 @@ func TestHsBytes_createS0S1S2(t *testing.T) {
 	}
 }
 
-func TestRtmpStack_rtmpReadBasicHeader(t *testing.T) {
+func TestRtmpStack_RtmpReadBasicHeader(t *testing.T) {
 	fn := func(b []byte, fmt uint8, cid uint32, ef func(error)) {
 		r := bytes.NewReader(b)
-		if f, c, err := rtmpReadBasicHeader(r); err != nil || f != fmt || c != cid {
+		if f, c, err := RtmpReadBasicHeader(r); err != nil || f != fmt || c != cid {
 			t.Error("invalid chunk,", b, "fmt", fmt, "!=", f, "and cid", cid, "!=", c)
 			ef(err)
 		}
@@ -179,46 +179,46 @@ func TestRtmpStack_rtmpReadBasicHeader(t *testing.T) {
 	fn([]byte{0xC1, 0xFF, 0xFF}, 3, 0xff*256+0xff+64, func(err error) { t.Error(err) })
 }
 
-func TestRtmpStack_rtmpReadMessageHeader_extendedTimestamp(t *testing.T) {
+func TestRtmpStack_RtmpReadMessageHeader_extendedTimestamp(t *testing.T) {
 	c := NewRtmpChunk(2)
-	if b, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if b, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0xff, 0xff, 0xff,
 		0x00, 0x00, 0x0e,
 		0x0d,
-		0x00, 0x00, 0x00, 0x0c,
+		0x0c, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x0f,
 	}), 0, c); err != nil || b != nil {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
-		t.Error("invalid timestamp")
+		t.Error("invalid timestamp", c.timestamp)
 	}
 
-	if b, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if b, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x00, 0x0f,
 	}), 3, c); err != nil || b != nil {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
-		t.Error("invalid timestamp")
+		t.Error("invalid timestamp", c.timestamp)
 	}
 
-	if b, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if b, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x00, 0x0e,
 	}), 3, c); err != nil || len(b) != 4 {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
-		t.Error("invalid timestamp")
+		t.Error("invalid timestamp", c.timestamp)
 	}
 
 	return
 }
 
-func TestRtmpStack_rtmpReadMessageHeader_exceptions(t *testing.T) {
+func TestRtmpStack_RtmpReadMessageHeader_exceptions(t *testing.T) {
 	// fmt is 1, cid 2
 	f1 := NewRtmpChunk(2)
-	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if _, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0e,
 		0x0d,
@@ -228,47 +228,47 @@ func TestRtmpStack_rtmpReadMessageHeader_exceptions(t *testing.T) {
 
 	// fmt is 1, cid not 2
 	f1 = NewRtmpChunk(3)
-	if _, err := rtmpReadMessageHeader(nil, 1, f1); err == nil {
+	if _, err := RtmpReadMessageHeader(nil, 1, f1); err == nil {
 		t.Error("fresh chunk should error for fmt=1 and cid!=2")
 	}
 
 	// fmt is 2
 	f2 := NewRtmpChunk(2)
-	if _, err := rtmpReadMessageHeader(nil, 3, f2); err == nil {
+	if _, err := RtmpReadMessageHeader(nil, 3, f2); err == nil {
 		t.Error("fresh chunk should error for fmt=2")
 	}
 
 	// fmt is 3
 	f3 := NewRtmpChunk(2)
-	if _, err := rtmpReadMessageHeader(nil, 3, f3); err == nil {
+	if _, err := RtmpReadMessageHeader(nil, 3, f3); err == nil {
 		t.Error("fresh chunk should error for fmt=3")
 	}
 
 	// fmt0=>fmt1, change payload length
 	c := NewRtmpChunk(2)
-	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if _, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0e,
 		0x0d,
-		0x00, 0x00, 0x00, 0x0c,
+		0x0c, 0x00, 0x00, 0x00,
 	}), 0, c); err != nil {
 		t.Error("invalid chunk.")
 	}
-	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if _, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0e,
 		0x00, 0x00, 0x0e,
 		0x0d,
 	}), 1, c); err == nil {
 		t.Error("fmt1 should never change timestamp delta")
 	}
-	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if _, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0f,
 		0x0d,
 	}), 1, c); err == nil {
 		t.Error("fmt1 should never change payload length")
 	}
-	if _, err := rtmpReadMessageHeader(bytes.NewReader([]byte{
+	if _, err := RtmpReadMessageHeader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0e,
 		0x0e,
@@ -277,11 +277,11 @@ func TestRtmpStack_rtmpReadMessageHeader_exceptions(t *testing.T) {
 	}
 }
 
-func TestRtmpStack_rtmpReadMessageHeader(t *testing.T) {
+func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 	fn := func(b []byte, fmt uint8, c *RtmpChunk, f func([]byte, *RtmpChunk), ef func(error)) {
 		r := bytes.NewReader(b)
-		if b, err := rtmpReadMessageHeader(r, fmt, c); err != nil || b != nil {
-			t.Error("error for fmt", fmt)
+		if b, err := RtmpReadMessageHeader(r, fmt, c); err != nil || b != nil {
+			t.Error("error for fmt", fmt, "and cid", c.cid)
 			ef(err)
 		} else {
 			if b != nil || c.fmt != fmt {
@@ -298,7 +298,7 @@ func TestRtmpStack_rtmpReadMessageHeader(t *testing.T) {
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0e,
 		0x0d,
-		0x00, 0x00, 0x00, 0x0c,
+		0x0c, 0x00, 0x00, 0x00,
 	}, 0, f0, func(b []byte, c *RtmpChunk) {
 		if c.payloadLength != 0x0e || c.messageType != 0x0d || c.streamId != 0x0c {
 			t.Error("invalid message")
@@ -329,17 +329,17 @@ func TestRtmpStack_rtmpReadMessageHeader(t *testing.T) {
 
 	// fmt0 => fmt1
 	fn([]byte{
-		0x00, 0x00, 0x03,
 		0x00, 0x00, 0x0f,
-		0x0e,
+		0x00, 0x00, 0x0e,
+		0x0d,
 	}, 1, f0, func(b []byte, c *RtmpChunk) {
 		if c.streamId != 0x0c {
 			t.Error("invalid message")
 		}
-		if c.payloadLength != 0x0f || c.messageType != 0x0e {
+		if c.payloadLength != 0x0e || c.messageType != 0x0d {
 			t.Error("invalid message")
 		}
-		if c.timestamp != 0x0f+0x03 || c.timestampDelta != 0x03 {
+		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
 			t.Error("invalid timestamp")
 		}
 	}, func(err error) {
@@ -348,15 +348,15 @@ func TestRtmpStack_rtmpReadMessageHeader(t *testing.T) {
 
 	// fmt0=>fmt1=>fmt2
 	fn([]byte{
-		0x00, 0x00, 0x05,
-	}, 1, f0, func(b []byte, c *RtmpChunk) {
+		0x00, 0x00, 0x0f,
+	}, 2, f0, func(b []byte, c *RtmpChunk) {
 		if c.streamId != 0x0c {
 			t.Error("invalid message")
 		}
-		if c.payloadLength != 0x0f || c.messageType != 0x0e {
+		if c.payloadLength != 0x0e || c.messageType != 0x0d {
 			t.Error("invalid message")
 		}
-		if c.timestamp != 0x0f+0x03+0x05 || c.timestampDelta != 0x05 {
+		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
 			t.Error("invalid timestamp")
 		}
 	}, func(err error) {
@@ -364,14 +364,14 @@ func TestRtmpStack_rtmpReadMessageHeader(t *testing.T) {
 	})
 
 	// fmt0=>fmt1=>fmt2=>fm3
-	fn([]byte{}, 1, f0, func(b []byte, c *RtmpChunk) {
+	fn([]byte{}, 3, f0, func(b []byte, c *RtmpChunk) {
 		if c.streamId != 0x0c {
 			t.Error("invalid message")
 		}
-		if c.payloadLength != 0x0f || c.messageType != 0x0e {
+		if c.payloadLength != 0x0e || c.messageType != 0x0d {
 			t.Error("invalid message")
 		}
-		if c.timestamp != 0x0f+0x03+0x05+0x05 || c.timestampDelta != 0x05 {
+		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
 			t.Error("invalid timestamp")
 		}
 	}, func(err error) {

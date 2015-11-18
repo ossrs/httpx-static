@@ -708,7 +708,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		// chunk stream basic header.
 		var fmt uint8
 		var cid uint32
-		if fmt, cid, err = rtmpReadBasicHeader(v.in); err != nil {
+		if fmt, cid, err = RtmpReadBasicHeader(v.in); err != nil {
 			core.Warn.Println("read basic header failed. err is", err)
 			return
 		}
@@ -723,7 +723,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 
 		// chunk stream message header
 		var b []byte
-		if b, err = rtmpReadMessageHeader(v.in, fmt, chunk); err != nil {
+		if b, err = RtmpReadMessageHeader(v.in, fmt, chunk); err != nil {
 			return
 		}
 
@@ -750,7 +750,7 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 // @remark we return the b which indicates the body read in this process,
 // 		for the c3 header, we try to read more bytes which maybe header
 // 		or the body.
-func rtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte, err error) {
+func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte, err error) {
 	// we should not assert anything about fmt, for the first packet.
 	// (when first packet, the chunk->msg is NULL).
 	// the fmt maybe 0/1/2/3, the FMLE will send a 0xC4 for some audio packet.
@@ -839,7 +839,6 @@ func rtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 			core.Error.Println("chunk msg exists, should not change the delta.")
 			return nil, RtmpChunkError
 		}
-		chunk.timestampDelta = delta
 
 		// fmt: 0
 		// timestamp: 3 bytes
@@ -854,7 +853,10 @@ func rtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 		// 0x00ffffff), this value MUST be 16777215, and the 'extended
 		// timestamp header' MUST be present. Otherwise, this value SHOULD be
 		// the entire delta.
-		if chunk.hasExtendedTimestamp = bool(delta > RtmpExtendedTimestamp); !chunk.hasExtendedTimestamp {
+		if chunk.hasExtendedTimestamp = bool(delta >= RtmpExtendedTimestamp); !chunk.hasExtendedTimestamp {
+			// no extended-timestamp, apply the delta.
+			chunk.timestampDelta = delta
+
 			// Extended timestamp: 0 or 4 bytes
 			// This field MUST be sent when the normal timsestamp is set to
 			// 0xffffff, it MUST NOT be sent if the normal timestamp is set to
@@ -873,7 +875,10 @@ func rtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 				// 6.1.2.3. Type 2
 				// For a type-1 or type-2 chunk, the difference between the previous
 				// chunk's timestamp and the current chunk's timestamp is sent here.
-				chunk.timestamp += uint64(delta)
+				// @remark for continuous chunk, timestamp never change.
+				if isFirstMsgOfChunk {
+					chunk.timestamp += uint64(delta)
+				}
 			}
 		}
 
@@ -942,8 +947,8 @@ func rtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 		// if ctimestamp<=0, the chunk previous packet has no extended-timestamp,
 		// always use the extended timestamp.
 		// @remark for the first chunk of message, always use the extended timestamp.
-		// @remark in this situation, the timestamp in chunk always equals to timestamp.
 		if isFirstMsgOfChunk || ctimestamp <= 0 || ctimestamp == timestamp {
+			chunk.timestamp = uint64(timestamp)
 			b = nil
 		}
 	}
@@ -1024,7 +1029,7 @@ func rtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 //
 // Chunk stream IDs with values 64-319 could be represented by both 2-
 // byte version and 3-byte version of this field.
-func rtmpReadBasicHeader(in io.Reader) (fmt uint8, cid uint32, err error) {
+func RtmpReadBasicHeader(in io.Reader) (fmt uint8, cid uint32, err error) {
 	ch := make([]byte, 3)
 	if _, err = io.CopyN(NewBytesWriter(ch[:1]), in, 1); err != nil {
 		return
