@@ -67,32 +67,32 @@ func (v *bytesWriter) Write(p []byte) (n int, err error) {
 
 // mix []byte and io.Reader
 type mixReader struct {
-	b io.Reader
-	r io.Reader
+	reader io.Reader
+	next   io.Reader
 }
 
-func NewMixReader(b []byte, r io.Reader) io.Reader {
+func NewMixReader(a io.Reader, b io.Reader) io.Reader {
 	return &mixReader{
-		b: bytes.NewReader(b),
-		r: r,
+		reader: a,
+		next:   b,
 	}
 }
 
 func (v *mixReader) Read(p []byte) (n int, err error) {
 	for {
-		if v.b != nil {
-			n, err = v.b.Read(p)
+		if v.reader != nil {
+			n, err = v.reader.Read(p)
 			if err == io.EOF {
-				v.b = nil
+				v.reader = nil
 				continue
 			}
 			return
 		}
 
-		if v.r != nil {
-			n, err = v.r.Read(p)
+		if v.next != nil {
+			n, err = v.next.Read(p)
 			if err == io.EOF {
-				v.r = nil
+				v.next = nil
 				continue
 			}
 			return
@@ -781,6 +781,8 @@ type RtmpStack struct {
 	// the input and output stream.
 	in  io.Reader
 	out io.Writer
+	// use bytes.Buffer to parse RTMP.
+	inb bytes.Buffer
 	// the chunks for RTMP,
 	// key is the cid from basic header.
 	chunks map[uint32]*RtmpChunk
@@ -807,7 +809,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		// chunk stream basic header.
 		var fmt uint8
 		var cid uint32
-		if fmt, cid, err = RtmpReadBasicHeader(v.in); err != nil {
+		if fmt, cid, err = RtmpReadBasicHeader(v.in, &v.inb); err != nil {
 			core.Warn.Println("read basic header failed. err is", err)
 			return
 		}
@@ -821,13 +823,12 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		}
 
 		// chunk stream message header
-		var b []byte
-		if b, err = RtmpReadMessageHeader(v.in, fmt, chunk); err != nil {
+		if err = RtmpReadMessageHeader(v.in, &v.inb, fmt, chunk); err != nil {
 			return
 		}
 
 		// read msg payload from chunk stream.
-		if m, err = RtmpReadMessagePayload(v.inChunkSize, v.in, b, chunk); err != nil {
+		if m, err = RtmpReadMessagePayload(v.inChunkSize, v.in, &v.inb, chunk); err != nil {
 			return
 		}
 
@@ -844,24 +845,19 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 	return
 }
 
-// read the RTMP message from input reader and preloaded b.
-// return the completed message from chunk partial message..
-func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, b []byte, chunk *RtmpChunk) (m *RtmpMessage, err error) {
+// read the RTMP message from buffer inb which load from reader in.
+// return the completed message from chunk partial message.
+func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, chunk *RtmpChunk) (m *RtmpMessage, err error) {
 	m = chunk.partialMessage
 	if m == nil {
 		panic("chunk message should never be nil")
 	}
 
 	// mix reader to read from preload body or reader.
-	r := NewMixReader(b, in)
+	r := NewMixReader(inb, in)
 
 	// the preload body must be consumed in a time.
 	left := (int)(chunk.payloadLength - uint32(m.payload.Len()))
-	if len(b) > left {
-		core.Error.Println("preload body overflow")
-		return nil, RtmpPayloadError
-	}
-
 	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
@@ -902,7 +898,7 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, b []byte, chunk *Rtm
 // @remark we return the b which indicates the body read in this process,
 // 		for the c3 header, we try to read more bytes which maybe header
 // 		or the body.
-func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte, err error) {
+func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *RtmpChunk) (err error) {
 	// we should not assert anything about fmt, for the first packet.
 	// (when first packet, the chunk->msg is NULL).
 	// the fmt maybe 0/1/2/3, the FMLE will send a 0xC4 for some audio packet.
@@ -943,7 +939,7 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 		} else {
 			// must be a RTMP protocol level error.
 			core.Error.Println("fresh chunk fmt must be", RtmpFmtType0, "actual is", fmt)
-			return nil, RtmpChunkError
+			return RtmpChunkError
 		}
 	}
 
@@ -951,7 +947,7 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 	// the fmt must not be type0 which means new message.
 	if !isFirstMsgOfChunk && fmt == RtmpFmtType0 {
 		core.Error.Println("chunk partial msg, fmt must be", RtmpFmtType0, "actual is", fmt)
-		return nil, RtmpChunkError
+		return RtmpChunkError
 	}
 
 	// create msg when new chunk stream start
@@ -965,11 +961,10 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 
 	var bh []byte
 	if nbh > 0 {
-		bh = make([]byte, nbh)
-		if _, err = io.CopyN(NewBytesWriter(bh), in, int64(nbh)); err != nil {
-			core.Error.Println("read", nbh, "bytes header failed. err is", err)
+		if err = core.Grow(in, inb, nbh); err != nil {
 			return
 		}
+		bh = inb.Next(nbh)
 	}
 
 	// parse the message header.
@@ -989,7 +984,7 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 		// for a message, if msg exists in cache, the delta must not changed.
 		if !isFirstMsgOfChunk && chunk.timestampDelta != delta {
 			core.Error.Println("chunk msg exists, should not change the delta.")
-			return nil, RtmpChunkError
+			return RtmpChunkError
 		}
 
 		// fmt: 0
@@ -1041,12 +1036,12 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 			// for a message, if msg exists in cache, the size must not changed.
 			if !isFirstMsgOfChunk && chunk.payloadLength != payloadLength {
 				core.Error.Println("chunk msg exists, payload length should not be changed.")
-				return nil, RtmpChunkError
+				return RtmpChunkError
 			}
 			// for a message, if msg exists in cache, the type must not changed.
 			if !isFirstMsgOfChunk && chunk.messageType != mtype {
 				core.Error.Println("chunk msg exists, type should not be changed.")
-				return nil, RtmpChunkError
+				return RtmpChunkError
 			}
 			chunk.payloadLength = payloadLength
 			chunk.messageType = mtype
@@ -1067,11 +1062,10 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 	if chunk.hasExtendedTimestamp {
 		// try to read 4 bytes from stream,
 		// which maybe the body or the extended-timestamp.
-		b = make([]byte, 4)
-		if _, err = io.CopyN(NewBytesWriter(b), in, 4); err != nil {
-			core.Error.Println("read extended timestamp failed. err is", err)
-			return nil, err
+		if err = core.Grow(in, inb, 4); err != nil {
+			return
 		}
+		b := inb.Bytes()
 
 		// parse the extended-timestamp
 		timestamp := uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24
@@ -1101,7 +1095,7 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 		// @remark for the first chunk of message, always use the extended timestamp.
 		if isFirstMsgOfChunk || ctimestamp <= 0 || ctimestamp == timestamp {
 			chunk.timestamp = uint64(timestamp)
-			b = nil
+			inb.Next(4) // consume from buffer.
 		}
 	}
 
@@ -1181,13 +1175,18 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 //
 // Chunk stream IDs with values 64-319 could be represented by both 2-
 // byte version and 3-byte version of this field.
-func RtmpReadBasicHeader(in io.Reader) (fmt uint8, cid uint32, err error) {
-	ch := make([]byte, 3)
-	if _, err = io.CopyN(NewBytesWriter(ch[:1]), in, 1); err != nil {
+// @remark use inb to parse and read from in to inb if no data.
+func RtmpReadBasicHeader(in io.Reader, inb *bytes.Buffer) (fmt uint8, cid uint32, err error) {
+	if err = core.Grow(in, inb, 1); err != nil {
 		return
 	}
 
-	fmt = uint8(ch[0])
+	var vb byte
+	if vb, err = inb.ReadByte(); err != nil {
+		return
+	}
+
+	fmt = uint8(vb)
 	cid = uint32(fmt & 0x3f)
 	fmt = (fmt >> 6) & 0x03
 
@@ -1196,22 +1195,34 @@ func RtmpReadBasicHeader(in io.Reader) (fmt uint8, cid uint32, err error) {
 		return
 	}
 
-	// 64-319, 2B chunk header
-	if cid == 0 {
-		if _, err = io.CopyN(NewBytesWriter(ch[1:2]), in, 1); err != nil {
+	// 2 or 3B
+	if cid >= 0 {
+		// 64-319, 2B chunk header
+		if err = core.Grow(in, inb, 1); err != nil {
 			return
 		}
 
-		cid = uint32(ch[1]) + 64
-		return
+		if vb, err = inb.ReadByte(); err != nil {
+			return
+		}
+
+		temp := uint32(vb) + 64
+
+		// 64-65599, 3B chunk header
+		if cid >= 1 {
+			if err = core.Grow(in, inb, 1); err != nil {
+				return
+			}
+
+			if vb, err = inb.ReadByte(); err != nil {
+				return
+			}
+
+			temp += uint32(vb) * 256
+		}
+
+		return fmt, temp, nil
 	}
 
-	// 64-65599, 3B chunk header
-	// cid is 1
-	if _, err = io.CopyN(NewBytesWriter(ch[1:]), in, 2); err != nil {
-		return
-	}
-	cid = uint32(ch[2])*256 + uint32(ch[1]) + 64
-
-	return
+	return fmt, cid, RtmpChunkError
 }
