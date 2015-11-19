@@ -54,3 +54,15 @@ func TestAmf0String(t *testing.T) {
 		t.Error("invalid amf0 string", b)
 	}
 }
+
+func TestAmf0Utf8(t *testing.T) {
+	var s amf0Utf8
+	if err := s.UnmarshalBinary([]byte{0x00, 0x04, 'o', 'r', 'y', 'x'}); err != nil || len(s) != 4 {
+		t.Error("invalid amf0 string", ([]byte)(s))
+	}
+
+	s = amf0Utf8("oryx")
+	if b, err := s.MarshalBinary(); err != nil || len(b) != 6 {
+		t.Error("invalid amf0 string", b)
+	}
+}

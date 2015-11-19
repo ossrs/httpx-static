@@ -81,15 +81,51 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	}
 }
 
+// a amf0 utf8 string is a string.
+type amf0Utf8 string
+
+func (s *amf0Utf8) Size() int {
+	return 2 + len(*s)
+}
+
+func (s *amf0Utf8) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = binary.Write(&b, binary.BigEndian, uint16(len(*s))); err != nil {
+		return
+	}
+
+	if _, err = b.Write(([]byte)(*s)); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (s *amf0Utf8) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var nb uint16
+	if err = binary.Read(b, binary.BigEndian, &nb); err != nil {
+		return
+	}
+
+	v := make([]byte, nb)
+	if _, err = b.Read(v); err != nil {
+		return
+	}
+	*s = amf0Utf8(string(v))
+
+	return
+}
+
 // a amf0 string is a string.
 type Amf0String string
 
-// Amf0Any
 func (s *Amf0String) Size() int {
 	return 1 + 2 + len(*s)
 }
 
-// encoding.BinaryMarshaler
 func (s *Amf0String) MarshalBinary() (data []byte, err error) {
 	var b bytes.Buffer
 
@@ -108,7 +144,6 @@ func (s *Amf0String) MarshalBinary() (data []byte, err error) {
 	return b.Bytes(), nil
 }
 
-// encoding.BinaryUnmarshaler
 func (s *Amf0String) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
 
