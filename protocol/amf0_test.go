@@ -81,6 +81,29 @@ func TestAmf0Discovery(t *testing.T) {
 	} else if _, ok := a.(*Amf0Undefined); !ok {
 		t.Error("not undefined")
 	}
+
+	b = []byte{0x0b, 0, 0, 0, 0, 0, 0, 0, 0xf, 0, 0xe}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if a, ok := a.(*Amf0Date); !ok {
+		t.Error("not date")
+	} else if a.Date != 0xf || a.Zone != 0xe {
+		t.Error("invalid data", *a)
+	}
+}
+
+func TestAmf0Date(t *testing.T) {
+	var s Amf0Date
+	if err := s.UnmarshalBinary([]byte{0x0b, 0, 0, 0, 0, 0, 0, 0, 0xf, 0, 0xe}); err != nil || s.Date != 0xf || s.Zone != 0xe {
+		t.Error("invalid amf0 date")
+	}
+
+	s = Amf0Date{}
+	if b, err := s.MarshalBinary(); err != nil || len(b) != 11 {
+		t.Error("invalid amf0 date", b)
+	}
 }
 
 func TestAmf0Undefined(t *testing.T) {

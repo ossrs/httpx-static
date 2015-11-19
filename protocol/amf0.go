@@ -25,6 +25,8 @@ import (
 	"bytes"
 	"encoding"
 	"encoding/binary"
+	"fmt"
+	"time"
 )
 
 // AMF0 marker
@@ -84,11 +86,84 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 		return &Amf0Null{}, nil
 	case MarkerAmf0Undefined:
 		return &Amf0Undefined{}, nil
+	case MarkerAmf0Date:
+		return &Amf0Date{}, nil
 	case MarkerAmf0Invalid:
 		fallthrough
 	default:
 		return nil, Amf0Error
 	}
+}
+
+// a amf0 date is a object.
+type Amf0Date struct {
+	// date value
+	// An ActionScript Date is serialized as the number of milliseconds
+	// elapsed since the epoch of midnight on 1st Jan 1970 in the UTC
+	// time zone.
+	Date uint64
+	// time zone
+	// While the design of this type reserves room for time zone offset
+	// information, it should not be filled in, nor used, as it is unconventional
+	// to change time zones when serializing dates on a network. It is suggested
+	// that the time zone be queried independently as needed.
+	Zone uint16
+}
+
+func (v Amf0Date) String() string {
+	return fmt.Sprintf("%v since 1970, zone is %v", v.Date, v.Zone)
+}
+
+func (v *Amf0Date) Size() int {
+	return 1 + 8 + 2
+}
+
+func (v *Amf0Date) From(t time.Time) {
+	v.Date = uint64(t.UnixNano() / int64(time.Millisecond))
+
+	_, vz := t.Zone()
+	v.Zone = uint16(vz)
+}
+
+func (v *Amf0Date) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0Date); err != nil {
+		return
+	}
+
+	if err = binary.Write(&b, binary.BigEndian, v.Date); err != nil {
+		return
+	}
+
+	if err = binary.Write(&b, binary.BigEndian, v.Zone); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *Amf0Date) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0Date {
+		return Amf0Error
+	}
+
+	if err = binary.Read(b, binary.BigEndian, &v.Date); err != nil {
+		return
+	}
+
+	if err = binary.Read(b, binary.BigEndian, &v.Zone); err != nil {
+		return
+	}
+
+	return
 }
 
 // a amf0 undefined is a object.

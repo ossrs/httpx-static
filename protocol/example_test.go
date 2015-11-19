@@ -24,6 +24,7 @@ package protocol_test
 import (
 	"fmt"
 	"github.com/ossrs/go-oryx/protocol"
+	"time"
 )
 
 func Example_Amf0Discovery() {
@@ -44,7 +45,7 @@ func Example_Amf0Discovery() {
 
 		switch a := a.(type) {
 		case *protocol.Amf0String:
-			_ = len(*a) // use the *string.
+			_ = *a // use the *string.
 		case *protocol.Amf0Boolean:
 			_ = *a // use the *bool.
 		case *protocol.Amf0Number:
@@ -53,6 +54,8 @@ func Example_Amf0Discovery() {
 			_ = *a // use the null.
 		case *protocol.Amf0Undefined:
 			_ = *a // use the undefined.
+		case *protocol.Amf0Date:
+			_ = *a // use the date
 		default:
 			return // invalid type.
 		}
@@ -212,4 +215,37 @@ func ExampleAmf0Undefined_UnmarshalBinary() {
 
 	// Output:
 	// amf0 undefined
+}
+
+func ExampleAmf0Date_MarshalBinary() {
+	s := protocol.Amf0Date{}
+
+	s.From(time.Now())
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println("amf0 date")
+
+	// Output:
+	// 11
+	// amf0 date
+}
+
+func ExampleAmf0Date_UnmarshalBinary() {
+	b := []byte{0x0b, 0, 0, 1, 81, 30, 96, 9, 6, 112, 128} // read from network
+
+	var s protocol.Amf0Date
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println("amf0 date")
+
+	// Output:
+	// amf0 date
 }
