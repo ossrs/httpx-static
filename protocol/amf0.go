@@ -23,8 +23,49 @@ package protocol
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/binary"
 )
+
+// AMF0 marker
+const (
+	MarkerAmf0Number      = 0x00
+	MarkerAmf0Boolean     = 0x01
+	MarkerAmf0String      = 0x02
+	MarkerAmf0Object      = 0x03
+	MarkerAmf0MovieClip   = 0x04 // reserved, not supported
+	MarkerAmf0Null        = 0x05
+	MarkerAmf0Undefined   = 0x06
+	MarkerAmf0Reference   = 0x07
+	MarkerAmf0EcmaArray   = 0x08
+	MarkerAmf0ObjectEnd   = 0x09
+	MarkerAmf0StrictArray = 0x0A
+	MarkerAmf0Date        = 0x0B
+	MarkerAmf0LongString  = 0x0C
+	MarkerAmf0UnSupported = 0x0D
+	MarkerAmf0RecordSet   = 0x0E // reserved, not supported
+	MarkerAmf0XmlDocument = 0x0F
+	MarkerAmf0TypedObject = 0x10
+	// AVM+ object is the AMF3 object.
+	MarkerAmf0AVMplusObject = 0x11
+	// origin array whos data takes the same form as LengthValueBytes
+	MarkerAmf0OriginStrictArray = 0x20
+
+	// User defined
+	MarkerAmf0Invalid = 0x3F
+)
+
+// the amf0 type interface
+type Amf0Any interface {
+	encoding.BinaryMarshaler
+	encoding.BinaryUnmarshaler
+}
+
+// discovery the Amf0Any type by marker.
+func Amf0Discovery(data []byte) (a Amf0Any, err error) {
+	// TODO: FIXME: implements it.
+	return
+}
 
 // a amf0 string is a string.
 type Amf0String string
@@ -32,6 +73,10 @@ type Amf0String string
 // encoding.BinaryMarshaler
 func (s *Amf0String) MarshalBinary() (data []byte, err error) {
 	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0String); err != nil {
+		return
+	}
 
 	if err = binary.Write(&b, binary.BigEndian, uint16(len(*s))); err != nil {
 		return
@@ -47,6 +92,15 @@ func (s *Amf0String) MarshalBinary() (data []byte, err error) {
 // encoding.BinaryUnmarshaler
 func (s *Amf0String) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0String {
+		return Amf0Error
+	}
 
 	var nb uint16
 	if err = binary.Read(b, binary.BigEndian, &nb); err != nil {

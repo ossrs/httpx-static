@@ -39,12 +39,12 @@ func ExampleAmf0String_MarshalBinary() {
 	fmt.Println(b)
 
 	// Output:
-	// 6
-	// [0 4 111 114 121 120]
+	// 7
+	// [2 0 4 111 114 121 120]
 }
 
 func ExampleAmf0String_UnmarshalBinary() {
-	b := []byte{0x00, 0x04, 'o', 'r', 'y', 'x'}
+	b := []byte{0x02, 0x00, 0x04, 'o', 'r', 'y', 'x'} // read from network
 
 	var s protocol.Amf0String
 	if err := s.UnmarshalBinary(b); err != nil {

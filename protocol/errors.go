@@ -28,3 +28,6 @@ var RtmpChunkError = errors.New("rtmp chunk error")
 
 // when got RTMP msg invalid payload.
 var RtmpPayloadError = errors.New("rtmp msg payload error")
+
+// the amf0 object error.
+var Amf0Error = errors.New("amf0 error")
