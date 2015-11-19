@@ -832,6 +832,9 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 			return
 		}
 
+		// truncate the buffer.
+		v.inb.Truncate(v.inb.Len())
+
 		// not got an entire RTMP message, try next chunk.
 		if m != nil {
 			break

@@ -22,10 +22,10 @@
 package core
 
 import (
+	"bytes"
+	"io"
 	"math/rand"
 	"time"
-	"io"
-	"bytes"
 )
 
 // the random object to fill bytes.
@@ -67,7 +67,7 @@ func Grow(in io.Reader, inb *bytes.Buffer, size int) (err error) {
 		return
 	}
 
-	if _,err = io.CopyN(inb, in, int64(size)); err != nil {
+	if _, err = io.CopyN(inb, in, int64(size)); err != nil {
 		return
 	}
 
