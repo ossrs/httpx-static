@@ -191,22 +191,21 @@ func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
 		return Amf0Error
 	}
 
-	p := data[1:]
-	for len(p) > 0 {
+	for b.Len() > 0 {
 		var key amf0Utf8
-		if err = key.UnmarshalBinary(p); err != nil {
+		if err = key.UnmarshalBinary(b.Bytes()); err != nil {
 			return
 		}
-		p = p[key.Size():]
+		b.Next(key.Size())
 
 		var value Amf0Any
-		if value, err = Amf0Discovery(p); err != nil {
+		if value, err = Amf0Discovery(b.Bytes()); err != nil {
 			return
 		}
-		if err = value.UnmarshalBinary(p); err != nil {
+		if err = value.UnmarshalBinary(b.Bytes()); err != nil {
 			return
 		}
-		p = p[value.Size():]
+		b.Next(value.Size())
 
 		// EOF.
 		if _, ok := value.(*amf0ObjectEOF); ok && len(key) == 0 {
