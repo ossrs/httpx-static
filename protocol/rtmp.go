@@ -480,7 +480,7 @@ func (v *RtmpConnection) receiver() (err error) {
 		}
 
 		// cache the message when got non empty one.
-		if m != nil && len(m.payload) > 0 {
+		if m != nil && m.payload.Len() > 0 {
 			v.in <- m
 		}
 	}
@@ -682,13 +682,11 @@ type RtmpMessage struct {
 	// user must use SrsProtocol.decode_message to get concrete packet.
 	// @remark, not all message payload can be decoded to packet. for example,
 	//       video/audio packet use raw bytes, no video/audio packet.
-	payload []byte
+	payload bytes.Buffer
 }
 
 func NewRtmpMessage() *RtmpMessage {
-	return &RtmpMessage{
-		payload: nil,
-	}
+	return &RtmpMessage{}
 }
 
 // RTMP packet, which can be
@@ -749,11 +747,8 @@ type RtmpChunk struct {
 	hasExtendedTimestamp bool
 	// whether this chunk stream is fresh.
 	isFresh bool
-
 	// the partial message which not completed.
 	partialMessage *RtmpMessage
-	// the position for partition payload.
-	pos int
 
 	// 4.1. Message Header
 	// 3bytes.
@@ -857,36 +852,35 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, b []byte, chunk *Rtm
 		panic("chunk message should never be nil")
 	}
 
-	// the p is the left payload to read.
-	p := m.payload[chunk.pos:]
+	// mix reader to read from preload body or reader.
 	r := NewMixReader(b, in)
 
-	if len(b) > len(p) {
-		core.Error.Println("empty payload should never preload body")
+	// the preload body must be consumed in a time.
+	left := (int)(chunk.payloadLength - uint32(m.payload.Len()))
+	if len(b) > left {
+		core.Error.Println("preload body overflow")
 		return nil, RtmpPayloadError
 	}
 
-	if len(m.payload) == 0 {
+	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
 		return nil, nil
 	}
 
 	// the chunk payload to read this time.
-	if int(chunkSize) < len(p) {
-		p = p[:chunkSize]
+	if int(chunkSize) < left {
+		left = int(chunkSize)
 	}
-	chunk.pos += len(p)
 
 	// read payload to buffer
-	if _, err = io.CopyN(NewBytesWriter(p), r, int64(len(p))); err != nil {
+	if _, err = io.CopyN(&m.payload, r, int64(left)); err != nil {
 		core.Error.Println("read body failed. err is", err)
 		return
 	}
 
 	// got entire RTMP message?
-	if chunk.pos == len(m.payload) {
-		chunk.pos = 0
+	if chunk.payloadLength == uint32(m.payload.Len()) {
 		chunk.partialMessage = nil
 		return
 	}
@@ -1138,9 +1132,6 @@ func RtmpReadMessageHeader(in io.Reader, fmt uint8, chunk *RtmpChunk) (b []byte,
 	chunk.partialMessage.timestamp = chunk.timestamp
 	chunk.partialMessage.preferCid = chunk.cid
 	chunk.partialMessage.streamId = chunk.streamId
-	if chunk.partialMessage.payload == nil {
-		chunk.partialMessage.payload = make([]byte, chunk.payloadLength)
-	}
 
 	// update chunk information.
 	chunk.fmt = fmt

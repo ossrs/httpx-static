@@ -308,7 +308,7 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 		0x0d,
 		0x0c, 0x00, 0x00, 0x00,
 	}, 0, f0, func(b []byte, c *RtmpChunk) {
-		if len(c.partialMessage.payload) != 0x0e {
+		if c.partialMessage.payload.Len() != 0x00 {
 			t.Error("invalid payload")
 		}
 		if c.payloadLength != 0x0e || c.messageType != 0x0d || c.streamId != 0x0c {
@@ -395,25 +395,23 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 	c := NewRtmpChunk(2)
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = []byte{}
 	if _, err := RtmpReadMessagePayload(0, nil, []byte{0x00}, c); err == nil {
 		t.Error("empty message should never has preload body.")
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = make([]byte, 1)
+	c.payloadLength = 1
 	if _, err := RtmpReadMessagePayload(0, nil, []byte{0x00, 0x01}, c); err == nil {
 		t.Error("message overflow for preload body.")
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = []byte{}
 	if m, err := RtmpReadMessagePayload(0, nil, nil, c); err != nil || m != nil {
 		t.Error("should be empty")
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = make([]byte, 2)
+	c.payloadLength = 2
 	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
 		0x01, 0x02, 0x03, 0x04, 0x05,
 	}), nil, c); err != nil || m == nil {
@@ -421,7 +419,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = make([]byte, 2)
+	c.payloadLength = 2
 	if m, err := RtmpReadMessagePayload(2, nil, []byte{
 		0x01, 0x02,
 	}, c); err != nil || m == nil {
@@ -429,7 +427,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = make([]byte, 5)
+	c.payloadLength = 5
 	if m, err := RtmpReadMessagePayload(5, bytes.NewReader([]byte{
 		0x01, 0x02,
 	}), []byte{
@@ -439,7 +437,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = make([]byte, 5)
+	c.payloadLength = 5
 	if m, err := RtmpReadMessagePayload(6, bytes.NewReader([]byte{
 		0x01, 0x02,
 	}), []byte{
@@ -449,7 +447,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.partialMessage.payload = make([]byte, 5)
+	c.payloadLength = 5
 	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
 		0x01, 0x02, 0x05,
 	}), []byte{
