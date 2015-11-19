@@ -74,6 +74,9 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	case MarkerAmf0String:
 		var o Amf0String
 		return &o, nil
+	case MarkerAmf0Boolean:
+		var o Amf0Boolean
+		return &o, nil
 	case MarkerAmf0Invalid:
 		fallthrough
 	default:
@@ -119,32 +122,83 @@ func (s *amf0Utf8) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// a amf0 string is a string.
-type Amf0String string
+// a amf0 boolean is a bool.
+type Amf0Boolean bool
 
-func (s *Amf0String) Size() int {
-	return 1 + 2 + len(*s)
+func (v *Amf0Boolean) Size() int {
+	return 1 + 1
 }
 
-func (s *Amf0String) MarshalBinary() (data []byte, err error) {
+func (v *Amf0Boolean) MarshalBinary() (data []byte, err error) {
 	var b bytes.Buffer
 
-	if err = b.WriteByte(MarkerAmf0String); err != nil {
+	if err = b.WriteByte(MarkerAmf0Boolean); err != nil {
 		return
 	}
 
-	if err = binary.Write(&b, binary.BigEndian, uint16(len(*s))); err != nil {
-		return
+	var vb byte
+	if bool(*v) {
+		vb = 1
 	}
 
-	if _, err = b.Write(([]byte)(*s)); err != nil {
+	if err = b.WriteByte(vb); err != nil {
 		return
 	}
 
 	return b.Bytes(), nil
 }
 
-func (s *Amf0String) UnmarshalBinary(data []byte) (err error) {
+func (v *Amf0Boolean) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0Boolean {
+		return Amf0Error
+	}
+
+	var vb byte
+	if vb, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	*v = Amf0Boolean(false)
+	if vb != 0 {
+		*v = Amf0Boolean(true)
+	}
+
+	return
+}
+
+// a amf0 string is a string.
+type Amf0String string
+
+func (v *Amf0String) Size() int {
+	return 1 + 2 + len(*v)
+}
+
+func (v *Amf0String) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0String); err != nil {
+		return
+	}
+
+	if err = binary.Write(&b, binary.BigEndian, uint16(len(*v))); err != nil {
+		return
+	}
+
+	if _, err = b.Write(([]byte)(*v)); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *Amf0String) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
 
 	var m byte
@@ -156,16 +210,16 @@ func (s *Amf0String) UnmarshalBinary(data []byte) (err error) {
 		return Amf0Error
 	}
 
-	var nb uint16
-	if err = binary.Read(b, binary.BigEndian, &nb); err != nil {
+	var nvb uint16
+	if err = binary.Read(b, binary.BigEndian, &nvb); err != nil {
 		return
 	}
 
-	v := make([]byte, nb)
-	if _, err = b.Read(v); err != nil {
+	vb := make([]byte, nvb)
+	if _, err = b.Read(vb); err != nil {
 		return
 	}
-	*s = Amf0String(string(v))
+	*v = Amf0String(string(vb))
 
 	return
 }

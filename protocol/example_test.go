@@ -44,7 +44,9 @@ func Example_Amf0Discovery() {
 
 		switch a := a.(type) {
 		case *protocol.Amf0String:
-			_ = len(*a) // use the Amf0String.
+			_ = len(*a) // use the *string.
+		case *protocol.Amf0Boolean:
+			_ = *a // use the *bool.
 		default:
 			return // invalid type.
 		}
@@ -80,4 +82,35 @@ func ExampleAmf0String_UnmarshalBinary() {
 
 	// Output:
 	// oryx
+}
+
+func ExampleAmf0Boolean_MarshalBinary() {
+	s := protocol.Amf0Boolean(true)
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println(b)
+
+	// Output:
+	// 2
+	// [1 1]
+}
+
+func ExampleAmf0Boolean_UnmarshalBinary() {
+	b := []byte{0x01, 0x01} // read from network
+
+	var s protocol.Amf0Boolean
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println(s)
+
+	// Output:
+	// true
 }

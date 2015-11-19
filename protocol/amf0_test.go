@@ -41,6 +41,17 @@ func TestAmf0Discovery(t *testing.T) {
 	} else if *a != Amf0String("oryx") {
 		t.Error("invalid data")
 	}
+
+	b = []byte{0x01, 00}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if a, ok := a.(*Amf0Boolean); !ok {
+		t.Error("not bool")
+	} else if *a != Amf0Boolean(false) {
+		t.Error("invalid data")
+	}
 }
 
 func TestAmf0String(t *testing.T) {
