@@ -273,7 +273,7 @@ func ExampleAmf0Object_MarshalBinary() {
 }
 
 func ExampleAmf0Object_UnmarshalBinary() {
-	b := []byte{3, 0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x', 0, 0, 9} // read from network
+	b := []byte{3, 0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x', 0, 5, 's', 't', 'a', 'r', 't', 0, 64, 159, 124, 0, 0, 0, 0, 0, 0, 0, 9} // read from network
 
 	var s protocol.Amf0Object
 	if err := s.UnmarshalBinary(b); err != nil {
@@ -281,9 +281,16 @@ func ExampleAmf0Object_UnmarshalBinary() {
 	}
 
 	fmt.Println("amf0 object")
-	fmt.Println(*s.Get("pj").(*protocol.Amf0String))
+
+	if v, ok := s.Get("pj").(*protocol.Amf0String); ok {
+		fmt.Println("value string:", string(*v))
+	}
+	if v, ok := s.Get("start").(*protocol.Amf0Number); ok {
+		fmt.Println("value number:", float64(*v))
+	}
 
 	// Output:
 	// amf0 object
-	// oryx
+	// value string: oryx
+	// value number: 2015
 }
