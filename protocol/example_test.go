@@ -47,6 +47,8 @@ func Example_Amf0Discovery() {
 			_ = len(*a) // use the *string.
 		case *protocol.Amf0Boolean:
 			_ = *a // use the *bool.
+		case *protocol.Amf0Number:
+			_ = *a // use the *float64
 		default:
 			return // invalid type.
 		}
@@ -113,4 +115,35 @@ func ExampleAmf0Boolean_UnmarshalBinary() {
 
 	// Output:
 	// true
+}
+
+func ExampleAmf0Number_MarshalBinary() {
+	s := protocol.Amf0Number(100.0)
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println(b)
+
+	// Output:
+	// 9
+	// [0 64 89 0 0 0 0 0 0]
+}
+
+func ExampleAmf0Number_UnmarshalBinary() {
+	b := []byte{0x00, 0x40, 0x59, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00} // read from network
+
+	var s protocol.Amf0Number
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println(s)
+
+	// Output:
+	// 100
 }
