@@ -49,6 +49,10 @@ func Example_Amf0Discovery() {
 			_ = *a // use the *bool.
 		case *protocol.Amf0Number:
 			_ = *a // use the *float64
+		case *protocol.Amf0Null:
+			_ = *a // use the null.
+		case *protocol.Amf0Undefined:
+			_ = *a // use the undefined.
 		default:
 			return // invalid type.
 		}
@@ -146,4 +150,66 @@ func ExampleAmf0Number_UnmarshalBinary() {
 
 	// Output:
 	// 100
+}
+
+func ExampleAmf0Null_MarshalBinary() {
+	s := protocol.Amf0Null{}
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println(b)
+
+	// Output:
+	// 1
+	// [5]
+}
+
+func ExampleAmf0Null_UnmarshalBinary() {
+	b := []byte{0x05} // read from network
+
+	var s protocol.Amf0Null
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println("amf0 null")
+
+	// Output:
+	// amf0 null
+}
+
+func ExampleAmf0Undefined_MarshalBinary() {
+	s := protocol.Amf0Undefined{}
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println(b)
+
+	// Output:
+	// 1
+	// [6]
+}
+
+func ExampleAmf0Undefined_UnmarshalBinary() {
+	b := []byte{0x06} // read from network
+
+	var s protocol.Amf0Undefined
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println("amf0 undefined")
+
+	// Output:
+	// amf0 undefined
 }

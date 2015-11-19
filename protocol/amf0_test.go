@@ -63,6 +63,48 @@ func TestAmf0Discovery(t *testing.T) {
 	} else if *a != Amf0Number(100.0) {
 		t.Error("invalid data", *a)
 	}
+
+	b = []byte{0x05}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if _, ok := a.(*Amf0Null); !ok {
+		t.Error("not null")
+	}
+
+	b = []byte{0x06}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if _, ok := a.(*Amf0Undefined); !ok {
+		t.Error("not undefined")
+	}
+}
+
+func TestAmf0Undefined(t *testing.T) {
+	var s Amf0Undefined
+	if err := s.UnmarshalBinary([]byte{0x06}); err != nil {
+		t.Error("invalid amf0 undefined")
+	}
+
+	s = Amf0Undefined{}
+	if b, err := s.MarshalBinary(); err != nil || len(b) != 1 {
+		t.Error("invalid amf0 undefined", b)
+	}
+}
+
+func TestAmf0Null(t *testing.T) {
+	var s Amf0Null
+	if err := s.UnmarshalBinary([]byte{0x05}); err != nil {
+		t.Error("invalid amf0 null")
+	}
+
+	s = Amf0Null{}
+	if b, err := s.MarshalBinary(); err != nil || len(b) != 1 {
+		t.Error("invalid amf0 null", b)
+	}
 }
 
 func TestAmf0String(t *testing.T) {

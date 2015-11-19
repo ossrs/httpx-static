@@ -80,11 +80,79 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	case MarkerAmf0Number:
 		var o Amf0Number
 		return &o, nil
+	case MarkerAmf0Null:
+		return &Amf0Null{}, nil
+	case MarkerAmf0Undefined:
+		return &Amf0Undefined{}, nil
 	case MarkerAmf0Invalid:
 		fallthrough
 	default:
 		return nil, Amf0Error
 	}
+}
+
+// a amf0 undefined is a object.
+type Amf0Undefined struct{}
+
+func (v *Amf0Undefined) Size() int {
+	return 1
+}
+
+func (v *Amf0Undefined) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0Undefined); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *Amf0Undefined) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0Undefined {
+		return Amf0Error
+	}
+
+	return
+}
+
+// a amf0 null is a object.
+type Amf0Null struct{}
+
+func (v *Amf0Null) Size() int {
+	return 1
+}
+
+func (v *Amf0Null) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0Null); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *Amf0Null) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0Null {
+		return Amf0Error
+	}
+
+	return
 }
 
 // a amf0 number is a float64(double)
