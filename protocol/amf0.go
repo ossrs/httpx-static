@@ -74,20 +74,21 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 
 	switch data[0] {
 	case MarkerAmf0String:
-		var o Amf0String
-		return &o, nil
+		return NewAmf0String(""), nil
 	case MarkerAmf0Boolean:
-		var o Amf0Boolean
-		return &o, nil
+		return NewAmf0Bool(false), nil
 	case MarkerAmf0Number:
-		var o Amf0Number
-		return &o, nil
+		return NewAmf0Number(0), nil
 	case MarkerAmf0Null:
 		return &Amf0Null{}, nil
 	case MarkerAmf0Undefined:
 		return &Amf0Undefined{}, nil
 	case MarkerAmf0Date:
 		return &Amf0Date{}, nil
+	case MarkerAmf0ObjectEnd:
+		return &amf0ObjectEOF{}, nil
+	case MarkerAmf0Object:
+		return NewAmf0Object(), nil
 	case MarkerAmf0Invalid:
 		fallthrough
 	default:
@@ -95,7 +96,130 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	}
 }
 
-// a amf0 date is a object.
+// an amf0 object is an object.
+type Amf0Object struct {
+	properties []*amf0Property
+	eof        amf0ObjectEOF
+}
+
+func NewAmf0Object() *Amf0Object {
+	return &Amf0Object{
+		properties: make([]*amf0Property, 0),
+	}
+}
+
+func (v *Amf0Object) Set(name string, value Amf0Any) {
+	for _, e := range v.properties {
+		if string(e.key) == name {
+			e.value = value
+			return
+		}
+	}
+
+	e := &amf0Property{
+		key:   amf0Utf8(name),
+		value: value,
+	}
+	v.properties = append(v.properties, e)
+
+	return
+}
+
+func (v *Amf0Object) Get(name string) (value Amf0Any) {
+	for _, e := range v.properties {
+		if string(e.key) == name {
+			return e.value
+		}
+	}
+	return
+}
+
+func (v *Amf0Object) Size() int {
+	var size int = 1 + 2 + v.eof.Size()
+	for _, e := range v.properties {
+		size += e.key.Size()
+		size += e.value.Size()
+	}
+	return size
+}
+
+func (v *Amf0Object) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0Object); err != nil {
+		return
+	}
+
+	// properties.
+	for _, e := range v.properties {
+		if vb, err := e.key.MarshalBinary(); err != nil {
+			return nil, err
+		} else if _, err = b.Write(vb); err != nil {
+			return nil, err
+		}
+
+		if vb, err := e.value.MarshalBinary(); err != nil {
+			return nil, err
+		} else if _, err = b.Write(vb); err != nil {
+			return nil, err
+		}
+	}
+
+	// EOF.
+	if _, err = b.Write([]byte{0, 0}); err != nil {
+		return
+	}
+
+	if vb, err := v.eof.MarshalBinary(); err != nil {
+		return nil, err
+	} else if _, err = b.Write(vb); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0Object {
+		return Amf0Error
+	}
+
+	p := data[1:]
+	for len(p) > 0 {
+		var key amf0Utf8
+		if err = key.UnmarshalBinary(p); err != nil {
+			return
+		}
+		p = p[key.Size():]
+
+		var value Amf0Any
+		if value, err = Amf0Discovery(p); err != nil {
+			return
+		}
+		if err = value.UnmarshalBinary(p); err != nil {
+			return
+		}
+		p = p[value.Size():]
+
+		// EOF.
+		if _, ok := value.(*amf0ObjectEOF); ok && len(key) == 0 {
+			break
+		}
+
+		v.Set(string(key), value)
+	}
+
+	return
+}
+
+// an amf0 date is an object.
 type Amf0Date struct {
 	// date value
 	// An ActionScript Date is serialized as the number of milliseconds
@@ -110,19 +234,20 @@ type Amf0Date struct {
 	Zone uint16
 }
 
+// TODO: parse with system time.Time.
+func (v *Amf0Date) From(t time.Time) {
+	v.Date = uint64(t.UnixNano() / int64(time.Millisecond))
+
+	_, vz := t.Zone()
+	v.Zone = uint16(vz)
+}
+
 func (v Amf0Date) String() string {
 	return fmt.Sprintf("%v since 1970, zone is %v", v.Date, v.Zone)
 }
 
 func (v *Amf0Date) Size() int {
 	return 1 + 8 + 2
-}
-
-func (v *Amf0Date) From(t time.Time) {
-	v.Date = uint64(t.UnixNano() / int64(time.Millisecond))
-
-	_, vz := t.Zone()
-	v.Zone = uint16(vz)
 }
 
 func (v *Amf0Date) MarshalBinary() (data []byte, err error) {
@@ -166,7 +291,7 @@ func (v *Amf0Date) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// a amf0 undefined is a object.
+// an amf0 undefined is an object.
 type Amf0Undefined struct{}
 
 func (v *Amf0Undefined) Size() int {
@@ -198,7 +323,7 @@ func (v *Amf0Undefined) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// a amf0 null is a object.
+// an amf0 null is an object.
 type Amf0Null struct{}
 
 func (v *Amf0Null) Size() int {
@@ -230,8 +355,13 @@ func (v *Amf0Null) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// a amf0 number is a float64(double)
+// an amf0 number is a float64(double)
 type Amf0Number float64
+
+func NewAmf0Number(v float64) *Amf0Number {
+	var n Amf0Number = Amf0Number(v)
+	return &n
+}
 
 func (v *Amf0Number) Size() int {
 	return 1 + 8
@@ -270,8 +400,13 @@ func (v *Amf0Number) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// a amf0 boolean is a bool.
+// an amf0 boolean is a bool.
 type Amf0Boolean bool
+
+func NewAmf0Bool(v bool) *Amf0Boolean {
+	var b Amf0Boolean = Amf0Boolean(v)
+	return &b
+}
 
 func (v *Amf0Boolean) Size() int {
 	return 1 + 1
@@ -321,8 +456,13 @@ func (v *Amf0Boolean) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// a amf0 string is a string.
+// an amf0 string is a string.
 type Amf0String string
+
+func NewAmf0String(v string) *Amf0String {
+	var s Amf0String = Amf0String(v)
+	return &s
+}
 
 func (v *Amf0String) Size() int {
 	return 1 + 2 + len(*v)
@@ -372,7 +512,39 @@ func (v *Amf0String) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// a amf0 utf8 string is a string.
+// an amf0 object EOF is an object.
+type amf0ObjectEOF struct{}
+
+func (v *amf0ObjectEOF) Size() int {
+	return 1
+}
+
+func (v *amf0ObjectEOF) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0ObjectEnd); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *amf0ObjectEOF) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0ObjectEnd {
+		return Amf0Error
+	}
+
+	return
+}
+
+// an amf0 utf8 string is a string.
 type amf0Utf8 string
 
 func (s *amf0Utf8) Size() int {
@@ -383,6 +555,10 @@ func (s *amf0Utf8) MarshalBinary() (data []byte, err error) {
 	var b bytes.Buffer
 
 	if err = binary.Write(&b, binary.BigEndian, uint16(len(*s))); err != nil {
+		return
+	}
+
+	if len(*s) == 0 {
 		return
 	}
 
@@ -401,6 +577,10 @@ func (s *amf0Utf8) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
+	if nb == 0 {
+		return
+	}
+
 	v := make([]byte, nb)
 	if _, err = b.Read(v); err != nil {
 		return
@@ -408,4 +588,10 @@ func (s *amf0Utf8) UnmarshalBinary(data []byte) (err error) {
 	*s = amf0Utf8(string(v))
 
 	return
+}
+
+// the amf0 property for object and array.
+type amf0Property struct {
+	key   amf0Utf8
+	value Amf0Any
 }

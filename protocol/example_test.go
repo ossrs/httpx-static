@@ -56,6 +56,8 @@ func Example_Amf0Discovery() {
 			_ = *a // use the undefined.
 		case *protocol.Amf0Date:
 			_ = *a // use the date
+		case *protocol.Amf0Object:
+			_ = *a // use the *object
 		default:
 			return // invalid type.
 		}
@@ -248,4 +250,40 @@ func ExampleAmf0Date_UnmarshalBinary() {
 
 	// Output:
 	// amf0 date
+}
+
+func ExampleAmf0Object_MarshalBinary() {
+	s := protocol.NewAmf0Object()
+
+	s.Set("pj", protocol.NewAmf0String("oryx"))
+	s.Set("start", protocol.NewAmf0Number(2015))
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println("amf0 object")
+
+	// Output:
+	// 31
+	// amf0 object
+}
+
+func ExampleAmf0Object_UnmarshalBinary() {
+	b := []byte{3, 0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x', 0, 0, 9} // read from network
+
+	var s protocol.Amf0Object
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println("amf0 object")
+	fmt.Println(*s.Get("pj").(*protocol.Amf0String))
+
+	// Output:
+	// amf0 object
+	// oryx
 }

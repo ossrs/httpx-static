@@ -82,6 +82,15 @@ func TestAmf0Discovery(t *testing.T) {
 		t.Error("not undefined")
 	}
 
+	b = []byte{0x09}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if _, ok := a.(*amf0ObjectEOF); !ok {
+		t.Error("not object EOF")
+	}
+
 	b = []byte{0x0b, 0, 0, 0, 0, 0, 0, 0, 0xf, 0, 0xe}
 	if a, err := Amf0Discovery(b); err != nil {
 		t.Error(err)
@@ -91,6 +100,34 @@ func TestAmf0Discovery(t *testing.T) {
 		t.Error("not date")
 	} else if a.Date != 0xf || a.Zone != 0xe {
 		t.Error("invalid data", *a)
+	}
+
+	b = []byte{0x03, 0, 0, 0x09}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if _, ok := a.(*Amf0Object); !ok {
+		t.Error("not object")
+	}
+}
+
+func TestAmf0Object(t *testing.T) {
+	var s Amf0Object
+	if err := s.UnmarshalBinary([]byte{0x03, 0, 0, 0x09}); err != nil {
+		t.Error("invalid amf0 object")
+	}
+	if err := s.UnmarshalBinary([]byte{0x03, 0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x', 0, 0, 9}); err != nil {
+		t.Error("invalid amf0 object")
+	}
+	if p := s.Get("pj").(*Amf0String); p == nil || *p != "oryx" {
+		t.Error("invalid amf0 object")
+	}
+
+	s = *NewAmf0Object()
+	s.Set("pj", NewAmf0String("oryx"))
+	if b, err := s.MarshalBinary(); err != nil || len(b) != 15 {
+		t.Error("invalid amf0 object")
 	}
 }
 
