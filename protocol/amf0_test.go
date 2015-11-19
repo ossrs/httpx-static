@@ -23,6 +23,26 @@ package protocol
 
 import "testing"
 
+func TestAmf0Discovery(t *testing.T) {
+	if _, err := Amf0Discovery(nil); err == nil {
+		t.Error("invalid")
+	}
+	if _, err := Amf0Discovery([]byte{}); err == nil {
+		t.Error("invalid")
+	}
+
+	b := []byte{0x02, 0x00, 0x04, 'o', 'r', 'y', 'x'}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if a, ok := a.(*Amf0String); !ok {
+		t.Error("not string")
+	} else if *a != Amf0String("oryx") {
+		t.Error("invalid data")
+	}
+}
+
 func TestAmf0String(t *testing.T) {
 	var s Amf0String
 	if err := s.UnmarshalBinary([]byte{0x02, 0x00, 0x04, 'o', 'r', 'y', 'x'}); err != nil || len(s) != 4 {

@@ -59,16 +59,35 @@ const (
 type Amf0Any interface {
 	encoding.BinaryMarshaler
 	encoding.BinaryUnmarshaler
+
+	// the total size of bytes for this amf0 instance.
+	Size() int
 }
 
 // discovery the Amf0Any type by marker.
 func Amf0Discovery(data []byte) (a Amf0Any, err error) {
-	// TODO: FIXME: implements it.
-	return
+	if len(data) == 0 {
+		return nil, Amf0Error
+	}
+
+	switch data[0] {
+	case MarkerAmf0String:
+		var o Amf0String
+		return &o, nil
+	case MarkerAmf0Invalid:
+		fallthrough
+	default:
+		return nil, Amf0Error
+	}
 }
 
 // a amf0 string is a string.
 type Amf0String string
+
+// Amf0Any
+func (s *Amf0String) Size() int {
+	return 1 + 2 + len(*s)
+}
 
 // encoding.BinaryMarshaler
 func (s *Amf0String) MarshalBinary() (data []byte, err error) {

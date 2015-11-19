@@ -26,6 +26,31 @@ import (
 	"github.com/ossrs/go-oryx/protocol"
 )
 
+func Example_Amf0Discovery() {
+	b := []byte{0x02} // read from network
+
+	for len(b) > 0 { // parse all amf0 instance in b.
+		var err error
+		var a protocol.Amf0Any
+
+		if a, err = protocol.Amf0Discovery(b); err != nil {
+			return
+		}
+		if err = a.UnmarshalBinary(b); err != nil {
+			return
+		}
+
+		b = b[a.Size():] // consume the bytes for a.
+
+		switch a := a.(type) {
+		case *protocol.Amf0String:
+			_ = len(*a) // use the Amf0String.
+		default:
+			return // invalid type.
+		}
+	}
+}
+
 func ExampleAmf0String_MarshalBinary() {
 	s := protocol.Amf0String("oryx")
 
