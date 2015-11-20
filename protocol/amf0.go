@@ -92,6 +92,8 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 		return NewAmf0Object(), nil
 	case MarkerAmf0EcmaArray:
 		return NewAmf0EcmaArray(), nil
+	case MarkerAmf0StrictArray:
+		return NewAmf0StrictArray(), nil
 	case MarkerAmf0Invalid:
 		fallthrough
 	default:
@@ -102,13 +104,106 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 // 2.12 Strict Array Type
 // array-count = U32
 // strict-array-type = array-count *(value-type)
+type Amf0StrictArray struct {
+	properties []Amf0Any
+}
+
+func NewAmf0StrictArray() *Amf0StrictArray {
+	return &Amf0StrictArray{
+		properties: make([]Amf0Any, 0),
+	}
+}
+
+func (v Amf0StrictArray) String() string {
+	return fmt.Sprintf("strict-array(%v)", len(v.properties))
+}
+
+func (v *Amf0StrictArray) Count() int {
+	return int(len(v.properties))
+}
+
+func (v *Amf0StrictArray) Get(index int) Amf0Any {
+	if index >= len(v.properties) {
+		panic("amf0 strict array overflow")
+	}
+	return v.properties[index]
+}
+
+func (v *Amf0StrictArray) Add(e Amf0Any) *Amf0StrictArray {
+	v.properties = append(v.properties, e)
+	return v
+}
+
+func (v *Amf0StrictArray) Size() int {
+	var size int = 1 + 4
+	for _, e := range v.properties {
+		size += e.Size()
+	}
+	return size
+}
+
+func (v *Amf0StrictArray) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0StrictArray); err != nil {
+		return
+	}
+
+	var count uint32 = uint32(len(v.properties))
+	if err = binary.Write(&b, binary.BigEndian, count); err != nil {
+		return
+	}
+
+	for _, e := range v.properties {
+		if vb, err := e.MarshalBinary(); err != nil {
+			return nil, err
+		} else if _, err := b.Write(vb); err != nil {
+			return nil, err
+		}
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *Amf0StrictArray) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0StrictArray {
+		return Amf0Error
+	}
+
+	var count uint32
+	if err = binary.Read(b, binary.BigEndian, &count); err != nil {
+		return
+	}
+
+	for i := 0; i < int(count); i++ {
+		var a Amf0Any
+		if a, err = Amf0Discovery(b.Bytes()); err != nil {
+			return
+		}
+
+		if err = a.UnmarshalBinary(b.Bytes()); err != nil {
+			return
+		}
+		b.Next(a.Size())
+
+		v.Add(a)
+	}
+
+	return
+}
 
 // 2.10 ECMA Array Type
 // ecma-array-type = associative-count *(object-property)
 // associative-count = U32
 // object-property = (UTF-8 value-type) | (UTF-8-empty object-end-marker)
 type Amf0EcmaArray struct {
-	count      uint32
 	properties *amf0Properties
 }
 
@@ -141,7 +236,8 @@ func (v *Amf0EcmaArray) MarshalBinary() (data []byte, err error) {
 		return
 	}
 
-	if err = binary.Write(&b, binary.BigEndian, v.count); err != nil {
+	var count uint32
+	if err = binary.Write(&b, binary.BigEndian, count); err != nil {
 		return
 	}
 
@@ -166,7 +262,8 @@ func (v *Amf0EcmaArray) UnmarshalBinary(data []byte) (err error) {
 		return Amf0Error
 	}
 
-	if err = binary.Read(b, binary.BigEndian, &v.count); err != nil {
+	var count uint32
+	if err = binary.Read(b, binary.BigEndian, &count); err != nil {
 		return
 	}
 

@@ -60,6 +60,8 @@ func Example_Amf0Discovery() {
 			_ = *a // use the *object
 		case *protocol.Amf0EcmaArray:
 			_ = *a // use the *ecma-array
+		case *protocol.Amf0StrictArray:
+			_ = *a // use the *strict-array
 		default:
 			return // invalid type.
 		}
@@ -340,4 +342,48 @@ func ExampleAmf0EcmaArray_UnmarshalBinary() {
 	// amf0 ecma array
 	// value string: oryx
 	// value number: 2015
+}
+
+func ExampleAmf0StrictArray_MarshalBinary() {
+	s := protocol.NewAmf0StrictArray()
+
+	s.Add(protocol.NewAmf0String("oryx"))
+	s.Add(protocol.NewAmf0Number(2015))
+
+	var b []byte
+	var err error
+	if b, err = s.MarshalBinary(); err != nil {
+		return
+	}
+
+	fmt.Println(len(b))
+	fmt.Println("amf0 strict array")
+
+	// Output:
+	// 21
+	// amf0 strict array
+}
+
+func ExampleAmf0StrictArray_UnmarshalBinary() {
+	b := []byte{0x0A, 0, 0, 0, 2, 2, 0, 4, 'o', 'r', 'y', 'x', 0, 64, 159, 124, 0, 0, 0, 0, 0} // read from network
+
+	// must always new the amf0 strict-array to init the properties.
+	s := protocol.NewAmf0StrictArray()
+	if err := s.UnmarshalBinary(b); err != nil {
+		return
+	}
+
+	fmt.Println("amf0 strict array")
+
+	if v, ok := s.Get(0).(*protocol.Amf0String); ok {
+		fmt.Println("elem string:", string(*v))
+	}
+	if v, ok := s.Get(1).(*protocol.Amf0Number); ok {
+		fmt.Println("elem number:", float64(*v))
+	}
+
+	// Output:
+	// amf0 strict array
+	// elem string: oryx
+	// elem number: 2015
 }

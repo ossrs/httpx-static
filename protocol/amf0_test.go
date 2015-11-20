@@ -119,6 +119,37 @@ func TestAmf0Discovery(t *testing.T) {
 	} else if _, ok := a.(*Amf0EcmaArray); !ok {
 		t.Error("not ecma array")
 	}
+
+	b = []byte{0x0A, 0, 0, 0, 0}
+	if a, err := Amf0Discovery(b); err != nil {
+		t.Error(err)
+	} else if err := a.UnmarshalBinary(b); err != nil {
+		t.Error(err)
+	} else if _, ok := a.(*Amf0StrictArray); !ok {
+		t.Error("not strict array")
+	}
+}
+
+func TestAmf0StrictArray(t *testing.T) {
+	s := NewAmf0StrictArray()
+	if err := s.UnmarshalBinary([]byte{0x0A, 0, 0, 0, 0}); err != nil {
+		t.Error("invalid amf0 strict array")
+	}
+	if err := s.UnmarshalBinary([]byte{0x0A, 0, 0, 0, 1, 2, 0, 2, 'p', 'j'}); err != nil {
+		t.Error("invalid amf0 strict array")
+	}
+	if s.Count() != 1 {
+		t.Error("invalid amf0 strict array")
+	}
+	if p, ok := s.Get(0).(*Amf0String); !ok || *p != "pj" {
+		t.Error("invalid amf0 strict array")
+	}
+
+	s = NewAmf0StrictArray()
+	s.Add(NewAmf0String("oryx"))
+	if b, err := s.MarshalBinary(); err != nil || len(b) != 12 {
+		t.Error("invalid amf0 strict array")
+	}
 }
 
 func TestAmf0EcmaArray(t *testing.T) {
