@@ -25,6 +25,7 @@ import (
 	"bytes"
 	"io"
 	"math/rand"
+	"runtime/debug"
 	"time"
 )
 
@@ -49,10 +50,12 @@ func Recover(name string, f func() error) {
 			} else {
 				Warn.Println("goroutine abort with", r)
 			}
+
+			Error.Println(string(debug.Stack()))
 		}
 	}()
 
-	if err := f(); err != nil {
+	if err := f(); err != nil && !IsNormalQuit(err) {
 		if name != "" {
 			Warn.Println(name, "terminated with", err)
 		} else {

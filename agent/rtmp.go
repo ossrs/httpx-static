@@ -26,6 +26,7 @@ import (
 	"github.com/ossrs/go-oryx/core"
 	"github.com/ossrs/go-oryx/protocol"
 	"net"
+	"runtime/debug"
 )
 
 // the rtmp publish or play agent,
@@ -96,8 +97,12 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 			// use gfork to serve the connection.
 			v.wc.GFork("", func(wc core.WorkerContainer) {
 				defer func() {
-					if r := recover(); !core.IsNormalQuit(r) {
-						core.Warn.Println("rtmp ignore", r)
+					if r := recover(); r != nil {
+						if !core.IsNormalQuit(r) {
+							core.Warn.Println("rtmp ignore", r)
+						}
+
+						core.Error.Println(string(debug.Stack()))
 					}
 				}()
 
@@ -136,7 +141,10 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 
 	var r *protocol.RtmpRequest
 	if r, err = conn.ConnectApp(); err != nil {
-		core.Error.Println("rtmp connnect app failed. err is", err)
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("rtmp connnect app failed. err is", err)
+		}
+		return
 	}
 	core.Info.Println("rtmp connect app ok, tcUrl is", r.TcUrl)
 

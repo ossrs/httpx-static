@@ -332,8 +332,24 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 	// start the receiver and sender.
 	// directly use raw goroutine, for donot cause the container to quit.
 	v.quit.Add(2)
-	go core.Recover("rtmp receiver", v.receiver)
-	go core.Recover("rtmp sender", v.sender)
+	go core.Recover("rtmp receiver", func() error {
+		if err := v.receiver(); err != nil {
+			if v.stack.closing {
+				return core.QuitError
+			}
+			return err
+		}
+		return nil
+	})
+	go core.Recover("rtmp sender", func() error {
+		if err := v.sender(); err != nil {
+			if v.stack.closing {
+				return core.QuitError
+			}
+			return err
+		}
+		return nil
+	})
 
 	return v
 }
@@ -347,6 +363,9 @@ func (v *RtmpConnection) Close() {
 	if v.closed {
 		return
 	}
+
+	// close the stack.
+	v.stack.Close()
 
 	// close transport,
 	// to notify the wait goroutine to quit.
@@ -369,7 +388,7 @@ func (v *RtmpConnection) Close() {
 
 	// wait for sender and receiver to quit.
 	v.quit.Wait()
-	core.Warn.Println("rtmp receiver and sender quit.")
+	core.Warn.Println("closed")
 
 	return
 }
@@ -383,6 +402,7 @@ func (v *RtmpConnection) Handshake() (err error) {
 	case <-v.handshake.in:
 		// ok.
 	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
 	case <-v.wc.QC():
 		return v.wc.Quit()
@@ -406,6 +426,7 @@ func (v *RtmpConnection) Handshake() (err error) {
 	case <-v.handshake.in:
 		// ok.
 	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
 	case <-v.wc.QC():
 		return v.wc.Quit()
@@ -429,9 +450,10 @@ func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 				return
 			}
 			if p, ok := p.(*RtmpConnectAppPacket); ok {
-				core.Trace.Println("got connect", p.Name)
+				core.Trace.Println("got", p.Name)
 			}
 		case <-time.After(timeout):
+			core.Error.Println("timeout for", timeout)
 			return nil, core.TimeoutError
 		case <-v.wc.QC():
 			return nil, v.wc.Quit()
@@ -962,6 +984,8 @@ type RtmpStack struct {
 	chunks map[uint32]*RtmpChunk
 	// input chunk size, default to 128, set by peer packet.
 	inChunkSize uint32
+	// whether the stack is closing.
+	closing bool
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
@@ -971,6 +995,10 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 		chunks:      make(map[uint32]*RtmpChunk),
 		inChunkSize: RtmpProtocolChunkSize,
 	}
+}
+
+func (v *RtmpStack) Close() {
+	v.closing = true
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
@@ -1025,7 +1053,9 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		var fmt uint8
 		var cid uint32
 		if fmt, cid, err = RtmpReadBasicHeader(v.in, &v.inb); err != nil {
-			core.Warn.Println("read basic header failed. err is", err)
+			if !v.closing {
+				core.Warn.Println("read basic header failed. err is", err)
+			}
 			return
 		}
 

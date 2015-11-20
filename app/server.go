@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
@@ -267,6 +268,9 @@ func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
 				if !core.IsNormalQuit(r) {
 					core.Warn.Println("rtmp ignore", r)
 				}
+
+				core.Error.Println(string(debug.Stack()))
+
 				s.Quit()
 			}
 		}()

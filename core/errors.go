@@ -21,7 +21,10 @@
 
 package core
 
-import "errors"
+import (
+	"errors"
+	"net"
+)
 
 // the quit error, used for goroutine to return.
 var QuitError error = errors.New("system quit")
@@ -33,9 +36,20 @@ var OverflowError error = errors.New("system overflow")
 // when io timeout to wait.
 var TimeoutError error = errors.New("io timeout")
 
-// whether the object in recover can ignore,
+// whether the object in recover or returned error can ignore,
 // for instance, the error is a Quit error.
-func IsNormalQuit(r interface{}) bool {
-	r, ok := r.(error)
-	return ok && r == QuitError
+func IsNormalQuit(err interface{}) bool {
+	if err, ok := err.(error); ok {
+		// manual quit or read timeout.
+		if err == QuitError || err == TimeoutError {
+			return true
+		}
+
+		// network timeout.
+		if err, ok := err.(net.Error); ok && err.Timeout() {
+			return true
+		}
+	}
+
+	return false
 }
