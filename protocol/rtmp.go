@@ -1246,6 +1246,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 }
 
 func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
+	// TODO: FIXME: implements it.
 	return
 }
 

@@ -162,6 +162,9 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 		return
 	}
 
+	// do bandwidth test if connect to the vhost which is for bandwidth check.
+	// TODO: FIXME: support bandwidth check.
+
 	// TODO: FIXME: should set the TCP_NODELAY to false.
 	return
 }
