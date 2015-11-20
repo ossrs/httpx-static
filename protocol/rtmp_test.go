@@ -542,3 +542,20 @@ func TestRtmpConnectAppPacket(t *testing.T) {
 		t.Error("invalid packet, size is", size, "b is", len(b))
 	}
 }
+
+func TestRtmpSetWindowAckSizePacket(t *testing.T) {
+	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
+	if p.AckowledgementWindowSize != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{0, 0, 0, 0x0f}); err != nil || p.AckowledgementWindowSize != 0xf {
+		t.Error("invalid, err is", err)
+	}
+
+	p = NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
+	p.AckowledgementWindowSize = 0xff
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 4 {
+		t.Error("invalid, err is", err)
+	}
+}

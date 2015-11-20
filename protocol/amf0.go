@@ -184,7 +184,7 @@ func (v *Amf0StrictArray) UnmarshalBinary(data []byte) (err error) {
 			return
 		}
 
-		if err = core.Unmarshal(b, a); err != nil {
+		if err = core.Unmarshal(a, b); err != nil {
 			return
 		}
 
@@ -260,7 +260,7 @@ func (v *Amf0EcmaArray) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	if err = core.Unmarshal(b, v.properties); err != nil {
+	if err = core.Unmarshal(v.properties, b); err != nil {
 		return
 	}
 
@@ -322,7 +322,7 @@ func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
 		return Amf0Error
 	}
 
-	if err = core.Unmarshal(b, v.properties); err != nil {
+	if err = core.Unmarshal(v.properties, b); err != nil {
 		return
 	}
 
@@ -830,7 +830,7 @@ func (v *amf0Properties) UnmarshalBinary(data []byte) (err error) {
 
 	for b.Len() > 0 {
 		var key amf0Utf8
-		if err = core.Unmarshal(b, &key); err != nil {
+		if err = core.Unmarshal(&key, b); err != nil {
 			return
 		}
 
@@ -838,7 +838,7 @@ func (v *amf0Properties) UnmarshalBinary(data []byte) (err error) {
 		if value, err = Amf0Discovery(b.Bytes()); err != nil {
 			return
 		}
-		if err = core.Unmarshal(b, value); err != nil {
+		if err = core.Unmarshal(value, b); err != nil {
 			return
 		}
 

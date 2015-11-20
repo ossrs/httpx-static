@@ -869,15 +869,12 @@ func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
 	if err = core.Marshal(&v.Name, &b); err != nil {
 		return
 	}
-
 	if err = core.Marshal(&v.TransactionId, &b); err != nil {
 		return
 	}
-
 	if err = core.Marshal(v.CommandObject, &b); err != nil {
 		return
 	}
-
 	if v.Args != nil {
 		if err = core.Marshal(v.Args, &b); err != nil {
 			return
@@ -890,21 +887,18 @@ func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
 func (v *RtmpConnectAppPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
 
-	if err = core.Unmarshal(b, &v.Name); err != nil {
+	if err = core.Unmarshal(&v.Name, b); err != nil {
 		return
 	}
-
-	if err = core.Unmarshal(b, &v.TransactionId); err != nil {
+	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
 		return
 	}
-
-	if err = core.Unmarshal(b, v.CommandObject); err != nil {
+	if err = core.Unmarshal(v.CommandObject, b); err != nil {
 		return
 	}
-
 	if b.Len() > 0 {
 		v.Args = NewAmf0Object()
-		if err = core.Unmarshal(b, v.Args); err != nil {
+		if err = core.Unmarshal(v.Args, b); err != nil {
 			return
 		}
 	}
@@ -918,6 +912,45 @@ func (v *RtmpConnectAppPacket) PreferCid() uint32 {
 
 func (v *RtmpConnectAppPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
+}
+
+// 5.5. Window Acknowledgement Size (5)
+// The client or the server sends this message to inform the peer which
+// window size to use when sending acknowledgment.
+type RtmpSetWindowAckSizePacket struct {
+	AckowledgementWindowSize uint32
+}
+
+func NewRtmpSetWindowAckSizePacket() RtmpPacket {
+	return &RtmpSetWindowAckSizePacket{}
+}
+
+func (v *RtmpSetWindowAckSizePacket) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = binary.Write(&b, binary.BigEndian, v.AckowledgementWindowSize); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *RtmpSetWindowAckSizePacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	if err = binary.Read(b, binary.BigEndian, &v.AckowledgementWindowSize); err != nil {
+		return
+	}
+
+	return
+}
+
+func (v *RtmpSetWindowAckSizePacket) PreferCid() uint32 {
+	return RtmpCidProtocolControl
+}
+
+func (v *RtmpSetWindowAckSizePacket) MessageType() RtmpMessageType {
+	return RtmpMsgWindowAcknowledgementSize
 }
 
 // incoming chunk stream maybe interlaced,

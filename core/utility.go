@@ -111,7 +111,7 @@ type UnmarshalSizer interface {
 }
 
 // unmarshal the object from b
-func Unmarshal(b *bytes.Buffer, o UnmarshalSizer) (err error) {
+func Unmarshal(o UnmarshalSizer, b *bytes.Buffer) (err error) {
 	if b == nil {
 		panic("should not be nil")
 	}

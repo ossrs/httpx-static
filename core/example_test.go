@@ -147,10 +147,10 @@ func ExampleUnmarshal() {
 	var x core.UnmarshalSizer // for example Amf0String
 	var y core.UnmarshalSizer // for example Amf0Number
 
-	if err := core.Unmarshal(&b, x); err != nil {
+	if err := core.Unmarshal(x, &b); err != nil {
 		_ = err // when error.
 	}
-	if err := core.Unmarshal(&b, y); err != nil {
+	if err := core.Unmarshal(y, &b); err != nil {
 		_ = err // when error.
 	}
 
