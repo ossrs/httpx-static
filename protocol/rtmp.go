@@ -298,6 +298,16 @@ type RtmpRequest struct {
 	TcUrl string
 }
 
+// the rtmp client type.
+type RtmpConnType uint8
+
+const (
+	Unknown RtmpConnType = iota
+	Play
+	FmlePublish
+	FlashPublish
+)
+
 // rtmp protocol stack.
 type RtmpConnection struct {
 	// to receive the quit message from server.
@@ -393,6 +403,7 @@ func (v *RtmpConnection) Close() {
 	return
 }
 
+// handshake with client, try complex then simple.
 func (v *RtmpConnection) Handshake() (err error) {
 	// use short handshake timeout.
 	timeout := 2100 * time.Millisecond
@@ -435,6 +446,7 @@ func (v *RtmpConnection) Handshake() (err error) {
 	return
 }
 
+// do connect app with client, to discovery tcUrl.
 func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
 	r = &RtmpRequest{}
 
@@ -466,6 +478,7 @@ func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
 	return
 }
 
+// set ack size to client, client will send ack-size for each ack window
 func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	// use longger service timeout.
 	timeout := 5000 * time.Millisecond
@@ -491,6 +504,8 @@ func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	return
 }
 
+// @type: The sender can mark this message hard (0), soft (1), or dynamic (2)
+// using the Limit type field.
 func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	// use longger service timeout.
 	timeout := 5000 * time.Millisecond
@@ -517,6 +532,7 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	return
 }
 
+// @param server_ip the ip of server.
 func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	// use longger service timeout.
 	timeout := 5000 * time.Millisecond
@@ -566,6 +582,7 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	return
 }
 
+// response client the onBWDone message.
 func (v *RtmpConnection) OnBwDone() (err error) {
 	// use longger service timeout.
 	timeout := 5000 * time.Millisecond
@@ -590,6 +607,64 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 	return
 }
 
+// recv some message to identify the client.
+// @stream_id, client will createStream to play or publish by flash,
+//         the stream_id used to response the createStream request.
+// @type, output the client type.
+// @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
+// @duration, output the play client duration. @see: SrsRequest.duration
+func (v *RtmpConnection) Identify(sid uint32) (t RtmpConnType, n string, d float64, err error) {
+	// use longger connect timeout.
+	timeout := 5000 * time.Millisecond
+
+	for {
+		select {
+		case m := <-v.in:
+			var p RtmpPacket
+			if p, err = v.stack.DecodeMessage(m); err != nil {
+				return
+			}
+
+			switch p.MessageType() {
+			// ignore silently.
+			case RtmpMsgAcknowledgement:
+				fallthrough
+			case RtmpMsgSetChunkSize:
+				fallthrough
+			case RtmpMsgWindowAcknowledgementSize:
+				fallthrough
+			case RtmpMsgUserControlMessage:
+				continue
+			// matched
+			case RtmpMsgAMF0CommandMessage:
+				fallthrough
+			case RtmpMsgAMF3CommandMessage:
+				break
+			// ignore with warning.
+			default:
+				core.Trace.Println("ignore message", p.MessageType())
+				continue
+			}
+
+			// TODO: FIXME: implements it.
+
+			// for other call msgs,
+			// support response null first,
+			// @see https://github.com/ossrs/srs/issues/106
+			// TODO: FIXME: response in right way, or forward in edge mode.
+			// TODO: FIXME: implements it.
+		case <-time.After(timeout):
+			core.Error.Println("timeout for", timeout)
+			return 0, "", 0, core.TimeoutError
+		case <-v.wc.QC():
+			return 0, "", 0, v.wc.Quit()
+		}
+	}
+
+	return
+}
+
+// parse the rtmp packet to message.
 func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessage, err error) {
 	m = NewRtmpMessage()
 
@@ -604,6 +679,7 @@ func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessag
 	return m, nil
 }
 
+// receiver goroutine.
 func (v *RtmpConnection) receiver() (err error) {
 	defer v.quit.Done()
 
@@ -656,6 +732,7 @@ func (v *RtmpConnection) receiver() (err error) {
 	return
 }
 
+// sender goroutine.
 func (v *RtmpConnection) sender() (err error) {
 	defer v.quit.Done()
 
