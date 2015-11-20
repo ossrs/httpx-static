@@ -450,7 +450,10 @@ func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 				return
 			}
 			if p, ok := p.(*RtmpConnectAppPacket); ok {
-				core.Trace.Println("got", p.Name)
+				if p, ok := p.CommandObject.Get("tcUrl").(*Amf0String); ok {
+					r.TcUrl = string(*p)
+				}
+				core.Trace.Println("connect at", r.TcUrl)
 			}
 		case <-time.After(timeout):
 			core.Error.Println("timeout for", timeout)
@@ -1041,6 +1044,13 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 	} else {
 		if !m.messageType.isSetPeerBandwidth() && !m.messageType.isAckledgement() {
 			core.Trace.Println("drop unknown message, type is", m.messageType)
+		}
+	}
+
+	// unmarshal the discoveried packet.
+	if p != nil {
+		if err = p.UnmarshalBinary(b.Bytes()); err != nil {
+			return
 		}
 	}
 
