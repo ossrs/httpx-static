@@ -97,7 +97,9 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	}
 }
 
-// an amf0 object is an object.
+// 2.5 Object Type
+// anonymous-object-type = object-marker *(object-property)
+// object-property = (UTF-8 value-type) | (UTF-8-empty object-end-marker)
 type Amf0Object struct {
 	properties []*amf0Property
 	eof        amf0ObjectEOF
@@ -223,7 +225,10 @@ func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 date is an object.
+// 2.13 Date Type
+// time-zone = S16 ; reserved, not supported should be set to 0x0000
+// date-type = date-marker DOUBLE time-zone
+// @see: https://github.com/ossrs/srs/issues/185
 type Amf0Date struct {
 	// date value
 	// An ActionScript Date is serialized as the number of milliseconds
@@ -295,7 +300,9 @@ func (v *Amf0Date) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 undefined is an object.
+// read amf0 undefined from stream.
+// 2.8 undefined Type
+// undefined-type = undefined-marker
 type Amf0Undefined struct{}
 
 func (v Amf0Undefined) String() string {
@@ -331,7 +338,9 @@ func (v *Amf0Undefined) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 null is an object.
+// read amf0 null from stream.
+// 2.7 null Type
+// null-type = null-marker
 type Amf0Null struct{}
 
 func (v Amf0Null) String() string {
@@ -367,7 +376,10 @@ func (v *Amf0Null) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 number is a float64(double)
+// read amf0 number from stream.
+// 2.2 Number Type
+// number-type = number-marker DOUBLE
+// @return default value is 0.
 type Amf0Number float64
 
 func NewAmf0Number(v float64) *Amf0Number {
@@ -416,7 +428,11 @@ func (v *Amf0Number) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 boolean is a bool.
+// read amf0 boolean from stream.
+// 2.4 String Type
+// boolean-type = boolean-marker U8
+//         0 is false, <> 0 is true
+// @return default value is false.
 type Amf0Boolean bool
 
 func NewAmf0Bool(v bool) *Amf0Boolean {
@@ -479,7 +495,11 @@ func (v *Amf0Boolean) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 string is a string.
+// read amf0 string from stream.
+// 2.4 String Type
+// string-type = string-marker UTF-8
+// @return default value is empty string.
+// @remark: use SrsAmf0Any::str() to create it.
 type Amf0String string
 
 func NewAmf0String(v string) *Amf0String {
@@ -539,7 +559,10 @@ func (v *Amf0String) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 object EOF is an object.
+// 2.11 Object End Type
+// object-end-type = UTF-8-empty object-end-marker
+// 0x00 0x00 0x09
+// @remark we only use 0x09 as object EOF.
 type amf0ObjectEOF struct{}
 
 func (v *amf0ObjectEOF) Size() int {
@@ -571,7 +594,12 @@ func (v *amf0ObjectEOF) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// an amf0 utf8 string is a string.
+// amf0 utf8 string.
+// 1.3.1 Strings and UTF-8
+// UTF-8 = U16 *(UTF8-char)
+// UTF8-char = UTF8-1 | UTF8-2 | UTF8-3 | UTF8-4
+// UTF8-1 = %x00-7F
+// @remark only support UTF8-1 char.
 type amf0Utf8 string
 
 func (s *amf0Utf8) Size() int {
@@ -618,6 +646,10 @@ func (s *amf0Utf8) UnmarshalBinary(data []byte) (err error) {
 }
 
 // the amf0 property for object and array.
+// to ensure in inserted order.
+// for the FMLE will crash when AMF0Object is not ordered by inserted,
+// if ordered in map, the string compare order, the FMLE will creash when
+// get the response of connect app.
 type amf0Property struct {
 	key   amf0Utf8
 	value Amf0Any
