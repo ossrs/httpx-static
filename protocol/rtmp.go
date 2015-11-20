@@ -466,6 +466,71 @@ func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 	return
 }
 
+func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
+	// use longger service timeout.
+	timeout := 5000 * time.Millisecond
+
+	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
+	p.Ack = ack
+
+	var m *RtmpMessage
+	if m, err = v.packet2Message(p, 0); err != nil {
+		return
+	}
+
+	select {
+	case v.out <- m:
+		// ok
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
+	// use longger service timeout.
+	timeout := 5000 * time.Millisecond
+
+	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
+	p.Bandwidth = bw
+	p.Type = RtmpPeerBandwidthType(t)
+
+	var m *RtmpMessage
+	if m, err = v.packet2Message(p, 0); err != nil {
+		return
+	}
+
+	select {
+	case v.out <- m:
+	// ok
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessage, err error) {
+	m = NewRtmpMessage()
+
+	m.MessageType = p.MessageType()
+	m.PreferCid = p.PreferCid()
+	m.StreamId = sid
+
+	if err = core.Marshal(p, &m.Payload); err != nil {
+		return nil, err
+	}
+
+	return m, nil
+}
+
 func (v *RtmpConnection) receiver() (err error) {
 	defer v.quit.Done()
 
@@ -509,7 +574,7 @@ func (v *RtmpConnection) receiver() (err error) {
 		}
 
 		// cache the message when got non empty one.
-		if m != nil && m.payload.Len() > 0 {
+		if m != nil && m.Payload.Len() > 0 {
 			v.in <- m
 		}
 	}
@@ -796,24 +861,24 @@ type RtmpMessage struct {
 	// The 4 bytes are packed in the big-endian order.
 	// @remark, used as calc timestamp when decode and encode time.
 	// @remark, we use 64bits for large time for jitter detect and hls.
-	timestamp uint64
+	Timestamp uint64
 	// 4bytes.
 	// Four-byte field that identifies the stream of the message. These
 	// bytes are set in little-endian format.
-	streamId uint32
+	StreamId uint32
 	// 1byte.
 	// One byte field to represent the message type. A range of type IDs
 	// (1-7) are reserved for protocol control messages.
-	messageType RtmpMessageType
+	MessageType RtmpMessageType
 	// get the perfered cid(chunk stream id) which sendout over.
 	// set at decoding, and canbe used for directly send message,
 	// for example, dispatch to all connections.
-	preferCid uint32
+	PreferCid uint32
 	// the payload of message, the SrsCommonMessage never know about the detail of payload,
 	// user must use SrsProtocol.decode_message to get concrete packet.
 	// @remark, not all message payload can be decoded to packet. for example,
 	//       video/audio packet use raw bytes, no video/audio packet.
-	payload bytes.Buffer
+	Payload bytes.Buffer
 }
 
 func NewRtmpMessage() *RtmpMessage {
@@ -918,7 +983,7 @@ func (v *RtmpConnectAppPacket) MessageType() RtmpMessageType {
 // The client or the server sends this message to inform the peer which
 // window size to use when sending acknowledgment.
 type RtmpSetWindowAckSizePacket struct {
-	AckowledgementWindowSize uint32
+	Ack uint32
 }
 
 func NewRtmpSetWindowAckSizePacket() RtmpPacket {
@@ -928,7 +993,7 @@ func NewRtmpSetWindowAckSizePacket() RtmpPacket {
 func (v *RtmpSetWindowAckSizePacket) MarshalBinary() (data []byte, err error) {
 	var b bytes.Buffer
 
-	if err = binary.Write(&b, binary.BigEndian, v.AckowledgementWindowSize); err != nil {
+	if err = binary.Write(&b, binary.BigEndian, v.Ack); err != nil {
 		return
 	}
 
@@ -938,7 +1003,7 @@ func (v *RtmpSetWindowAckSizePacket) MarshalBinary() (data []byte, err error) {
 func (v *RtmpSetWindowAckSizePacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
 
-	if err = binary.Read(b, binary.BigEndian, &v.AckowledgementWindowSize); err != nil {
+	if err = binary.Read(b, binary.BigEndian, &v.Ack); err != nil {
 		return
 	}
 
@@ -951,6 +1016,67 @@ func (v *RtmpSetWindowAckSizePacket) PreferCid() uint32 {
 
 func (v *RtmpSetWindowAckSizePacket) MessageType() RtmpMessageType {
 	return RtmpMsgWindowAcknowledgementSize
+}
+
+// 5.6. Set Peer Bandwidth (6)
+type RtmpPeerBandwidthType uint8
+
+const (
+	// The sender can mark this message hard (0), soft (1), or dynamic (2)
+	// using the Limit type field.
+	Hard RtmpPeerBandwidthType = iota
+	Soft
+	Dynamic
+)
+
+// 5.6. Set Peer Bandwidth (6)
+// The client or the server sends this message to update the output
+// bandwidth of the peer.
+type RtmpSetPeerBandwidthPacket struct {
+	Bandwidth uint32
+	Type      RtmpPeerBandwidthType
+}
+
+func NewRtmpSetPeerBandwidthPacket() RtmpPacket {
+	return &RtmpSetPeerBandwidthPacket{
+		Type: Dynamic,
+	}
+}
+
+func (v *RtmpSetPeerBandwidthPacket) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = binary.Write(&b, binary.BigEndian, v.Bandwidth); err != nil {
+		return
+	}
+	if err = binary.Write(&b, binary.BigEndian, uint8(v.Type)); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *RtmpSetPeerBandwidthPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	if err = binary.Read(b, binary.BigEndian, &v.Bandwidth); err != nil {
+		return
+	}
+	if vb, err := b.ReadByte(); err != nil {
+		return err
+	} else {
+		v.Type = RtmpPeerBandwidthType(vb)
+	}
+
+	return
+}
+
+func (v *RtmpSetPeerBandwidthPacket) PreferCid() uint32 {
+	return RtmpCidProtocolControl
+}
+
+func (v *RtmpSetPeerBandwidthPacket) MessageType() RtmpMessageType {
+	return RtmpMsgSetPeerBandwidth
 }
 
 // incoming chunk stream maybe interlaced,
@@ -1025,12 +1151,12 @@ func (v *RtmpStack) Close() {
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
-	b := bytes.NewBuffer(m.payload.Bytes())
+	b := bytes.NewBuffer(m.Payload.Bytes())
 
 	// decode specified packet type
-	if m.messageType.isAmf0() || m.messageType.isAmf3() {
+	if m.MessageType.isAmf0() || m.MessageType.isAmf3() {
 		// skip 1bytes to decode the amf3 command.
-		if m.messageType.isAmf3() && b.Len() > 0 {
+		if m.MessageType.isAmf3() && b.Len() > 0 {
 			b.ReadByte()
 		}
 
@@ -1055,15 +1181,15 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 		default:
 			core.Info.Println("drop command message, name is", c)
 		}
-	} else if m.messageType.isUserControlMessage() {
+	} else if m.MessageType.isUserControlMessage() {
 		// TODO: FIXME: implements it.
-	} else if m.messageType.isWindowAckledgementSize() {
+	} else if m.MessageType.isWindowAckledgementSize() {
 		// TODO: FIXME: implements it.
-	} else if m.messageType.isSetChunkSize() {
+	} else if m.MessageType.isSetChunkSize() {
 		// TODO: FIXME: implements it.
 	} else {
-		if !m.messageType.isSetPeerBandwidth() && !m.messageType.isAckledgement() {
-			core.Trace.Println("drop unknown message, type is", m.messageType)
+		if !m.MessageType.isSetPeerBandwidth() && !m.MessageType.isAckledgement() {
+			core.Trace.Println("drop unknown message, type is", m.MessageType)
 		}
 	}
 
@@ -1135,7 +1261,7 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	r := NewMixReader(inb, in)
 
 	// the preload body must be consumed in a time.
-	left := (int)(chunk.payloadLength - uint32(m.payload.Len()))
+	left := (int)(chunk.payloadLength - uint32(m.Payload.Len()))
 	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
@@ -1148,13 +1274,13 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	}
 
 	// read payload to buffer
-	if _, err = io.CopyN(&m.payload, r, int64(left)); err != nil {
+	if _, err = io.CopyN(&m.Payload, r, int64(left)); err != nil {
 		core.Error.Println("read body failed. err is", err)
 		return
 	}
 
 	// got entire RTMP message?
-	if chunk.payloadLength == uint32(m.payload.Len()) {
+	if chunk.payloadLength == uint32(m.Payload.Len()) {
 		chunk.partialMessage = nil
 		return
 	}
@@ -1400,10 +1526,10 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	chunk.timestamp &= 0x7fffffff
 
 	// copy header to msg
-	chunk.partialMessage.messageType = RtmpMessageType(chunk.messageType)
-	chunk.partialMessage.timestamp = chunk.timestamp
-	chunk.partialMessage.preferCid = chunk.cid
-	chunk.partialMessage.streamId = chunk.streamId
+	chunk.partialMessage.MessageType = RtmpMessageType(chunk.messageType)
+	chunk.partialMessage.Timestamp = chunk.timestamp
+	chunk.partialMessage.PreferCid = chunk.cid
+	chunk.partialMessage.StreamId = chunk.streamId
 
 	// update chunk information.
 	chunk.fmt = fmt

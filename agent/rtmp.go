@@ -148,6 +148,20 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	}
 	core.Info.Println("rtmp connect app ok, tcUrl is", r.TcUrl)
 
+	if err = conn.SetWindowAckSize(uint32(2.5 * 1000 * 1000)); err != nil {
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("rtmp set ack size failed. err is", err)
+		}
+		return
+	}
+
+	if err = conn.SetPeerBandwidth(uint32(2.5*1000*1000), uint8(2)); err != nil {
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("rtmp set peer bandwidth failed. err is", err)
+		}
+		return
+	}
+
 	// TODO: FIXME: should set the TCP_NODELAY to false.
 	return
 }
