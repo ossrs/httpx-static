@@ -22,6 +22,7 @@
 package core_test
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
 	"time"
@@ -119,4 +120,41 @@ func ExampleWorkerContainer_fatal() {
 			}
 		}
 	})
+}
+
+// marshal multiple objects to buffer.
+func ExampleMarshal() {
+	// objects to marshal
+	var x core.Marshaler // for example NewAmf0String("oryx")
+	var y core.Marshaler // for example NewAmf0Number(1.0)
+
+	var b bytes.Buffer // marshal objects to b
+
+	if err := core.Marshal(x, &b); err != nil {
+		_ = err // when error.
+	}
+	if err := core.Marshal(y, &b); err != nil {
+		_ = err // when error.
+	}
+
+	_ = b.Bytes() // use the bytes contains x and y
+}
+
+// unmarshal multiple objects from buffer
+func ExampleUnmarshal() {
+	var b bytes.Buffer // read from network.
+
+	var x core.UnmarshalSizer // for example Amf0String
+	var y core.UnmarshalSizer // for example Amf0Number
+
+	if err := core.Unmarshal(&b, x); err != nil {
+		_ = err // when error.
+	}
+	if err := core.Unmarshal(&b, y); err != nil {
+		_ = err // when error.
+	}
+
+	// use x and y.
+	_ = x
+	_ = y
 }

@@ -23,6 +23,7 @@ package core
 
 import (
 	"bytes"
+	"encoding"
 	"io"
 	"math/rand"
 	"runtime/debug"
@@ -73,6 +74,56 @@ func Grow(in io.Reader, inb *bytes.Buffer, size int) (err error) {
 	if _, err = io.CopyN(inb, in, int64(size)); err != nil {
 		return
 	}
+
+	return
+}
+
+// unmarshaler
+type Marshaler interface {
+	encoding.BinaryMarshaler
+}
+
+// marshal the object o to b
+func Marshal(o Marshaler, b *bytes.Buffer) (err error) {
+	if b == nil {
+		panic("should not be nil.")
+	}
+
+	if o == nil {
+		panic("should not be nil.")
+	}
+
+	if vb, err := o.MarshalBinary(); err != nil {
+		return err
+	} else if _, err := b.Write(vb); err != nil {
+		return err
+	}
+
+	return
+}
+
+// unmarshaler and sizer.
+type UnmarshalSizer interface {
+	encoding.BinaryUnmarshaler
+
+	// the total size of bytes for this amf0 instance.
+	Size() int
+}
+
+// unmarshal the object from b
+func Unmarshal(b *bytes.Buffer, o UnmarshalSizer) (err error) {
+	if b == nil {
+		panic("should not be nil")
+	}
+
+	if o == nil {
+		panic("should not be nil")
+	}
+
+	if err = o.UnmarshalBinary(b.Bytes()); err != nil {
+		return
+	}
+	b.Next(o.Size())
 
 	return
 }

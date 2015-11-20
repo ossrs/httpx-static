@@ -463,7 +463,6 @@ func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 		}
 	}
 
-	// TODO: FIXME: implements it.
 	return
 }
 
@@ -867,29 +866,20 @@ func NewRtmpConnectAppPacket() RtmpPacket {
 func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
 	var b bytes.Buffer
 
-	var vb []byte
-	if vb, err = v.Name.MarshalBinary(); err != nil {
-		return
-	} else if _, err = b.Write(vb); err != nil {
+	if err = core.Marshal(&v.Name, &b); err != nil {
 		return
 	}
 
-	if vb, err = v.TransactionId.MarshalBinary(); err != nil {
-		return
-	} else if _, err = b.Write(vb); err != nil {
+	if err = core.Marshal(&v.TransactionId, &b); err != nil {
 		return
 	}
 
-	if vb, err = v.CommandObject.MarshalBinary(); err != nil {
-		return
-	} else if _, err = b.Write(vb); err != nil {
+	if err = core.Marshal(v.CommandObject, &b); err != nil {
 		return
 	}
 
 	if v.Args != nil {
-		if vb, err = v.Args.MarshalBinary(); err != nil {
-			return
-		} else if _, err = b.Write(vb); err != nil {
+		if err = core.Marshal(v.Args, &b); err != nil {
 			return
 		}
 	}
@@ -900,24 +890,21 @@ func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
 func (v *RtmpConnectAppPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
 
-	if err = v.Name.UnmarshalBinary(b.Bytes()); err != nil {
+	if err = core.Unmarshal(b, &v.Name); err != nil {
 		return
 	}
-	b.Next(v.Name.Size())
 
-	if err = v.TransactionId.UnmarshalBinary(b.Bytes()); err != nil {
+	if err = core.Unmarshal(b, &v.TransactionId); err != nil {
 		return
 	}
-	b.Next(v.TransactionId.Size())
 
-	if err = v.CommandObject.UnmarshalBinary(b.Bytes()); err != nil {
+	if err = core.Unmarshal(b, v.CommandObject); err != nil {
 		return
 	}
-	b.Next(v.CommandObject.Size())
 
 	if b.Len() > 0 {
 		v.Args = NewAmf0Object()
-		if err = v.Args.UnmarshalBinary(b.Bytes()); err != nil {
+		if err = core.Unmarshal(b, v.Args); err != nil {
 			return
 		}
 	}

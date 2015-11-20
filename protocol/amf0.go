@@ -26,6 +26,7 @@ import (
 	"encoding"
 	"encoding/binary"
 	"fmt"
+	"github.com/ossrs/go-oryx/core"
 	"strconv"
 	"time"
 )
@@ -61,10 +62,7 @@ const (
 // the amf0 type interface
 type Amf0Any interface {
 	encoding.BinaryMarshaler
-	encoding.BinaryUnmarshaler
-
-	// the total size of bytes for this amf0 instance.
-	Size() int
+	core.UnmarshalSizer
 }
 
 // discovery the Amf0Any type by marker.
@@ -155,10 +153,8 @@ func (v *Amf0StrictArray) MarshalBinary() (data []byte, err error) {
 	}
 
 	for _, e := range v.properties {
-		if vb, err := e.MarshalBinary(); err != nil {
-			return nil, err
-		} else if _, err := b.Write(vb); err != nil {
-			return nil, err
+		if err = core.Marshal(e, &b); err != nil {
+			return
 		}
 	}
 
@@ -188,10 +184,9 @@ func (v *Amf0StrictArray) UnmarshalBinary(data []byte) (err error) {
 			return
 		}
 
-		if err = a.UnmarshalBinary(b.Bytes()); err != nil {
+		if err = core.Unmarshal(b, a); err != nil {
 			return
 		}
-		b.Next(a.Size())
 
 		v.Add(a)
 	}
@@ -241,10 +236,8 @@ func (v *Amf0EcmaArray) MarshalBinary() (data []byte, err error) {
 		return
 	}
 
-	if vb, err := v.properties.MarshalBinary(); err != nil {
-		return nil, err
-	} else if _, err := b.Write(vb); err != nil {
-		return nil, err
+	if err = core.Marshal(v.properties, &b); err != nil {
+		return
 	}
 
 	return b.Bytes(), nil
@@ -267,7 +260,7 @@ func (v *Amf0EcmaArray) UnmarshalBinary(data []byte) (err error) {
 		return
 	}
 
-	if err = v.properties.UnmarshalBinary(b.Bytes()); err != nil {
+	if err = core.Unmarshal(b, v.properties); err != nil {
 		return
 	}
 
@@ -310,10 +303,8 @@ func (v *Amf0Object) MarshalBinary() (data []byte, err error) {
 		return
 	}
 
-	if vb, err := v.properties.MarshalBinary(); err != nil {
-		return nil, err
-	} else if _, err := b.Write(vb); err != nil {
-		return nil, err
+	if err = core.Marshal(v.properties, &b); err != nil {
+		return
 	}
 
 	return b.Bytes(), nil
@@ -331,7 +322,7 @@ func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
 		return Amf0Error
 	}
 
-	if err = v.properties.UnmarshalBinary(b.Bytes()); err != nil {
+	if err = core.Unmarshal(b, v.properties); err != nil {
 		return
 	}
 
@@ -814,16 +805,11 @@ func (v *amf0Properties) MarshalBinary() (data []byte, err error) {
 
 	// properties.
 	for _, e := range v.properties {
-		if vb, err := e.key.MarshalBinary(); err != nil {
-			return nil, err
-		} else if _, err = b.Write(vb); err != nil {
-			return nil, err
+		if err = core.Marshal(&e.key, &b); err != nil {
+			return
 		}
-
-		if vb, err := e.value.MarshalBinary(); err != nil {
-			return nil, err
-		} else if _, err = b.Write(vb); err != nil {
-			return nil, err
+		if err = core.Marshal(e.value, &b); err != nil {
+			return
 		}
 	}
 
@@ -832,10 +818,8 @@ func (v *amf0Properties) MarshalBinary() (data []byte, err error) {
 		return
 	}
 
-	if vb, err := v.eof.MarshalBinary(); err != nil {
-		return nil, err
-	} else if _, err = b.Write(vb); err != nil {
-		return nil, err
+	if err = core.Marshal(&v.eof, &b); err != nil {
+		return
 	}
 
 	return b.Bytes(), nil
@@ -846,19 +830,17 @@ func (v *amf0Properties) UnmarshalBinary(data []byte) (err error) {
 
 	for b.Len() > 0 {
 		var key amf0Utf8
-		if err = key.UnmarshalBinary(b.Bytes()); err != nil {
+		if err = core.Unmarshal(b, &key); err != nil {
 			return
 		}
-		b.Next(key.Size())
 
 		var value Amf0Any
 		if value, err = Amf0Discovery(b.Bytes()); err != nil {
 			return
 		}
-		if err = value.UnmarshalBinary(b.Bytes()); err != nil {
+		if err = core.Unmarshal(b, value); err != nil {
 			return
 		}
-		b.Next(value.Size())
 
 		// EOF.
 		if _, ok := value.(*amf0ObjectEOF); ok && len(key) == 0 {
