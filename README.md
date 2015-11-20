@@ -43,15 +43,15 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 
 ### Features
 
-1. Supports Multiple Processes.
-1. Supports Linux, Unix-like and Windows.
-1. Supports JSON style config file.
-1. Supports Reload config file.
-1. Standard godoc, gofmt, gotest and TravisCI.
-1. Support daemon over [ossrs/go-daemon][go-daemon](fork from [sevlyar/go-daemon][fork-go-daemon]).
-1. Extend JSON with c++ style comments.
-1. Support heartbeat to report for ARM.
-1. Use agent(source+channel+sink) to build complex stream river.
+1. v0.1.0 Supports Multiple Processes.
+1. v0.1.0 Supports Linux, Unix-like and Windows.
+1. v0.1.1 Supports JSON style config file.
+1. v0.1.2 Supports Reload config file.
+1. v0.1.3 Standard godoc, gofmt, gotest and TravisCI.
+1. v0.1.4 Support daemon over [ossrs/go-daemon][go-daemon](fork from [sevlyar/go-daemon][fork-go-daemon]).
+1. v0.1.5 Extend JSON with c++ style comments.
+1. v0.1.6 Support heartbeat to report for ARM.
+1. v0.1.7 Use agent(source+channel+sink) to build complex stream river.
 1. [dev] Supports Publish and Play VP6+Speex RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
 1. [dev] Supports Connection Oriented Traceable log.

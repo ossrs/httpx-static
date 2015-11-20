@@ -140,7 +140,7 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	core.Info.Println("rtmp handshake ok.")
 
 	var r *protocol.RtmpRequest
-	if r, err = conn.ConnectApp(); err != nil {
+	if r, err = conn.ExpectConnectApp(); err != nil {
 		if !core.IsNormalQuit(err) {
 			core.Error.Println("rtmp connnect app failed. err is", err)
 		}
@@ -164,6 +164,24 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 
 	// do bandwidth test if connect to the vhost which is for bandwidth check.
 	// TODO: FIXME: support bandwidth check.
+
+	// do token traverse before serve it.
+	// @see https://github.com/ossrs/srs/pull/239
+	// TODO: FIXME: support edge token tranverse.
+
+	// set chunk size to larger.
+	// set the chunk size before any larger response greater than 128,
+	// to make OBS happy, @see https://github.com/ossrs/srs/issues/454
+	// TODO: FIXME: support set chunk size.
+
+	// response the client connect ok.
+	if err = conn.ResponseConnectApp(); err != nil {
+		return
+	}
+
+	if err = conn.OnBwDone(); err != nil {
+		return
+	}
 
 	// TODO: FIXME: should set the TCP_NODELAY to false.
 	return

@@ -435,7 +435,7 @@ func (v *RtmpConnection) Handshake() (err error) {
 	return
 }
 
-func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
+func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
 	r = &RtmpRequest{}
 
 	// use longger connect timeout.
@@ -498,6 +498,79 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
 	p.Bandwidth = bw
 	p.Type = RtmpPeerBandwidthType(t)
+
+	var m *RtmpMessage
+	if m, err = v.packet2Message(p, 0); err != nil {
+		return
+	}
+
+	select {
+	case v.out <- m:
+	// ok
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+func (v *RtmpConnection) ResponseConnectApp() (err error) {
+	// use longger service timeout.
+	timeout := 5000 * time.Millisecond
+
+	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
+
+	p.Props.Set("fmsVer", NewAmf0String(fmt.Sprintf("FMS/%v", RtmpSigFmsVer)))
+	p.Props.Set("capabilities", NewAmf0Number(127))
+	p.Props.Set("mode", NewAmf0Number(1))
+
+	p.Info.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
+	p.Info.Set(StatusCode, NewAmf0String(StatusCodeConnectSuccess))
+	p.Info.Set(StatusDescription, NewAmf0String("Connection succeeded"))
+
+	d := NewAmf0EcmaArray()
+	p.Info.Set("data", d)
+
+	d.Set("version", NewAmf0String(RtmpSigFmsVer))
+	d.Set("oryx_sig", NewAmf0String(core.OryxSigKey))
+	d.Set("oryx_server", NewAmf0String(core.OryxSigServer()))
+	d.Set("oryx_role", NewAmf0String(core.OryxSigRole))
+	d.Set("oryx_url", NewAmf0String(core.OryxSigUrl))
+	d.Set("oryx_version", NewAmf0String(core.Version()))
+	d.Set("oryx_site", NewAmf0String(core.OryxSigWeb))
+	d.Set("oryx_email", NewAmf0String(core.OryxSigEmail))
+	d.Set("oryx_copyright", NewAmf0String(core.OryxSigCopyright))
+	d.Set("oryx_primary", NewAmf0String(core.OryxSigPrimary()))
+	d.Set("oryx_authors", NewAmf0String(core.OryxSigAuthors))
+	// for edge to directly get the id of client.
+	// TODO: FIXME: support oryx_server_ip, oryx_pid, oryx_id
+
+	var m *RtmpMessage
+	if m, err = v.packet2Message(p, 0); err != nil {
+		return
+	}
+
+	select {
+	case v.out <- m:
+	// ok
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+func (v *RtmpConnection) OnBwDone() (err error) {
+	// use longger service timeout.
+	timeout := 5000 * time.Millisecond
+
+	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
 
 	var m *RtmpMessage
 	if m, err = v.packet2Message(p, 0); err != nil {
@@ -979,6 +1052,76 @@ func (v *RtmpConnectAppPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
+// response for SrsConnectAppPacket.
+type RtmpConnectAppResPacket struct {
+	// _result or _error; indicates whether the response is result or error.
+	Name Amf0String
+	// Transaction ID is 1 for call connect responses
+	TransactionId Amf0Number
+	// Name-value pairs that describe the properties(fmsver etc.) of the connection.
+	// @remark, never be NULL.
+	Props *Amf0Object
+	// Name-value pairs that describe the response from|the server. 'code',
+	// 'level', 'description' are names of few among such information.
+	// @remark, never be NULL.
+	Info *Amf0Object
+}
+
+func NewRtmpConnectAppResPacket() RtmpPacket {
+	return &RtmpConnectAppResPacket{
+		Name:          Amf0String(Amf0CommandResult),
+		TransactionId: Amf0Number(1.0),
+		Props:         NewAmf0Object(),
+		Info:          NewAmf0Object(),
+	}
+}
+
+func (v *RtmpConnectAppResPacket) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = core.Marshal(&v.Name, &b); err != nil {
+		return
+	}
+	if err = core.Marshal(&v.TransactionId, &b); err != nil {
+		return
+	}
+	if err = core.Marshal(v.Props, &b); err != nil {
+		return
+	}
+	if err = core.Marshal(v.Info, &b); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *RtmpConnectAppResPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	if err = core.Unmarshal(&v.Name, b); err != nil {
+		return
+	}
+	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
+		return
+	}
+	if err = core.Unmarshal(v.Props, b); err != nil {
+		return
+	}
+	if err = core.Unmarshal(v.Info, b); err != nil {
+		return
+	}
+
+	return
+}
+
+func (v *RtmpConnectAppResPacket) PreferCid() uint32 {
+	return RtmpCidOverConnection
+}
+
+func (v *RtmpConnectAppResPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
+}
+
 // 5.5. Window Acknowledgement Size (5)
 // The client or the server sends this message to inform the peer which
 // window size to use when sending acknowledgment.
@@ -1077,6 +1220,63 @@ func (v *RtmpSetPeerBandwidthPacket) PreferCid() uint32 {
 
 func (v *RtmpSetPeerBandwidthPacket) MessageType() RtmpMessageType {
 	return RtmpMsgSetPeerBandwidth
+}
+
+// when bandwidth test done, notice client.
+type RtmpOnBwDonePacket struct {
+	// Name of command. Set to "onBWDone"
+	Name Amf0String
+	// Transaction ID set to 0.
+	TransactionId Amf0Number
+	// Command information does not exist. Set to null type.
+	// @remark, never be NULL, an AMF0 null instance.
+	Args Amf0Null
+}
+
+func NewRtmpOnBwDonePacket() RtmpPacket {
+	return &RtmpOnBwDonePacket{
+		Name: Amf0String(Amf0CommandOnBwDone),
+	}
+}
+
+func (v *RtmpOnBwDonePacket) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = core.Marshal(&v.Name, &b); err != nil {
+		return
+	}
+	if err = core.Marshal(&v.TransactionId, &b); err != nil {
+		return
+	}
+	if err = core.Marshal(&v.Args, &b); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *RtmpOnBwDonePacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	if err = core.Unmarshal(&v.Name, b); err != nil {
+		return
+	}
+	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
+		return
+	}
+	if err = core.Unmarshal(&v.Args, b); err != nil {
+		return
+	}
+
+	return
+}
+
+func (v *RtmpOnBwDonePacket) PreferCid() uint32 {
+	return RtmpCidOverConnection
+}
+
+func (v *RtmpOnBwDonePacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
 }
 
 // incoming chunk stream maybe interlaced,

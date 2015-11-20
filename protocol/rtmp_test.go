@@ -577,3 +577,64 @@ func TestRtmpSetPeerBandwidthPacket(t *testing.T) {
 		t.Error("invalid, err is", err)
 	}
 }
+
+func TestRtmpConnectAppResPacket(t *testing.T) {
+	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
+	if p.TransactionId != 1.0 || p.Name != "_result" {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		3,
+		0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x',
+		0, 0, 9, // object
+		3,
+		0, 6, 'c', 'r', 'e', 'a', 't', 'e', 0, 0x40, 0x9f, 0x7c, 0, 0, 0, 0, 0,
+		0, 0, 9, //object
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 {
+		t.Error("invalid")
+	}
+	if v, ok := p.Props.Get("pj").(*Amf0String); !ok || *v != "oryx" {
+		t.Error("invalid")
+	}
+	if v, ok := p.Info.Get("create").(*Amf0Number); !ok || *v != 2015 {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
+	p.Props.Set("pj", NewAmf0String("oryx"))
+	p.Info.Set("create", NewAmf0Number(2015))
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 55 {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpOnBwDonePacket(t *testing.T) {
+	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
+	if p.Name != "onBWDone" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 21 {
+		t.Error("invalid")
+	}
+}
