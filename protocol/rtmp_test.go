@@ -484,3 +484,61 @@ func TestMixReader(t *testing.T) {
 		t.Error("should dry")
 	}
 }
+
+func TestRtmpConnectAppPacket(t *testing.T) {
+	p := NewRtmpConnectAppPacket().(*RtmpConnectAppPacket)
+	if p.Name != Amf0String("connect") || p.TransactionId != Amf0Number(1.0) || p.Args != nil {
+		t.Error("invalid connect app packet.")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 7, 'c', 'o', 'n', 'n', 'e', 'c', 't', // string: connect
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0, // number: 1.0
+		3,
+		0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x', // "pj"=string("oryx")
+		0, 6, 'c', 'r', 'e', 'a', 't', 'e', 0, 0x40, 0x9f, 0x7c, 0, 0, 0, 0, 0, // "create"=number(2015)
+		0, 0, 9, // object
+	}); err != nil || p.Name != Amf0String("connect") || p.TransactionId != Amf0Number(1.0) {
+		t.Error("invalid packet, err is", err)
+	}
+	if v, ok := p.CommandObject.Get("pj").(*Amf0String); !ok || *v != Amf0String("oryx") {
+		t.Error("invalid packet. v is", v)
+	}
+	if p.Args != nil {
+		t.Error("invalid packet.")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 7, 'c', 'o', 'n', 'n', 'e', 'c', 't', // string: connect
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0, // number: 1.0
+		3,
+		0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x', // "pj"=string("oryx")
+		0, 6, 'c', 'r', 'e', 'a', 't', 'e', 0, 0x40, 0x9f, 0x7c, 0, 0, 0, 0, 0, // "create"=number(2015)
+		0, 0, 9, // object
+		3,
+		0, 7, 'v', 'e', 'r', 's', 'i', 'o', 'n', 2, 0, 3, '1', '.', '0', // "version"=string("1.0")
+		0, 0, 9, // object
+	}); err != nil {
+		t.Error("invalid packet, err is", err)
+	}
+	if p.Args == nil {
+		t.Error("invalid packet.")
+	} else if v, ok := p.Args.Get("version").(*Amf0String); !ok || *v != Amf0String("1.0") {
+		t.Error("invalid packet. v is", v)
+	}
+
+	p = NewRtmpConnectAppPacket().(*RtmpConnectAppPacket)
+	p.CommandObject.Set("pj", NewAmf0String("oryx"))
+	p.CommandObject.Set("create", NewAmf0Number(2015))
+	size := 3 + 7 + 1 + 8 + 1 + 3 + 2 + 2 + 3 + 4 + 2 + 6 + 1 + 8
+	if b, err := p.MarshalBinary(); err != nil || len(b) != size {
+		t.Error("invalid packet, size is", size, "b is", len(b))
+	}
+
+	p.Args = NewAmf0Object()
+	p.Args.Set("version", NewAmf0String("1.0"))
+	size += 1 + 3 + 2 + 7 + 3 + 3
+	if b, err := p.MarshalBinary(); err != nil || len(b) != size {
+		t.Error("invalid packet, size is", size, "b is", len(b))
+	}
+}

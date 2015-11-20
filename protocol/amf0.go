@@ -26,6 +26,7 @@ import (
 	"encoding"
 	"encoding/binary"
 	"fmt"
+	"strconv"
 	"time"
 )
 
@@ -106,6 +107,10 @@ func NewAmf0Object() *Amf0Object {
 	return &Amf0Object{
 		properties: make([]*amf0Property, 0),
 	}
+}
+
+func (v Amf0Object) String() string {
+	return fmt.Sprintf("object(%v)", len(v.properties))
 }
 
 func (v *Amf0Object) Set(name string, value Amf0Any) {
@@ -293,6 +298,10 @@ func (v *Amf0Date) UnmarshalBinary(data []byte) (err error) {
 // an amf0 undefined is an object.
 type Amf0Undefined struct{}
 
+func (v Amf0Undefined) String() string {
+	return "undefined"
+}
+
 func (v *Amf0Undefined) Size() int {
 	return 1
 }
@@ -324,6 +333,10 @@ func (v *Amf0Undefined) UnmarshalBinary(data []byte) (err error) {
 
 // an amf0 null is an object.
 type Amf0Null struct{}
+
+func (v Amf0Null) String() string {
+	return "null"
+}
 
 func (v *Amf0Null) Size() int {
 	return 1
@@ -360,6 +373,10 @@ type Amf0Number float64
 func NewAmf0Number(v float64) *Amf0Number {
 	var n Amf0Number = Amf0Number(v)
 	return &n
+}
+
+func (v Amf0Number) String() string {
+	return strconv.FormatFloat(float64(v), 'f', -1, 64)
 }
 
 func (v *Amf0Number) Size() int {
@@ -405,6 +422,13 @@ type Amf0Boolean bool
 func NewAmf0Bool(v bool) *Amf0Boolean {
 	var b Amf0Boolean = Amf0Boolean(v)
 	return &b
+}
+
+func (v Amf0Boolean) String() string {
+	if v {
+		return "true"
+	}
+	return "false"
 }
 
 func (v *Amf0Boolean) Size() int {
@@ -461,6 +485,10 @@ type Amf0String string
 func NewAmf0String(v string) *Amf0String {
 	var s Amf0String = Amf0String(v)
 	return &s
+}
+
+func (v Amf0String) String() string {
+	return string(v)
 }
 
 func (v *Amf0String) Size() int {

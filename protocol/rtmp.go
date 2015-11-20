@@ -658,6 +658,50 @@ const RtmpServerChunkSize = 60000
 // 6. Chunking, RTMP protocol default chunk size.
 const RtmpProtocolChunkSize = 128
 
+const (
+	// amf0 command message, command name macros
+	Amf0CommandConnect       = "connect"
+	Amf0CommandCreateStream  = "createStream"
+	Amf0CommandCloseStream   = "closeStream"
+	Amf0CommandPlay          = "play"
+	Amf0CommandPause         = "pause"
+	Amf0CommandOnBwDone      = "onBWDone"
+	Amf0CommandOnStatus      = "onStatus"
+	Amf0CommandResult        = "_result"
+	Amf0CommandError         = "_error"
+	Amf0CommandReleaseStream = "releaseStream"
+	Amf0CommandFcPublish     = "FCPublish"
+	Amf0CommandUnpublish     = "FCUnpublish"
+	Amf0CommandPublish       = "publish"
+	Amf0DataSampleAccess     = "|RtmpSampleAccess"
+
+	// the signature for packets to client.
+	RtmpSigFmsVer   = "3,5,3,888"
+	RtmpSigAmf0Ver  = 0
+	RtmpSigClientId = "ASAICiss"
+
+	// onStatus consts.
+	StatusLevel       = "level"
+	StatusCode        = "code"
+	StatusDescription = "description"
+	StatusDetails     = "details"
+	StatusClientId    = "clientid"
+	// status value
+	StatusLevelStatus = "status"
+	// status error
+	StatusLevelError = "error"
+	// code value
+	StatusCodeConnectSuccess   = "NetConnection.Connect.Success"
+	StatusCodeConnectRejected  = "NetConnection.Connect.Rejected"
+	StatusCodeStreamReset      = "NetStream.Play.Reset"
+	StatusCodeStreamStart      = "NetStream.Play.Start"
+	StatusCodeStreamPause      = "NetStream.Pause.Notify"
+	StatusCodeStreamUnpause    = "NetStream.Unpause.Notify"
+	StatusCodePublishStart     = "NetStream.Publish.Start"
+	StatusCodeDataStart        = "NetStream.Data.Start"
+	StatusCodeUnpublishSuccess = "NetStream.Unpublish.Success"
+)
+
 // Rtmp message,
 // which decode from RTMP chunked stream with raw body.
 type RtmpMessage struct {
@@ -710,19 +754,85 @@ type RtmpPacket interface {
 // The client sends the connect command to the server to request
 // connection to a server application instance.
 type RtmpConnectAppPacket struct {
+	// Name of the command. Set to "connect".
+	Name Amf0String
+	// Always set to 1.
+	TransactionId Amf0Number
+	// Command information object which has the name-value pairs.
+	// @remark: alloc in packet constructor, user can directly use it,
+	//       user should never alloc it again which will cause memory leak.
+	// @remark, never be NULL.
+	CommandObject Amf0Object
+	// Any optional information
+	// @remark, optional, init to and maybe NULL.
+	Args *Amf0Object
 }
 
 func NewRtmpConnectAppPacket() RtmpPacket {
-	return &RtmpConnectAppPacket{}
+	return &RtmpConnectAppPacket{
+		Name:          Amf0String(Amf0CommandConnect),
+		TransactionId: Amf0Number(1.0),
+	}
 }
 
 func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
-	// TODO: FIXME: implements it
-	return
+	var b bytes.Buffer
+
+	var vb []byte
+	if vb, err = v.Name.MarshalBinary(); err != nil {
+		return
+	} else if _, err = b.Write(vb); err != nil {
+		return
+	}
+
+	if vb, err = v.TransactionId.MarshalBinary(); err != nil {
+		return
+	} else if _, err = b.Write(vb); err != nil {
+		return
+	}
+
+	if vb, err = v.CommandObject.MarshalBinary(); err != nil {
+		return
+	} else if _, err = b.Write(vb); err != nil {
+		return
+	}
+
+	if v.Args != nil {
+		if vb, err = v.Args.MarshalBinary(); err != nil {
+			return
+		} else if _, err = b.Write(vb); err != nil {
+			return
+		}
+	}
+
+	return b.Bytes(), nil
 }
 
 func (v *RtmpConnectAppPacket) UnmarshalBinary(data []byte) (err error) {
-	// TODO: FIXME: implements it
+	b := bytes.NewBuffer(data)
+
+	if err = v.Name.UnmarshalBinary(b.Bytes()); err != nil {
+		return
+	}
+	b.Next(v.Name.Size())
+
+	if err = v.TransactionId.UnmarshalBinary(b.Bytes()); err != nil {
+		return
+	}
+	b.Next(v.TransactionId.Size())
+
+	if err = v.CommandObject.UnmarshalBinary(b.Bytes()); err != nil {
+		return
+	}
+	b.Next(v.CommandObject.Size())
+
+	if b.Len() > 0 {
+		v.Args = NewAmf0Object()
+		if err = v.Args.UnmarshalBinary(b.Bytes()); err != nil {
+			return
+		}
+	}
+
 	return
 }
 

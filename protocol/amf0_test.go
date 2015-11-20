@@ -205,7 +205,21 @@ func TestAmf0Boolean(t *testing.T) {
 
 func TestAmf0Number(t *testing.T) {
 	var s Amf0Number
-	if err := s.UnmarshalBinary([]byte{0x00, 0x40, 0x59, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}); err != nil || s != 100.0 {
+	if err := s.UnmarshalBinary([]byte{
+		0, 0x40, 0x59, 0, 0, 0, 0, 0, 0, // 100.0
+	}); err != nil || s != 100.0 {
+		t.Error("invalid amf0 number")
+	}
+
+	if err := s.UnmarshalBinary([]byte{
+		0, 0x40, 0x9f, 0x7c, 0, 0, 0, 0, 0, // 2015.0
+	}); err != nil || s != 2015.0 {
+		t.Error("invalid amf0 number")
+	}
+
+	if err := s.UnmarshalBinary([]byte{
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0, // 1.0
+	}); err != nil || s != 1.0 {
 		t.Error("invalid amf0 number")
 	}
 
