@@ -424,8 +424,13 @@ func (v *RtmpConnection) ConnectApp() (r *RtmpRequest, err error) {
 	for {
 		select {
 		case m := <-v.in:
-			// ok.
-			panic(m)
+			var p RtmpPacket
+			if p, err = v.stack.DecodeMessage(m); err != nil {
+				return
+			}
+			if p, ok := p.(*RtmpConnectAppPacket); ok {
+				core.Trace.Println("got connect", p.Name)
+			}
 		case <-time.After(timeout):
 			return nil, core.TimeoutError
 		case <-v.wc.QC():
@@ -548,6 +553,64 @@ const (
 	RtmpFmtType3
 )
 
+// the message type.
+type RtmpMessageType uint8
+
+func (v RtmpMessageType) isAudio() bool {
+	return v == RtmpMsgAudioMessage
+}
+
+func (v RtmpMessageType) isVideo() bool {
+	return v == RtmpMsgVideoMessage
+}
+
+func (v RtmpMessageType) isAmf0Command() bool {
+	return v == RtmpMsgAMF0CommandMessage
+}
+
+func (v RtmpMessageType) isAmf0Data() bool {
+	return v == RtmpMsgAMF0DataMessage
+}
+
+func (v RtmpMessageType) isAmf3Command() bool {
+	return v == RtmpMsgAMF3CommandMessage
+}
+func (v RtmpMessageType) isAmf3Data() bool {
+	return v == RtmpMsgAMF3DataMessage
+}
+
+func (v RtmpMessageType) isWindowAckledgementSize() bool {
+	return v == RtmpMsgWindowAcknowledgementSize
+}
+
+func (v RtmpMessageType) isAckledgement() bool {
+	return v == RtmpMsgAcknowledgement
+}
+
+func (v RtmpMessageType) isSetChunkSize() bool {
+	return v == RtmpMsgSetChunkSize
+}
+
+func (v RtmpMessageType) isUserControlMessage() bool {
+	return v == RtmpMsgUserControlMessage
+}
+
+func (v RtmpMessageType) isSetPeerBandwidth() bool {
+	return v == RtmpMsgSetPeerBandwidth
+}
+
+func (v RtmpMessageType) isAggregate() bool {
+	return v == RtmpMsgAggregateMessage
+}
+
+func (v RtmpMessageType) isAmf0() bool {
+	return v.isAmf0Command() || v.isAmf0Data()
+}
+
+func (v RtmpMessageType) isAmf3() bool {
+	return v.isAmf3Command() || v.isAmf3Data()
+}
+
 const (
 	// 5. Protocol Control Messages
 	// RTMP reserves message type IDs 1-7 for protocol control messages.
@@ -556,13 +619,13 @@ const (
 	// reserved for usage with RTM Chunk Stream protocol. Protocol messages
 	// with IDs 3-6 are reserved for usage of RTMP. Protocol message with ID
 	// 7 is used between edge server and origin server.
-	RtmpMsgSetChunkSize               = 0x01
-	RtmpMsgAbortMessage               = 0x02
-	RtmpMsgAcknowledgement            = 0x03
-	RtmpMsgUserControlMessage         = 0x04
-	RtmpMsgWindowAcknowledgementSize  = 0x05
-	RtmpMsgSetPeerBandwidth           = 0x06
-	RtmpMsgEdgeAndOriginServerCommand = 0x07
+	RtmpMsgSetChunkSize               RtmpMessageType = 0x01
+	RtmpMsgAbortMessage               RtmpMessageType = 0x02
+	RtmpMsgAcknowledgement            RtmpMessageType = 0x03
+	RtmpMsgUserControlMessage         RtmpMessageType = 0x04
+	RtmpMsgWindowAcknowledgementSize  RtmpMessageType = 0x05
+	RtmpMsgSetPeerBandwidth           RtmpMessageType = 0x06
+	RtmpMsgEdgeAndOriginServerCommand RtmpMessageType = 0x07
 	// 3. Types of messages
 	// The server and the client send messages over the network to
 	// communicate with each other. The messages can be of any type which
@@ -580,40 +643,40 @@ const (
 	// contains related parameters. A client or a server can request Remote
 	// Procedure Calls (RPC) over streams that are communicated using the
 	// command messages to the peer.
-	RtmpMsgAMF3CommandMessage = 17 // 0x11
-	RtmpMsgAMF0CommandMessage = 20 // 0x14
+	RtmpMsgAMF3CommandMessage RtmpMessageType = 17 // 0x11
+	RtmpMsgAMF0CommandMessage RtmpMessageType = 20 // 0x14
 	// 3.2. Data message
 	// The client or the server sends this message to send Metadata or any
 	// user data to the peer. Metadata includes details about the
 	// data(audio, video etc.) like creation time, duration, theme and so
 	// on. These messages have been assigned message type value of 18 for
 	// AMF0 and message type value of 15 for AMF3.
-	RtmpMsgAMF0DataMessage = 18 // 0x12
-	RtmpMsgAMF3DataMessage = 15 // 0x0F
+	RtmpMsgAMF0DataMessage RtmpMessageType = 18 // 0x12
+	RtmpMsgAMF3DataMessage RtmpMessageType = 15 // 0x0F
 	// 3.3. Shared object message
 	// A shared object is a Flash object (a collection of name value pairs)
 	// that are in synchronization across multiple clients, instances, and
 	// so on. The message types kMsgContainer=19 for AMF0 and
 	// kMsgContainerEx=16 for AMF3 are reserved for shared object events.
 	// Each message can contain multiple events.
-	RtmpMsgAMF3SharedObject = 16 // 0x10
-	RtmpMsgAMF0SharedObject = 19 // 0x13
+	RtmpMsgAMF3SharedObject RtmpMessageType = 16 // 0x10
+	RtmpMsgAMF0SharedObject RtmpMessageType = 19 // 0x13
 	// 3.4. Audio message
 	// The client or the server sends this message to send audio data to the
 	// peer. The message type value of 8 is reserved for audio messages.
-	RtmpMsgAudioMessage = 8 // 0x08
+	RtmpMsgAudioMessage RtmpMessageType = 8 // 0x08
 	// 3.5. Video message
 	// The client or the server sends this message to send video data to the
 	// peer. The message type value of 9 is reserved for video messages.
 	// These messages are large and can delay the sending of other type of
 	// messages. To avoid such a situation, the video message is assigned
 	// the lowest priority.
-	RtmpMsgVideoMessage = 9 // 0x09
+	RtmpMsgVideoMessage RtmpMessageType = 9 // 0x09
 	// 3.6. Aggregate message
 	// An aggregate message is a single message that contains a list of submessages.
 	// The message type value of 22 is reserved for aggregate
 	// messages.
-	RtmpMsgAggregateMessage = 22 // 0x16
+	RtmpMsgAggregateMessage RtmpMessageType = 22 // 0x16
 )
 
 const (
@@ -717,7 +780,7 @@ type RtmpMessage struct {
 	// 1byte.
 	// One byte field to represent the message type. A range of type IDs
 	// (1-7) are reserved for protocol control messages.
-	messageType uint8
+	messageType RtmpMessageType
 	// get the perfered cid(chunk stream id) which sendout over.
 	// set at decoding, and canbe used for directly send message,
 	// for example, dispatch to all connections.
@@ -747,7 +810,7 @@ type RtmpPacket interface {
 	PreferCid() uint32
 	// subpacket must override to provide the right message type.
 	// the message type set the RTMP message type in header.
-	MessageType() uint8
+	MessageType() RtmpMessageType
 }
 
 // 4.1.1. connect
@@ -841,7 +904,7 @@ func (v *RtmpConnectAppPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
-func (v *RtmpConnectAppPacket) MessageType() uint8 {
+func (v *RtmpConnectAppPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
@@ -911,7 +974,48 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
-	// TODO: FIXME: implements it.
+	b := bytes.NewBuffer(m.payload.Bytes())
+
+	// decode specified packet type
+	if m.messageType.isAmf0() || m.messageType.isAmf3() {
+		// skip 1bytes to decode the amf3 command.
+		if m.messageType.isAmf3() && b.Len() > 0 {
+			b.ReadByte()
+		}
+
+		// amf0 command message.
+		// need to read the command name.
+		var c Amf0String
+		if err = c.UnmarshalBinary(b.Bytes()); err != nil {
+			return
+		}
+		sc := string(c)
+
+		// result/error packet
+		if sc == Amf0CommandResult || sc == Amf0CommandError {
+			// TODO: FIXME: implements it.
+		}
+
+		// decode command object.
+		switch sc {
+		case Amf0CommandConnect:
+			p = NewRtmpConnectAppPacket()
+		// TODO: FIXME: implements it.
+		default:
+			core.Info.Println("drop command message, name is", c)
+		}
+	} else if m.messageType.isUserControlMessage() {
+		// TODO: FIXME: implements it.
+	} else if m.messageType.isWindowAckledgementSize() {
+		// TODO: FIXME: implements it.
+	} else if m.messageType.isSetChunkSize() {
+		// TODO: FIXME: implements it.
+	} else {
+		if !m.messageType.isSetPeerBandwidth() && !m.messageType.isAckledgement() {
+			core.Trace.Println("drop unknown message, type is", m.messageType)
+		}
+	}
+
 	return
 }
 
@@ -1236,7 +1340,7 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	chunk.timestamp &= 0x7fffffff
 
 	// copy header to msg
-	chunk.partialMessage.messageType = chunk.messageType
+	chunk.partialMessage.messageType = RtmpMessageType(chunk.messageType)
 	chunk.partialMessage.timestamp = chunk.timestamp
 	chunk.partialMessage.preferCid = chunk.cid
 	chunk.partialMessage.streamId = chunk.streamId
