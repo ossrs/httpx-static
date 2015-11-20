@@ -762,7 +762,7 @@ type RtmpConnectAppPacket struct {
 	// @remark: alloc in packet constructor, user can directly use it,
 	//       user should never alloc it again which will cause memory leak.
 	// @remark, never be NULL.
-	CommandObject Amf0Object
+	CommandObject *Amf0Object
 	// Any optional information
 	// @remark, optional, init to and maybe NULL.
 	Args *Amf0Object
@@ -772,6 +772,7 @@ func NewRtmpConnectAppPacket() RtmpPacket {
 	return &RtmpConnectAppPacket{
 		Name:          Amf0String(Amf0CommandConnect),
 		TransactionId: Amf0Number(1.0),
+		CommandObject: NewAmf0Object(),
 	}
 }
 

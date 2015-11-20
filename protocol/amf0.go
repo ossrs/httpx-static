@@ -90,6 +90,8 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 		return &amf0ObjectEOF{}, nil
 	case MarkerAmf0Object:
 		return NewAmf0Object(), nil
+	case MarkerAmf0EcmaArray:
+		return NewAmf0EcmaArray(), nil
 	case MarkerAmf0Invalid:
 		fallthrough
 	default:
@@ -97,57 +99,111 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	}
 }
 
+// 2.12 Strict Array Type
+// array-count = U32
+// strict-array-type = array-count *(value-type)
+
+// 2.10 ECMA Array Type
+// ecma-array-type = associative-count *(object-property)
+// associative-count = U32
+// object-property = (UTF-8 value-type) | (UTF-8-empty object-end-marker)
+type Amf0EcmaArray struct {
+	count      uint32
+	properties *amf0Properties
+}
+
+func NewAmf0EcmaArray() *Amf0EcmaArray {
+	return &Amf0EcmaArray{
+		properties: NewAmf0Properties(),
+	}
+}
+
+func (v Amf0EcmaArray) String() string {
+	return fmt.Sprintf("ecma-array(%v)", len(v.properties.properties))
+}
+
+func (v *Amf0EcmaArray) Set(name string, value Amf0Any) {
+	v.properties.Set(name, value)
+}
+
+func (v *Amf0EcmaArray) Get(name string) (value Amf0Any) {
+	return v.properties.Get(name)
+}
+
+func (v *Amf0EcmaArray) Size() int {
+	return 1 + 4 + v.properties.Size()
+}
+
+func (v *Amf0EcmaArray) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = b.WriteByte(MarkerAmf0EcmaArray); err != nil {
+		return
+	}
+
+	if err = binary.Write(&b, binary.BigEndian, v.count); err != nil {
+		return
+	}
+
+	if vb, err := v.properties.MarshalBinary(); err != nil {
+		return nil, err
+	} else if _, err := b.Write(vb); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *Amf0EcmaArray) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var m byte
+	if m, err = b.ReadByte(); err != nil {
+		return
+	}
+
+	if m != MarkerAmf0EcmaArray {
+		return Amf0Error
+	}
+
+	if err = binary.Read(b, binary.BigEndian, &v.count); err != nil {
+		return
+	}
+
+	if err = v.properties.UnmarshalBinary(b.Bytes()); err != nil {
+		return
+	}
+
+	return
+}
+
 // 2.5 Object Type
 // anonymous-object-type = object-marker *(object-property)
 // object-property = (UTF-8 value-type) | (UTF-8-empty object-end-marker)
 type Amf0Object struct {
-	properties []*amf0Property
-	eof        amf0ObjectEOF
+	properties *amf0Properties
 }
 
 func NewAmf0Object() *Amf0Object {
 	return &Amf0Object{
-		properties: make([]*amf0Property, 0),
+		properties: NewAmf0Properties(),
 	}
 }
 
 func (v Amf0Object) String() string {
-	return fmt.Sprintf("object(%v)", len(v.properties))
+	return fmt.Sprintf("object(%v)", len(v.properties.properties))
 }
 
 func (v *Amf0Object) Set(name string, value Amf0Any) {
-	for _, e := range v.properties {
-		if string(e.key) == name {
-			e.value = value
-			return
-		}
-	}
-
-	e := &amf0Property{
-		key:   amf0Utf8(name),
-		value: value,
-	}
-	v.properties = append(v.properties, e)
-
-	return
+	v.properties.Set(name, value)
 }
 
 func (v *Amf0Object) Get(name string) (value Amf0Any) {
-	for _, e := range v.properties {
-		if string(e.key) == name {
-			return e.value
-		}
-	}
-	return
+	return v.properties.Get(name)
 }
 
 func (v *Amf0Object) Size() int {
-	var size int = 1 + 2 + v.eof.Size()
-	for _, e := range v.properties {
-		size += e.key.Size()
-		size += e.value.Size()
-	}
-	return size
+	return 1 + v.properties.Size()
 }
 
 func (v *Amf0Object) MarshalBinary() (data []byte, err error) {
@@ -157,29 +213,9 @@ func (v *Amf0Object) MarshalBinary() (data []byte, err error) {
 		return
 	}
 
-	// properties.
-	for _, e := range v.properties {
-		if vb, err := e.key.MarshalBinary(); err != nil {
-			return nil, err
-		} else if _, err = b.Write(vb); err != nil {
-			return nil, err
-		}
-
-		if vb, err := e.value.MarshalBinary(); err != nil {
-			return nil, err
-		} else if _, err = b.Write(vb); err != nil {
-			return nil, err
-		}
-	}
-
-	// EOF.
-	if _, err = b.Write([]byte{0, 0}); err != nil {
-		return
-	}
-
-	if vb, err := v.eof.MarshalBinary(); err != nil {
+	if vb, err := v.properties.MarshalBinary(); err != nil {
 		return nil, err
-	} else if _, err = b.Write(vb); err != nil {
+	} else if _, err := b.Write(vb); err != nil {
 		return nil, err
 	}
 
@@ -198,28 +234,8 @@ func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
 		return Amf0Error
 	}
 
-	for b.Len() > 0 {
-		var key amf0Utf8
-		if err = key.UnmarshalBinary(b.Bytes()); err != nil {
-			return
-		}
-		b.Next(key.Size())
-
-		var value Amf0Any
-		if value, err = Amf0Discovery(b.Bytes()); err != nil {
-			return
-		}
-		if err = value.UnmarshalBinary(b.Bytes()); err != nil {
-			return
-		}
-		b.Next(value.Size())
-
-		// EOF.
-		if _, ok := value.(*amf0ObjectEOF); ok && len(key) == 0 {
-			break
-		}
-
-		v.Set(string(key), value)
+	if err = v.properties.UnmarshalBinary(b.Bytes()); err != nil {
+		return
 	}
 
 	return
@@ -650,6 +666,114 @@ func (s *amf0Utf8) UnmarshalBinary(data []byte) (err error) {
 // for the FMLE will crash when AMF0Object is not ordered by inserted,
 // if ordered in map, the string compare order, the FMLE will creash when
 // get the response of connect app.
+type amf0Properties struct {
+	properties []*amf0Property
+	eof        amf0ObjectEOF
+}
+
+func NewAmf0Properties() *amf0Properties {
+	return &amf0Properties{
+		properties: make([]*amf0Property, 0),
+	}
+}
+
+func (v *amf0Properties) Set(name string, value Amf0Any) {
+	for _, e := range v.properties {
+		if string(e.key) == name {
+			e.value = value
+			return
+		}
+	}
+
+	e := &amf0Property{
+		key:   amf0Utf8(name),
+		value: value,
+	}
+	v.properties = append(v.properties, e)
+
+	return
+}
+
+func (v *amf0Properties) Get(name string) (value Amf0Any) {
+	for _, e := range v.properties {
+		if string(e.key) == name {
+			return e.value
+		}
+	}
+	return
+}
+
+func (v *amf0Properties) Size() int {
+	var size int = 2 + v.eof.Size()
+	for _, e := range v.properties {
+		size += e.key.Size()
+		size += e.value.Size()
+	}
+	return size
+}
+
+func (v *amf0Properties) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	// properties.
+	for _, e := range v.properties {
+		if vb, err := e.key.MarshalBinary(); err != nil {
+			return nil, err
+		} else if _, err = b.Write(vb); err != nil {
+			return nil, err
+		}
+
+		if vb, err := e.value.MarshalBinary(); err != nil {
+			return nil, err
+		} else if _, err = b.Write(vb); err != nil {
+			return nil, err
+		}
+	}
+
+	// EOF.
+	if _, err = b.Write([]byte{0, 0}); err != nil {
+		return
+	}
+
+	if vb, err := v.eof.MarshalBinary(); err != nil {
+		return nil, err
+	} else if _, err = b.Write(vb); err != nil {
+		return nil, err
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *amf0Properties) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	for b.Len() > 0 {
+		var key amf0Utf8
+		if err = key.UnmarshalBinary(b.Bytes()); err != nil {
+			return
+		}
+		b.Next(key.Size())
+
+		var value Amf0Any
+		if value, err = Amf0Discovery(b.Bytes()); err != nil {
+			return
+		}
+		if err = value.UnmarshalBinary(b.Bytes()); err != nil {
+			return
+		}
+		b.Next(value.Size())
+
+		// EOF.
+		if _, ok := value.(*amf0ObjectEOF); ok && len(key) == 0 {
+			break
+		}
+
+		v.Set(string(key), value)
+	}
+
+	return
+}
+
 type amf0Property struct {
 	key   amf0Utf8
 	value Amf0Any
