@@ -638,6 +638,14 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 				continue
 			}
 
+			switch p := p.(type) {
+			case RtmpCreateStreamPacket:
+				return v.identifyCreateStream(sid, p)
+			case RtmpFMLEStartPacket:
+				return v.identifyFmlePublish(sid, p)
+			case RtmpPlayPacket:
+				return v.identifyPlay(sid, p)
+			}
 			// TODO: FIXME: implements it.
 
 			// for other call msgs,
@@ -653,6 +661,15 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 		}
 	}
 
+	return
+}
+func (v *RtmpConnection) identifyCreateStream(sid uint32, p *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
+	return
+}
+func (v *RtmpConnection) identifyFmlePublish(sid uint32, p *RtmpFMLEStartPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
+	return
+}
+func (v *RtmpConnection) identifyPlay(sid uint32, p *RtmpPlayPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
 	return
 }
 
@@ -1560,17 +1577,26 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 		if err = c.UnmarshalBinary(b.Bytes()); err != nil {
 			return
 		}
-		sc := string(c)
 
 		// result/error packet
-		if sc == Amf0CommandResult || sc == Amf0CommandError {
+		if c == Amf0CommandResult || c == Amf0CommandError {
 			// TODO: FIXME: implements it.
 		}
 
 		// decode command object.
-		switch sc {
+		switch c {
 		case Amf0CommandConnect:
 			p = NewRtmpConnectAppPacket()
+		case Amf0CommandCreateStream:
+			p = NewRtmpCreateStreamPacket()
+		case Amf0CommandPlay:
+			p = NewRtmpPlayPacket()
+		case Amf0CommandPause:
+			// TODO: FIXME: implements it.
+		case Amf0CommandReleaseStream, Amf0CommandFcPublish, Amf0CommandUnpublish:
+			p = NewRtmpFMLEStartPacket()
+		case Amf0CommandPublish:
+			// TODO: FIXME: implements it.
 		// TODO: FIXME: implements it.
 		default:
 			core.Info.Println("drop command message, name is", c)
