@@ -484,7 +484,7 @@ func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	timeout := 5000 * time.Millisecond
 
 	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
-	p.Ack = ack
+	p.Ack = RtmpUint32(ack)
 
 	var m *RtmpMessage
 	if m, err = v.packet2Message(p, 0); err != nil {
@@ -511,8 +511,8 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	timeout := 5000 * time.Millisecond
 
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
-	p.Bandwidth = bw
-	p.Type = RtmpPeerBandwidthType(t)
+	p.Bandwidth = RtmpUint32(bw)
+	p.Type = RtmpUint8(t)
 
 	var m *RtmpMessage
 	if m, err = v.packet2Message(p, 0); err != nil {
@@ -996,6 +996,52 @@ const (
 	StatusCodeUnpublishSuccess = "NetStream.Unpublish.Success"
 )
 
+// the uint8 which suppport marshal and unmarshal.
+type RtmpUint8 uint8
+
+func (v *RtmpUint8) MarshalBinary() (data []byte, err error) {
+	return []byte{byte(*v)}, nil
+}
+
+func (v *RtmpUint8) Size() int {
+	return 1
+}
+
+func (v *RtmpUint8) UnmarshalBinary(data []byte) (err error) {
+	if len(data) == 0 {
+		return io.EOF
+	}
+	*v = RtmpUint8(data[0])
+	return
+}
+
+// the uint32 which suppport marshal and unmarshal.
+type RtmpUint32 uint32
+
+func (v *RtmpUint32) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+	if err = binary.Write(&b, binary.BigEndian, uint32(*v)); err != nil {
+		return
+	}
+	return b.Bytes(), nil
+}
+
+func (v *RtmpUint32) Size() int {
+	return 4
+}
+
+func (v *RtmpUint32) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	var vb uint32
+	if err = binary.Read(b, binary.BigEndian, &vb); err != nil {
+		return
+	}
+
+	*v = RtmpUint32(vb)
+	return
+}
+
 // Rtmp message,
 // which decode from RTMP chunked stream with raw body.
 type RtmpMessage struct {
@@ -1067,47 +1113,23 @@ func NewRtmpConnectAppPacket() RtmpPacket {
 		Name:          Amf0String(Amf0CommandConnect),
 		TransactionId: Amf0Number(1.0),
 		CommandObject: NewAmf0Object(),
+		Args:          nil,
 	}
 }
 
 func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-
-	if err = core.Marshal(&v.Name, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(&v.TransactionId, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(v.CommandObject, &b); err != nil {
-		return
-	}
-	if v.Args != nil {
-		if err = core.Marshal(v.Args, &b); err != nil {
-			return
-		}
-	}
-
-	return b.Bytes(), nil
+	return core.Marshals(&v.Name, &v.TransactionId, v.CommandObject, v.Args)
 }
 
 func (v *RtmpConnectAppPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionId, v.CommandObject); err != nil {
+		return
+	}
 
-	if err = core.Unmarshal(&v.Name, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(v.CommandObject, b); err != nil {
-		return
-	}
 	if b.Len() > 0 {
 		v.Args = NewAmf0Object()
-		if err = core.Unmarshal(v.Args, b); err != nil {
-			return
-		}
+		return core.Unmarshals(b, v.Args)
 	}
 
 	return
@@ -1146,41 +1168,11 @@ func NewRtmpConnectAppResPacket() RtmpPacket {
 }
 
 func (v *RtmpConnectAppResPacket) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-
-	if err = core.Marshal(&v.Name, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(&v.TransactionId, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(v.Props, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(v.Info, &b); err != nil {
-		return
-	}
-
-	return b.Bytes(), nil
+	return core.Marshals(&v.Name, &v.TransactionId, v.Props, v.Info)
 }
 
 func (v *RtmpConnectAppResPacket) UnmarshalBinary(data []byte) (err error) {
-	b := bytes.NewBuffer(data)
-
-	if err = core.Unmarshal(&v.Name, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(v.Props, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(v.Info, b); err != nil {
-		return
-	}
-
-	return
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, v.Props, v.Info)
 }
 
 func (v *RtmpConnectAppResPacket) PreferCid() uint32 {
@@ -1213,35 +1205,11 @@ func NewRtmpCreateStreamPacket() RtmpPacket {
 }
 
 func (v *RtmpCreateStreamPacket) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-
-	if err = core.Marshal(&v.Name, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(&v.TransactionId, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(&v.Command, &b); err != nil {
-		return
-	}
-
-	return b.Bytes(), nil
+	return core.Marshals(&v.Name, &v.TransactionId, &v.Command)
 }
 
 func (v *RtmpCreateStreamPacket) UnmarshalBinary(data []byte) (err error) {
-	b := bytes.NewBuffer(data)
-
-	if err = core.Unmarshal(&v.Name, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(&v.Command, b); err != nil {
-		return
-	}
-
-	return
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command)
 }
 
 func (v *RtmpCreateStreamPacket) PreferCid() uint32 {
@@ -1256,7 +1224,7 @@ func (v *RtmpCreateStreamPacket) MessageType() RtmpMessageType {
 // The client or the server sends this message to inform the peer which
 // window size to use when sending acknowledgment.
 type RtmpSetWindowAckSizePacket struct {
-	Ack uint32
+	Ack RtmpUint32
 }
 
 func NewRtmpSetWindowAckSizePacket() RtmpPacket {
@@ -1264,23 +1232,11 @@ func NewRtmpSetWindowAckSizePacket() RtmpPacket {
 }
 
 func (v *RtmpSetWindowAckSizePacket) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-
-	if err = binary.Write(&b, binary.BigEndian, v.Ack); err != nil {
-		return
-	}
-
-	return b.Bytes(), nil
+	return core.Marshals(&v.Ack)
 }
 
 func (v *RtmpSetWindowAckSizePacket) UnmarshalBinary(data []byte) (err error) {
-	b := bytes.NewBuffer(data)
-
-	if err = binary.Read(b, binary.BigEndian, &v.Ack); err != nil {
-		return
-	}
-
-	return
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Ack)
 }
 
 func (v *RtmpSetWindowAckSizePacket) PreferCid() uint32 {
@@ -1292,12 +1248,10 @@ func (v *RtmpSetWindowAckSizePacket) MessageType() RtmpMessageType {
 }
 
 // 5.6. Set Peer Bandwidth (6)
-type RtmpPeerBandwidthType uint8
-
 const (
 	// The sender can mark this message hard (0), soft (1), or dynamic (2)
 	// using the Limit type field.
-	Hard RtmpPeerBandwidthType = iota
+	Hard RtmpUint8 = iota
 	Soft
 	Dynamic
 )
@@ -1306,8 +1260,8 @@ const (
 // The client or the server sends this message to update the output
 // bandwidth of the peer.
 type RtmpSetPeerBandwidthPacket struct {
-	Bandwidth uint32
-	Type      RtmpPeerBandwidthType
+	Bandwidth RtmpUint32
+	Type      RtmpUint8
 }
 
 func NewRtmpSetPeerBandwidthPacket() RtmpPacket {
@@ -1317,31 +1271,11 @@ func NewRtmpSetPeerBandwidthPacket() RtmpPacket {
 }
 
 func (v *RtmpSetPeerBandwidthPacket) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-
-	if err = binary.Write(&b, binary.BigEndian, v.Bandwidth); err != nil {
-		return
-	}
-	if err = binary.Write(&b, binary.BigEndian, uint8(v.Type)); err != nil {
-		return
-	}
-
-	return b.Bytes(), nil
+	return core.Marshals(&v.Bandwidth, &v.Type)
 }
 
 func (v *RtmpSetPeerBandwidthPacket) UnmarshalBinary(data []byte) (err error) {
-	b := bytes.NewBuffer(data)
-
-	if err = binary.Read(b, binary.BigEndian, &v.Bandwidth); err != nil {
-		return
-	}
-	if vb, err := b.ReadByte(); err != nil {
-		return err
-	} else {
-		v.Type = RtmpPeerBandwidthType(vb)
-	}
-
-	return
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Bandwidth, &v.Type)
 }
 
 func (v *RtmpSetPeerBandwidthPacket) PreferCid() uint32 {
@@ -1370,35 +1304,11 @@ func NewRtmpOnBwDonePacket() RtmpPacket {
 }
 
 func (v *RtmpOnBwDonePacket) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-
-	if err = core.Marshal(&v.Name, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(&v.TransactionId, &b); err != nil {
-		return
-	}
-	if err = core.Marshal(&v.Args, &b); err != nil {
-		return
-	}
-
-	return b.Bytes(), nil
+	return core.Marshals(&v.Name, &v.TransactionId, &v.Args)
 }
 
 func (v *RtmpOnBwDonePacket) UnmarshalBinary(data []byte) (err error) {
-	b := bytes.NewBuffer(data)
-
-	if err = core.Unmarshal(&v.Name, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
-		return
-	}
-	if err = core.Unmarshal(&v.Args, b); err != nil {
-		return
-	}
-
-	return
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Args)
 }
 
 func (v *RtmpOnBwDonePacket) PreferCid() uint32 {
@@ -1411,7 +1321,7 @@ func (v *RtmpOnBwDonePacket) MessageType() RtmpMessageType {
 
 // the empty packet is a sample rtmp packet.
 type RtmpEmptyPacket struct {
-	Empty Amf0Null
+	Id Amf0Number
 }
 
 func NewRtmpEmptyPacket() RtmpPacket {
@@ -1419,23 +1329,11 @@ func NewRtmpEmptyPacket() RtmpPacket {
 }
 
 func (v *RtmpEmptyPacket) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-
-	if err = core.Marshal(&v.Empty, &b); err != nil {
-		return
-	}
-
-	return b.Bytes(), nil
+	return core.Marshals(&v.Id)
 }
 
 func (v *RtmpEmptyPacket) UnmarshalBinary(data []byte) (err error) {
-	b := bytes.NewBuffer(data)
-
-	if err = core.Unmarshal(&v.Empty, b); err != nil {
-		return
-	}
-
-	return
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Id)
 }
 
 func (v *RtmpEmptyPacket) PreferCid() uint32 {

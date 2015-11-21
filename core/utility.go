@@ -26,6 +26,7 @@ import (
 	"encoding"
 	"io"
 	"math/rand"
+	"reflect"
 	"runtime/debug"
 	"time"
 )
@@ -102,6 +103,27 @@ func Marshal(o Marshaler, b *bytes.Buffer) (err error) {
 	return
 }
 
+// marshal multiple o, which can be nil.
+func Marshals(o ...Marshaler) (data []byte, err error) {
+	var b bytes.Buffer
+
+	for _, e := range o {
+		if e == nil {
+			continue
+		}
+
+		if rv := reflect.ValueOf(e); rv.IsNil() {
+			continue
+		}
+
+		if err = Marshal(e, &b); err != nil {
+			return
+		}
+	}
+
+	return b.Bytes(), nil
+}
+
 // unmarshaler and sizer.
 type UnmarshalSizer interface {
 	encoding.BinaryUnmarshaler
@@ -124,6 +146,30 @@ func Unmarshal(o UnmarshalSizer, b *bytes.Buffer) (err error) {
 		return
 	}
 	b.Next(o.Size())
+
+	return
+}
+
+// unmarshal multiple o pointers, which can be nil.
+func Unmarshals(b *bytes.Buffer, o ...UnmarshalSizer) (err error) {
+	for _, e := range o {
+		if e == nil {
+			continue
+		}
+
+		if rv := reflect.ValueOf(e); rv.IsNil() {
+			continue
+		}
+
+		if b.Len() == 0 {
+			break
+		}
+
+		if err = e.UnmarshalBinary(b.Bytes()); err != nil {
+			return
+		}
+		b.Next(e.Size())
+	}
 
 	return
 }

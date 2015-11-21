@@ -491,6 +491,7 @@ func TestRtmpConnectAppPacket(t *testing.T) {
 		t.Error("invalid connect app packet.")
 	}
 
+	p = NewRtmpConnectAppPacket().(*RtmpConnectAppPacket)
 	if err := p.UnmarshalBinary([]byte{
 		2, 0, 7, 'c', 'o', 'n', 'n', 'e', 'c', 't', // string: connect
 		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0, // number: 1.0
@@ -508,6 +509,7 @@ func TestRtmpConnectAppPacket(t *testing.T) {
 		t.Error("invalid packet.")
 	}
 
+	p = NewRtmpConnectAppPacket().(*RtmpConnectAppPacket)
 	if err := p.UnmarshalBinary([]byte{
 		2, 0, 7, 'c', 'o', 'n', 'n', 'e', 'c', 't', // string: connect
 		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0, // number: 1.0
@@ -562,11 +564,11 @@ func TestRtmpSetWindowAckSizePacket(t *testing.T) {
 
 func TestRtmpSetPeerBandwidthPacket(t *testing.T) {
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
-	if p.Bandwidth != 0 || p.Type != RtmpPeerBandwidthType(2) {
+	if p.Bandwidth != 0 || p.Type != RtmpUint8(2) {
 		t.Error("invalid")
 	}
 
-	if err := p.UnmarshalBinary([]byte{0, 0, 0, 0x0f, 1}); err != nil || p.Bandwidth != 0xf || p.Type != RtmpPeerBandwidthType(1) {
+	if err := p.UnmarshalBinary([]byte{0, 0, 0, 0x0f, 1}); err != nil || p.Bandwidth != 0xf || p.Type != RtmpUint8(1) {
 		t.Error("invalid, err is", err)
 	}
 
@@ -659,6 +661,16 @@ func TestRtmpCreateStreamPacket(t *testing.T) {
 
 	p = NewRtmpCreateStreamPacket().(*RtmpCreateStreamPacket)
 	if b, err := p.MarshalBinary(); err != nil || len(b) != 25 {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpEmptyPacket(t *testing.T) {
+	p := NewRtmpEmptyPacket().(*RtmpEmptyPacket)
+	if err := p.UnmarshalBinary([]byte{0, 0x40, 0x59, 0, 0, 0, 0, 0, 0}); err != nil || p.Id != 100 {
+		t.Error("invalid")
+	}
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 9 {
 		t.Error("invalid")
 	}
 }
