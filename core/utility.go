@@ -153,16 +153,16 @@ func Unmarshal(o UnmarshalSizer, b *bytes.Buffer) (err error) {
 // unmarshal multiple o pointers, which can be nil.
 func Unmarshals(b *bytes.Buffer, o ...UnmarshalSizer) (err error) {
 	for _, e := range o {
+		if b.Len() == 0 {
+			break
+		}
+
 		if e == nil {
 			continue
 		}
 
 		if rv := reflect.ValueOf(e); rv.IsNil() {
 			continue
-		}
-
-		if b.Len() == 0 {
-			break
 		}
 
 		if err = e.UnmarshalBinary(b.Bytes()); err != nil {

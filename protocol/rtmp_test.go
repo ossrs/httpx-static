@@ -674,3 +674,56 @@ func TestRtmpEmptyPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 }
+
+func TestRtmpFMLEStartPacket(t *testing.T) {
+	p := NewRtmpFMLEStartPacket().(*RtmpFMLEStartPacket)
+	if p.Name != "releaseStream" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+		2, 0, 4, 'o', 'r', 'y', 'x',
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 || p.StreamName != "oryx" {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpFMLEStartPacket().(*RtmpFMLEStartPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 29 {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpPlayPacket(t *testing.T) {
+	p := NewRtmpPlayPacket().(*RtmpPlayPacket)
+	if p.Name != "play" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+		2, 0, 4, 'o', 'r', 'y', 'x',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		1, 1,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 || p.Stream != "oryx" || *p.Start != 1.0 || *p.Duration != 1.0 || *p.Reset != true {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpPlayPacket().(*RtmpPlayPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 20 {
+		t.Error("invalid")
+	}
+}

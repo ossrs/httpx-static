@@ -1319,6 +1319,135 @@ func (v *RtmpOnBwDonePacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
+// FMLE start publish: ReleaseStream/PublishStream
+type RtmpFMLEStartPacket struct {
+	// Name of the command
+	Name Amf0String
+	// the transaction ID to get the response.
+	TransactionId Amf0Number
+	// If there exists any command info this is set, else this is set to null type.
+	// @remark, never be NULL, an AMF0 null instance.
+	Command Amf0Null
+	// the stream name to start publish or release.
+	StreamName Amf0String
+}
+
+func NewRtmpFMLEStartPacket() RtmpPacket {
+	return &RtmpFMLEStartPacket{
+		Name: Amf0String(Amf0CommandReleaseStream),
+	}
+}
+
+func (v *RtmpFMLEStartPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.StreamName)
+}
+
+func (v *RtmpFMLEStartPacket) UnmarshalBinary(data []byte) (err error) {
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command, &v.StreamName)
+}
+
+func (v *RtmpFMLEStartPacket) PreferCid() uint32 {
+	return RtmpCidOverConnection
+}
+
+func (v *RtmpFMLEStartPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
+}
+
+// 4.2.1. play
+// The client sends this command to the server to play a stream.
+type RtmpPlayPacket struct {
+	// Name of the command. Set to "play".
+	Name Amf0String
+	// Transaction ID set to 0.
+	TransactionId Amf0Number
+	// Command information does not exist. Set to null type.
+	// @remark, never be NULL, an AMF0 null instance.
+	Command Amf0Null
+	// Name of the stream to play.
+	// To play video (FLV) files, specify the name of the stream without a file
+	//       extension (for example, "sample").
+	// To play back MP3 or ID3 tags, you must precede the stream name with mp3:
+	//       (for example, "mp3:sample".)
+	// To play H.264/AAC files, you must precede the stream name with mp4: and specify the
+	//       file extension. For example, to play the file sample.m4v, specify
+	//       "mp4:sample.m4v"
+	Stream Amf0String
+	// An optional parameter that specifies the start time in seconds.
+	// The default value is -2, which means the subscriber first tries to play the live
+	//       stream specified in the Stream Name field. If a live stream of that name is
+	//       not found, it plays the recorded stream specified in the Stream Name field.
+	// If you pass -1 in the Start field, only the live stream specified in the Stream
+	//       Name field is played.
+	// If you pass 0 or a positive number in the Start field, a recorded stream specified
+	//       in the Stream Name field is played beginning from the time specified in the
+	//       Start field.
+	// If no recorded stream is found, the next item in the playlist is played.
+	Start *Amf0Number
+	// An optional parameter that specifies the duration of playback in seconds.
+	// The default value is -1. The -1 value means a live stream is played until it is no
+	//       longer available or a recorded stream is played until it ends.
+	// If u pass 0, it plays the single frame since the time specified in the Start field
+	//       from the beginning of a recorded stream. It is assumed that the value specified
+	//       in the Start field is equal to or greater than 0.
+	// If you pass a positive number, it plays a live stream for the time period specified
+	//       in the Duration field. After that it becomes available or plays a recorded
+	//       stream for the time specified in the Duration field. (If a stream ends before the
+	//       time specified in the Duration field, playback ends when the stream ends.)
+	// If you pass a negative number other than -1 in the Duration field, it interprets the
+	//       value as if it were -1.
+	Duration *Amf0Number
+	// An optional Boolean value or number that specifies whether to flush any
+	// previous playlist.
+	Reset *Amf0Boolean
+}
+
+func NewRtmpPlayPacket() RtmpPacket {
+	return &RtmpPlayPacket{
+		Name: Amf0String(Amf0CommandPlay),
+	}
+}
+
+func (v *RtmpPlayPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.Stream, v.Start, v.Duration, v.Reset)
+}
+
+func (v *RtmpPlayPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionId, &v.Command, &v.Stream); err != nil {
+		return
+	}
+
+	if b.Len() > 0 {
+		v.Start = NewAmf0Number(0)
+		if err = core.Unmarshals(b, v.Start); err != nil {
+			return
+		}
+	}
+	if b.Len() > 0 {
+		v.Duration = NewAmf0Number(0)
+		if err = core.Unmarshals(b, v.Duration); err != nil {
+			return
+		}
+	}
+	if b.Len() > 0 {
+		v.Reset = NewAmf0Bool(false)
+		if err = core.Unmarshals(b, v.Reset); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+func (v *RtmpPlayPacket) PreferCid() uint32 {
+	return RtmpCidOverStream
+}
+
+func (v *RtmpPlayPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
+}
+
 // the empty packet is a sample rtmp packet.
 type RtmpEmptyPacket struct {
 	Id Amf0Number
@@ -1337,11 +1466,11 @@ func (v *RtmpEmptyPacket) UnmarshalBinary(data []byte) (err error) {
 }
 
 func (v *RtmpEmptyPacket) PreferCid() uint32 {
-	return RtmpCidProtocolControl
+	return RtmpCidOverConnection
 }
 
 func (v *RtmpEmptyPacket) MessageType() RtmpMessageType {
-	return RtmpMsgAbortMessage
+	return RtmpMsgAMF0CommandMessage
 }
 
 // incoming chunk stream maybe interlaced,

@@ -22,7 +22,9 @@
 package protocol_test
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/ossrs/go-oryx/core"
 	"github.com/ossrs/go-oryx/protocol"
 	"time"
 )
@@ -386,4 +388,53 @@ func ExampleAmf0StrictArray_UnmarshalBinary() {
 	// amf0 strict array
 	// elem string: oryx
 	// elem number: 2015
+}
+
+func ExampleMultipleAmf0_Marshals() {
+	s := protocol.Amf0String("oryx")
+	n := protocol.Amf0Number(1.0)
+	b := protocol.Amf0Boolean(true)
+
+	if b, err := core.Marshals(&s, &n, &b); err != nil {
+		_ = err // error.
+	} else {
+		_ = b // use marshaled []byte
+	}
+}
+
+func ExampleMultipleAmf0_Unmarshals() {
+	var s protocol.Amf0String
+	var n protocol.Amf0Number
+	var b protocol.Amf0Boolean
+
+	var d bytes.Buffer // read from network.
+
+	if err := core.Unmarshals(&d, &s, &n, &b); err != nil {
+		_ = err
+	} else {
+		_, _, _ = s, n, b // use unmarshaled amf0 instances.
+	}
+}
+
+func ExampleMultipleAmf0_Unmarshals_MultipleTimes() {
+	var s protocol.Amf0String
+	var n protocol.Amf0Number
+	var b protocol.Amf0Boolean
+
+	var d bytes.Buffer // read from network.
+
+	if err := core.Unmarshals(&d, &s, &n, &b); err != nil {
+		_ = err // error
+	} else {
+		_, _, _ = s, n, b // use unmarshaled amf0 instances.
+	}
+
+	if d.Len() > 0 {
+		var extra protocol.Amf0String
+		if err := core.Unmarshals(&d, &extra); err != nil {
+			_ = err // error
+		} else {
+			_ = extra // use marshaled amf0 extra instance.
+		}
+	}
 }
