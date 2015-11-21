@@ -613,7 +613,7 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 // @type, output the client type.
 // @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
 // @duration, output the play client duration. @see: SrsRequest.duration
-func (v *RtmpConnection) Identify(sid uint32) (t RtmpConnType, n string, d float64, err error) {
+func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName string, duration float64, err error) {
 	// use longger connect timeout.
 	timeout := 5000 * time.Millisecond
 
@@ -627,18 +627,10 @@ func (v *RtmpConnection) Identify(sid uint32) (t RtmpConnType, n string, d float
 
 			switch p.MessageType() {
 			// ignore silently.
-			case RtmpMsgAcknowledgement:
-				fallthrough
-			case RtmpMsgSetChunkSize:
-				fallthrough
-			case RtmpMsgWindowAcknowledgementSize:
-				fallthrough
-			case RtmpMsgUserControlMessage:
+			case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:
 				continue
 			// matched
-			case RtmpMsgAMF0CommandMessage:
-				fallthrough
-			case RtmpMsgAMF3CommandMessage:
+			case RtmpMsgAMF0CommandMessage, RtmpMsgAMF3CommandMessage:
 				break
 			// ignore with warning.
 			default:
@@ -1199,6 +1191,67 @@ func (v *RtmpConnectAppResPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
+// 4.1.3. createStream
+// The client sends this command to the server to create a logical
+// channel for message communication The publishing of audio, video, and
+// metadata is carried out over stream channel created using the
+// createStream command.
+type RtmpCreateStreamPacket struct {
+	// Name of the command. Set to "createStream".
+	Name Amf0String
+	// Transaction ID of the command.
+	TransactionId Amf0Number
+	// If there exists any command info this is set, else this is set to null type.
+	// @remark, never be NULL, an AMF0 null instance.
+	Command Amf0Null
+}
+
+func NewRtmpCreateStreamPacket() RtmpPacket {
+	return &RtmpCreateStreamPacket{
+		Name: Amf0String(Amf0CommandCreateStream),
+	}
+}
+
+func (v *RtmpCreateStreamPacket) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = core.Marshal(&v.Name, &b); err != nil {
+		return
+	}
+	if err = core.Marshal(&v.TransactionId, &b); err != nil {
+		return
+	}
+	if err = core.Marshal(&v.Command, &b); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *RtmpCreateStreamPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	if err = core.Unmarshal(&v.Name, b); err != nil {
+		return
+	}
+	if err = core.Unmarshal(&v.TransactionId, b); err != nil {
+		return
+	}
+	if err = core.Unmarshal(&v.Command, b); err != nil {
+		return
+	}
+
+	return
+}
+
+func (v *RtmpCreateStreamPacket) PreferCid() uint32 {
+	return RtmpCidProtocolControl
+}
+
+func (v *RtmpCreateStreamPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAbortMessage
+}
+
 // 5.5. Window Acknowledgement Size (5)
 // The client or the server sends this message to inform the peer which
 // window size to use when sending acknowledgment.
@@ -1354,6 +1407,43 @@ func (v *RtmpOnBwDonePacket) PreferCid() uint32 {
 
 func (v *RtmpOnBwDonePacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
+}
+
+// the empty packet is a sample rtmp packet.
+type RtmpEmptyPacket struct {
+	Empty Amf0Null
+}
+
+func NewRtmpEmptyPacket() RtmpPacket {
+	return &RtmpEmptyPacket{}
+}
+
+func (v *RtmpEmptyPacket) MarshalBinary() (data []byte, err error) {
+	var b bytes.Buffer
+
+	if err = core.Marshal(&v.Empty, &b); err != nil {
+		return
+	}
+
+	return b.Bytes(), nil
+}
+
+func (v *RtmpEmptyPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+
+	if err = core.Unmarshal(&v.Empty, b); err != nil {
+		return
+	}
+
+	return
+}
+
+func (v *RtmpEmptyPacket) PreferCid() uint32 {
+	return RtmpCidProtocolControl
+}
+
+func (v *RtmpEmptyPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAbortMessage
 }
 
 // incoming chunk stream maybe interlaced,

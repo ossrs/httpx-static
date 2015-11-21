@@ -33,6 +33,7 @@ import (
 // to listen at RTMP(tcp://1935) and recv data from RTMP publisher or player,
 // when identified the client type, redirect to the specified agent.
 type Rtmp struct {
+	sid      uint32
 	endpoint string
 	wc       core.WorkerContainer
 	l        net.Listener
@@ -40,7 +41,8 @@ type Rtmp struct {
 
 func NewRtmp(wc core.WorkerContainer) (agent core.OpenCloser) {
 	v := &Rtmp{
-		wc: wc,
+		sid: 1,
+		wc:  wc,
 	}
 
 	core.Conf.Subscribe(v)
@@ -182,6 +184,14 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	if err = conn.OnBwDone(); err != nil {
 		return
 	}
+
+	var duration float64
+	var streamName string
+	var connType protocol.RtmpConnType
+	if connType, streamName, duration, err = conn.Identify(v.sid); err != nil {
+		return
+	}
+	core.Trace.Println("identify rtmp", connType, streamName, duration)
 
 	// TODO: FIXME: should set the TCP_NODELAY to false.
 	return

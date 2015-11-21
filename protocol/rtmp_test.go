@@ -638,3 +638,27 @@ func TestRtmpOnBwDonePacket(t *testing.T) {
 		t.Error("invalid")
 	}
 }
+
+func TestRtmpCreateStreamPacket(t *testing.T) {
+	p := NewRtmpCreateStreamPacket().(*RtmpCreateStreamPacket)
+	if p.Name != "createStream" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpCreateStreamPacket().(*RtmpCreateStreamPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 25 {
+		t.Error("invalid")
+	}
+}
