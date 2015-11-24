@@ -42,6 +42,10 @@ var ClosedError error = errors.New("io already closed")
 // whether the object in recover or returned error can ignore,
 // for instance, the error is a Quit error.
 func IsNormalQuit(err interface{}) bool {
+	if err == nil {
+		return true
+	}
+
 	if err, ok := err.(error); ok {
 		// manual quit or read timeout.
 		if err == QuitError || err == TimeoutError || err == ClosedError {

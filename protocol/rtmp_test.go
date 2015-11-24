@@ -755,12 +755,37 @@ func TestRtmpFMLEStartPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 || p.StreamName != "oryx" {
+	if p.Name != "_name" || p.TransactionId != 1.0 || p.Stream != "oryx" {
 		t.Error("invalid")
 	}
 
 	p = NewRtmpFMLEStartPacket().(*RtmpFMLEStartPacket)
 	if b, err := p.MarshalBinary(); err != nil || len(b) != 29 {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpFMLEStartResPacket(t *testing.T) {
+	p := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
+	if p.Name != "_result" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+		6,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 21 {
 		t.Error("invalid")
 	}
 }
@@ -789,6 +814,32 @@ func TestRtmpPlayPacket(t *testing.T) {
 
 	p = NewRtmpPlayPacket().(*RtmpPlayPacket)
 	if b, err := p.MarshalBinary(); err != nil || len(b) != 20 {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpPublishPacket(t *testing.T) {
+	p := NewRtmpPublishPacket().(*RtmpPublishPacket)
+	if p.Name != "publish" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+		2, 0, 4, 'o', 'r', 'y', 'x',
+		2, 0, 4, 'l', 'i', 'v', 'e',
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 || p.Stream != "oryx" || *p.Type != "live" {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpPublishPacket().(*RtmpPublishPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 23 {
 		t.Error("invalid")
 	}
 }
