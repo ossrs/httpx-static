@@ -564,25 +564,7 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 // @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
 // @duration, output the play client duration. @see: SrsRequest.duration
 func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName string, duration float64, err error) {
-	err = v.read(IdentifyTimeout, func(m *RtmpMessage) (loop bool, err error) {
-		var p RtmpPacket
-		if p, err = v.stack.DecodeMessage(m); err != nil {
-			return
-		}
-
-		switch mt := p.MessageType(); mt {
-		// ignore silently.
-		case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:
-			return true, nil
-		// matched
-		case RtmpMsgAMF0CommandMessage, RtmpMsgAMF3CommandMessage:
-			break
-		// ignore with warning.
-		default:
-			core.Trace.Println("ignore rtmp message", mt)
-			return true, nil
-		}
-
+	return v.identify(sid, func(p RtmpPacket) (err error) {
 		switch p := p.(type) {
 		case *RtmpCreateStreamPacket:
 			connType, streamName, duration, err = v.identifyCreateStream(sid, p)
@@ -602,19 +584,61 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 		// TODO: FIXME: response in right way, or forward in edge mode.
 		// TODO: FIXME: implements it.
 
-		// try next.
-		return true, nil
+		return
 	})
-
-	return
 }
+
 func (v *RtmpConnection) identifyCreateStream(sid uint32, p *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
+	if csr := NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket); csr != nil {
+		csr.TransactionId = p.TransactionId
+		csr.StreamId = Amf0Number(float64(sid))
+		if err = v.write(IdentifyTimeout, csr, 0); err != nil {
+			core.Error.Println("response createStream failed. err is", err)
+			return
+		}
+	}
+
 	return
 }
 func (v *RtmpConnection) identifyFmlePublish(sid uint32, p *RtmpFMLEStartPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
 	return
 }
 func (v *RtmpConnection) identifyPlay(sid uint32, p *RtmpPlayPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
+	return
+}
+
+// the handler when got packet to identify the client.
+type rtmpIdentifyHandler func(p RtmpPacket) (err error)
+
+// identify the client.
+func (v *RtmpConnection) identify(sid uint32, fn rtmpIdentifyHandler) (connType RtmpConnType, streamName string, duration float64, err error) {
+	err = v.read(IdentifyTimeout, func(m *RtmpMessage) (loop bool, err error) {
+		var p RtmpPacket
+		if p, err = v.stack.DecodeMessage(m); err != nil {
+			return
+		}
+
+		switch mt := p.MessageType(); mt {
+		// ignore silently.
+		case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:
+			return true, nil
+		// matched
+		case RtmpMsgAMF0CommandMessage, RtmpMsgAMF3CommandMessage:
+			break
+		// ignore with warning.
+		default:
+			core.Trace.Println("ignore rtmp message", mt)
+			return true, nil
+		}
+
+		// handler the packet which can identify the client.
+		if err = fn(p); err != nil {
+			return
+		}
+
+		// try next.
+		return true, nil
+	})
 	return
 }
 
@@ -1285,6 +1309,40 @@ func (v *RtmpCreateStreamPacket) PreferCid() uint32 {
 }
 
 func (v *RtmpCreateStreamPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
+}
+
+// response for RtmpCreateStreamPacket
+type RtmpCreateStreamResPacket struct {
+	// _result or _error; indicates whether the response is result or error.
+	Name Amf0String
+	// ID of the command that response belongs to.
+	TransactionId Amf0Number
+	// If there exists any command info this is set, else this is set to null type.
+	Command Amf0Null
+	// The return value is either a stream ID or an error information object.
+	StreamId Amf0Number
+}
+
+func NewRtmpCreateStreamResPacket() RtmpPacket {
+	return &RtmpCreateStreamResPacket{
+		Name: Amf0String(Amf0CommandResult),
+	}
+}
+
+func (v *RtmpCreateStreamResPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.StreamId)
+}
+
+func (v *RtmpCreateStreamResPacket) UnmarshalBinary(data []byte) (err error) {
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command, &v.StreamId)
+}
+
+func (v *RtmpCreateStreamResPacket) PreferCid() uint32 {
+	return RtmpCidOverConnection
+}
+
+func (v *RtmpCreateStreamResPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 

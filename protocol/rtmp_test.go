@@ -705,6 +705,31 @@ func TestRtmpCreateStreamPacket(t *testing.T) {
 	}
 }
 
+func TestRtmpCreateStreamResPacket(t *testing.T) {
+	p := NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket)
+	if p.Name != "_result" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 || p.StreamId != 1.0 {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 29 {
+		t.Error("invalid")
+	}
+}
+
 func TestRtmpEmptyPacket(t *testing.T) {
 	p := NewRtmpEmptyPacket().(*RtmpEmptyPacket)
 	if err := p.UnmarshalBinary([]byte{0, 0x40, 0x59, 0, 0, 0, 0, 0, 0}); err != nil || p.Id != 100 {

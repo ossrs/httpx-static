@@ -185,6 +185,9 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 		return
 	}
 
+	// increasing the stream id.
+	v.sid++
+
 	var duration float64
 	var streamName string
 	var connType protocol.RtmpConnType
