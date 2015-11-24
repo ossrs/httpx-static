@@ -682,7 +682,7 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 				break
 			// ignore with warning.
 			default:
-				core.Trace.Println("ignore message", p.MessageType())
+				core.Trace.Println("ignore rtmp message", p.MessageType())
 				continue
 			}
 
@@ -853,6 +853,45 @@ const (
 
 // the message type.
 type RtmpMessageType uint8
+
+func (v RtmpMessageType) String() string {
+	switch v {
+	case RtmpMsgSetChunkSize:
+		return "SetChunkSize"
+	case RtmpMsgAbortMessage:
+		return "Abort"
+	case RtmpMsgAcknowledgement:
+		return "Acknowledgement"
+	case RtmpMsgUserControlMessage:
+		return "UserControl"
+	case RtmpMsgWindowAcknowledgementSize:
+		return "AcknowledgementSize"
+	case RtmpMsgSetPeerBandwidth:
+		return "SetPeerBandwidth"
+	case RtmpMsgEdgeAndOriginServerCommand:
+		return "EdgeOrigin"
+	case RtmpMsgAMF3CommandMessage:
+		return "Amf3Command"
+	case RtmpMsgAMF0CommandMessage:
+		return "Amf0Command"
+	case RtmpMsgAMF0DataMessage:
+		return "Amf0Data"
+	case RtmpMsgAMF3DataMessage:
+		return "Amf3Data"
+	case RtmpMsgAMF3SharedObject:
+		return "Amf3SharedObject"
+	case RtmpMsgAMF0SharedObject:
+		return "Amf0SharedObject"
+	case RtmpMsgAudioMessage:
+		return "Audio"
+	case RtmpMsgVideoMessage:
+		return "Video"
+	case RtmpMsgAggregateMessage:
+		return "Aggregate"
+	default:
+		return "unknown"
+	}
+}
 
 func (v RtmpMessageType) isAudio() bool {
 	return v == RtmpMsgAudioMessage
