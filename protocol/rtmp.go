@@ -29,6 +29,7 @@ import (
 	"github.com/ossrs/go-oryx/core"
 	"io"
 	"math"
+	"reflect"
 	"sync"
 	"time"
 )
@@ -325,6 +326,8 @@ type RtmpConnection struct {
 	out chan *RtmpMessage
 	// whether receiver and sender already quit.
 	quit sync.WaitGroup
+	// when receiver or sender quit, notify main goroutine.
+	closing chan bool
 	// whether closed.
 	closed bool
 	lock   sync.Mutex
@@ -338,12 +341,24 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		stack:     NewRtmpStack(transport, transport),
 		in:        make(chan *RtmpMessage, 1),
 		out:       make(chan *RtmpMessage, 1),
+		closing:   make(chan bool, 2),
 	}
+
+	// wait for goroutine to run.
+	wait := make(chan bool)
 
 	// start the receiver and sender.
 	// directly use raw goroutine, for donot cause the container to quit.
 	v.quit.Add(2)
 	go core.Recover("rtmp receiver", func() error {
+		// noitfy the main goroutine to quit.
+		defer func() {
+			v.closing <- true
+		}()
+
+		// notify the main goroutine the receiver is ok.
+		wait <- true
+
 		if err := v.receiver(); err != nil {
 			if v.stack.closing {
 				return core.QuitError
@@ -353,6 +368,14 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		return nil
 	})
 	go core.Recover("rtmp sender", func() error {
+		// noitfy the main goroutine to quit.
+		defer func() {
+			v.closing <- true
+		}()
+
+		// notify the main goroutine the sender is ok.
+		wait <- true
+
 		if err := v.sender(); err != nil {
 			if v.stack.closing {
 				return core.QuitError
@@ -361,6 +384,10 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		}
 		return nil
 	})
+
+	// wait for receiver and sender ok.
+	<-wait
+	<-wait
 
 	return v
 }
@@ -407,7 +434,7 @@ func (v *RtmpConnection) Close() {
 // handshake with client, try complex then simple.
 func (v *RtmpConnection) Handshake() (err error) {
 	// use short handshake timeout.
-	timeout := 2100 * time.Millisecond
+	timeout := HandshakeTimeout
 
 	// wait c0c1
 	select {
@@ -416,6 +443,8 @@ func (v *RtmpConnection) Handshake() (err error) {
 	case <-time.After(timeout):
 		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -440,6 +469,8 @@ func (v *RtmpConnection) Handshake() (err error) {
 	case <-time.After(timeout):
 		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -452,7 +483,7 @@ func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
 	r = &RtmpRequest{}
 
 	// use longger connect timeout.
-	timeout := 5000 * time.Millisecond
+	timeout := ConnectAppTimeout
 
 	// connect(tcUrl)
 	for {
@@ -472,6 +503,8 @@ func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
 		case <-time.After(timeout):
 			core.Error.Println("timeout for", timeout)
 			return nil, core.TimeoutError
+		case <-v.closing:
+			return nil, core.ClosedError
 		case <-v.wc.QC():
 			return nil, v.wc.Quit()
 		}
@@ -483,7 +516,7 @@ func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
 // set ack size to client, client will send ack-size for each ack window
 func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	// use longger service timeout.
-	timeout := 5000 * time.Millisecond
+	timeout := AckTimeout
 
 	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
 	p.Ack = RtmpUint32(ack)
@@ -499,6 +532,8 @@ func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	case <-time.After(timeout):
 		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -510,7 +545,7 @@ func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 // using the Limit type field.
 func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	// use longger service timeout.
-	timeout := 5000 * time.Millisecond
+	timeout := SetPeerBandwidthTimeout
 
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
 	p.Bandwidth = RtmpUint32(bw)
@@ -527,6 +562,8 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	case <-time.After(timeout):
 		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -537,7 +574,7 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 // @param server_ip the ip of server.
 func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	// use longger service timeout.
-	timeout := 5000 * time.Millisecond
+	timeout := ConnectAppTimeout
 
 	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
 
@@ -577,6 +614,8 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	case <-time.After(timeout):
 		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -587,7 +626,7 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 // response client the onBWDone message.
 func (v *RtmpConnection) OnBwDone() (err error) {
 	// use longger service timeout.
-	timeout := 5000 * time.Millisecond
+	timeout := OnBwDoneTimeout
 
 	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
 
@@ -602,6 +641,8 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 	case <-time.After(timeout):
 		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -617,7 +658,7 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 // @duration, output the play client duration. @see: SrsRequest.duration
 func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName string, duration float64, err error) {
 	// use longger connect timeout.
-	timeout := 5000 * time.Millisecond
+	timeout := IdentifyTimeout
 
 	for {
 		select {
@@ -625,6 +666,11 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 			var p RtmpPacket
 			if p, err = v.stack.DecodeMessage(m); err != nil {
 				return
+			}
+
+			// decode failed.
+			if p == nil || reflect.ValueOf(p).IsNil() {
+				continue
 			}
 
 			switch p.MessageType() {
@@ -658,6 +704,8 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 		case <-time.After(timeout):
 			core.Error.Println("timeout for", timeout)
 			return 0, "", 0, core.TimeoutError
+		case <-v.closing:
+			return 0, "", 0, core.ClosedError
 		case <-v.wc.QC():
 			return 0, "", 0, v.wc.Quit()
 		}
@@ -1691,18 +1739,18 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 			// timestamp, 3bytes, big-endian
 			ts := []byte{0xff, 0xff, 0xff}
 			if m.Timestamp < RtmpExtendedTimestamp {
-				ts[2] = byte(m.Timestamp >> 16)
+				ts[0] = byte(m.Timestamp >> 16)
 				ts[1] = byte(m.Timestamp >> 8)
-				ts[0] = byte(m.Timestamp)
+				ts[2] = byte(m.Timestamp)
 			}
 			if _, err = vb.Write(ts); err != nil {
 				return
 			}
 
 			// message_length, 3bytes, big-endian
-			ts[2] = byte(m.Payload.Len() >> 16)
+			ts[0] = byte(m.Payload.Len() >> 16)
 			ts[1] = byte(m.Payload.Len() >> 8)
-			ts[0] = byte(m.Payload.Len())
+			ts[2] = byte(m.Payload.Len())
 			if _, err = vb.Write(ts); err != nil {
 				return
 			}
@@ -1717,13 +1765,10 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 				return
 			}
 		} else {
-			// left chunks, c3.
-			var vb bytes.Buffer
-
 			// write no message header chunk stream, fmt is 3
 			// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
 			// SRS will rollback to 1B chunk header.
-			if err = vb.WriteByte(byte(0xc0 | (byte(m.PreferCid) & 0x3f))); err != nil {
+			if err = vb.WriteByte(byte(0xC0 | (byte(m.PreferCid) & 0x3f))); err != nil {
 				return
 			}
 		}
@@ -1754,7 +1799,8 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 		}
 
 		// write chunk header.
-		if _, err = io.CopyN(v.out, &vb, 1); err != nil {
+		nvb := int64(vb.Len())
+		if _, err = io.CopyN(v.out, &vb, nvb); err != nil {
 			return
 		}
 

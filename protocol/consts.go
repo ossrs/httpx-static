@@ -19,40 +19,16 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+package protocol
 
-import (
-	"errors"
-	"net"
+import "time"
+
+// timeout for rtmp.
+const (
+	HandshakeTimeout        = 2100 * time.Millisecond
+	ConnectAppTimeout       = 5000 * time.Millisecond
+	AckTimeout              = ConnectAppTimeout
+	SetPeerBandwidthTimeout = AckTimeout
+	OnBwDoneTimeout         = SetPeerBandwidthTimeout
+	IdentifyTimeout         = OnBwDoneTimeout
 )
-
-// the quit error, used for goroutine to return.
-var QuitError error = errors.New("system quit")
-
-// when channel overflow, for example, the c0c1 never overflow
-// when channel buffer size set to 2.
-var OverflowError error = errors.New("system overflow")
-
-// when io timeout to wait.
-var TimeoutError error = errors.New("io timeout")
-
-// when sender or receiver closed.
-var ClosedError error = errors.New("io already closed")
-
-// whether the object in recover or returned error can ignore,
-// for instance, the error is a Quit error.
-func IsNormalQuit(err interface{}) bool {
-	if err, ok := err.(error); ok {
-		// manual quit or read timeout.
-		if err == QuitError || err == TimeoutError || err == ClosedError {
-			return true
-		}
-
-		// network timeout.
-		if err, ok := err.(net.Error); ok && err.Timeout() {
-			return true
-		}
-	}
-
-	return false
-}
