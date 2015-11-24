@@ -481,100 +481,45 @@ func (v *RtmpConnection) Handshake() (err error) {
 func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
 	r = &RtmpRequest{}
 
-	// use longger connect timeout.
-	timeout := ConnectAppTimeout
-
 	// connect(tcUrl)
-	for {
-		select {
-		case m := <-v.in:
-			var p RtmpPacket
-			if p, err = v.stack.DecodeMessage(m); err != nil {
-				return
-			}
-			if p, ok := p.(*RtmpConnectAppPacket); ok {
-				if p, ok := p.CommandObject.Get("tcUrl").(*Amf0String); ok {
-					r.TcUrl = string(*p)
-				}
-				core.Trace.Println("connect at", r.TcUrl)
-			}
+	return r, v.read(ConnectAppTimeout, func(m *RtmpMessage) (loop bool, err error) {
+		var p RtmpPacket
+		if p, err = v.stack.DecodeMessage(m); err != nil {
 			return
-		case <-time.After(timeout):
-			core.Error.Println("timeout for", timeout)
-			return nil, core.TimeoutError
-		case <-v.closing:
-			return nil, core.ClosedError
-		case <-v.wc.QC():
-			return nil, v.wc.Quit()
 		}
-	}
-
-	return
+		if p, ok := p.(*RtmpConnectAppPacket); ok {
+			if p, ok := p.CommandObject.Get("tcUrl").(*Amf0String); ok {
+				r.TcUrl = string(*p)
+			}
+			core.Trace.Println("connect at", r.TcUrl)
+		} else {
+			// try next.
+			return true, nil
+		}
+		return
+	})
 }
 
 // set ack size to client, client will send ack-size for each ack window
 func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
-	// use longger service timeout.
-	timeout := AckTimeout
-
 	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
 	p.Ack = RtmpUint32(ack)
 
-	var m *RtmpMessage
-	if m, err = v.packet2Message(p, 0); err != nil {
-		return
-	}
-
-	select {
-	case v.out <- m:
-		// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
+	return v.write(AckTimeout, p, 0)
 }
 
 // @type: The sender can mark this message hard (0), soft (1), or dynamic (2)
 // using the Limit type field.
 func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
-	// use longger service timeout.
-	timeout := SetPeerBandwidthTimeout
-
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
 	p.Bandwidth = RtmpUint32(bw)
 	p.Type = RtmpUint8(t)
 
-	var m *RtmpMessage
-	if m, err = v.packet2Message(p, 0); err != nil {
-		return
-	}
-
-	select {
-	case v.out <- m:
-	// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
+	return v.write(SetPeerBandwidthTimeout, p, 0)
 }
 
 // @param server_ip the ip of server.
 func (v *RtmpConnection) ResponseConnectApp() (err error) {
-	// use longger service timeout.
-	timeout := ConnectAppTimeout
-
 	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
 
 	p.Props.Set("fmsVer", NewAmf0String(fmt.Sprintf("FMS/%v", RtmpSigFmsVer)))
@@ -602,51 +547,14 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	// for edge to directly get the id of client.
 	// TODO: FIXME: support oryx_server_ip, oryx_pid, oryx_id
 
-	var m *RtmpMessage
-	if m, err = v.packet2Message(p, 0); err != nil {
-		return
-	}
-
-	select {
-	case v.out <- m:
-	// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
+	return v.write(ConnectAppTimeout, p, 0)
 }
 
 // response client the onBWDone message.
 func (v *RtmpConnection) OnBwDone() (err error) {
-	// use longger service timeout.
-	timeout := OnBwDoneTimeout
-
 	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
 
-	var m *RtmpMessage
-	if m, err = v.packet2Message(p, 0); err != nil {
-		return
-	}
-
-	select {
-	case v.out <- m:
-	// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
+	return v.write(OnBwDoneTimeout, p, 0)
 }
 
 // recv some message to identify the client.
@@ -656,54 +564,47 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 // @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
 // @duration, output the play client duration. @see: SrsRequest.duration
 func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName string, duration float64, err error) {
-	// use longger connect timeout.
-	timeout := IdentifyTimeout
-
-	for {
-		select {
-		case m := <-v.in:
-			var p RtmpPacket
-			if p, err = v.stack.DecodeMessage(m); err != nil {
-				return
-			}
-
-			switch mt := p.MessageType(); mt {
-			// ignore silently.
-			case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:
-				continue
-			// matched
-			case RtmpMsgAMF0CommandMessage, RtmpMsgAMF3CommandMessage:
-				break
-			// ignore with warning.
-			default:
-				core.Trace.Println("ignore rtmp message", mt)
-				continue
-			}
-
-			switch p := p.(type) {
-			case *RtmpCreateStreamPacket:
-				return v.identifyCreateStream(sid, p)
-			case *RtmpFMLEStartPacket:
-				return v.identifyFmlePublish(sid, p)
-			case *RtmpPlayPacket:
-				return v.identifyPlay(sid, p)
-			}
-			// TODO: FIXME: implements it.
-
-			// for other call msgs,
-			// support response null first,
-			// @see https://github.com/ossrs/srs/issues/106
-			// TODO: FIXME: response in right way, or forward in edge mode.
-			// TODO: FIXME: implements it.
-		case <-time.After(timeout):
-			core.Error.Println("timeout for", timeout)
-			return 0, "", 0, core.TimeoutError
-		case <-v.closing:
-			return 0, "", 0, core.ClosedError
-		case <-v.wc.QC():
-			return 0, "", 0, v.wc.Quit()
+	err = v.read(IdentifyTimeout, func(m *RtmpMessage) (loop bool, err error) {
+		var p RtmpPacket
+		if p, err = v.stack.DecodeMessage(m); err != nil {
+			return
 		}
-	}
+
+		switch mt := p.MessageType(); mt {
+		// ignore silently.
+		case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:
+			return true, nil
+		// matched
+		case RtmpMsgAMF0CommandMessage, RtmpMsgAMF3CommandMessage:
+			break
+		// ignore with warning.
+		default:
+			core.Trace.Println("ignore rtmp message", mt)
+			return true, nil
+		}
+
+		switch p := p.(type) {
+		case *RtmpCreateStreamPacket:
+			connType, streamName, duration, err = v.identifyCreateStream(sid, p)
+			return
+		case *RtmpFMLEStartPacket:
+			connType, streamName, duration, err = v.identifyFmlePublish(sid, p)
+			return
+		case *RtmpPlayPacket:
+			connType, streamName, duration, err = v.identifyPlay(sid, p)
+			return
+		}
+		// TODO: FIXME: implements it.
+
+		// for other call msgs,
+		// support response null first,
+		// @see https://github.com/ossrs/srs/issues/106
+		// TODO: FIXME: response in right way, or forward in edge mode.
+		// TODO: FIXME: implements it.
+
+		// try next.
+		return true, nil
+	})
 
 	return
 }
@@ -730,6 +631,54 @@ func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessag
 	}
 
 	return m, nil
+}
+
+// the handler when read a rtmp message.
+// loop when loop is true and err is nil.
+type rtmpReadHandler func(m *RtmpMessage) (loop bool, err error)
+
+// read from cache and process by handler.
+func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err error) {
+	for {
+		select {
+		case m := <-v.in:
+			var loop bool
+			if loop, err = fn(m); err != nil || !loop {
+				return
+			}
+		case <-time.After(timeout):
+			core.Error.Println("timeout for", timeout)
+			return core.TimeoutError
+		case <-v.closing:
+			return core.ClosedError
+		case <-v.wc.QC():
+			return v.wc.Quit()
+		}
+	}
+
+	return
+}
+
+// write to the cache.
+func (v *RtmpConnection) write(timeout time.Duration, p RtmpPacket, sid uint32) (err error) {
+	var m *RtmpMessage
+	if m, err = v.packet2Message(p, sid); err != nil {
+		return
+	}
+
+	select {
+	case v.out <- m:
+	// ok
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
 }
 
 // receiver goroutine.
