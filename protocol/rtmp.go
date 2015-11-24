@@ -29,7 +29,6 @@ import (
 	"github.com/ossrs/go-oryx/core"
 	"io"
 	"math"
-	"reflect"
 	"sync"
 	"time"
 )
@@ -668,12 +667,7 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 				return
 			}
 
-			// decode failed.
-			if p == nil || reflect.ValueOf(p).IsNil() {
-				continue
-			}
-
-			switch p.MessageType() {
+			switch mt := p.MessageType(); mt {
 			// ignore silently.
 			case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:
 				continue
@@ -682,7 +676,7 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 				break
 			// ignore with warning.
 			default:
-				core.Trace.Println("ignore rtmp message", p.MessageType())
+				core.Trace.Println("ignore rtmp message", mt)
 				continue
 			}
 
@@ -769,15 +763,12 @@ func (v *RtmpConnection) receiver() (err error) {
 		}
 
 		// check state.
-		var closed bool
-		func() {
+		if func() bool {
 			v.lock.Lock()
 			defer v.lock.Unlock()
 
-			closed = v.closed
-		}()
-
-		if closed {
+			return v.closed
+		}() {
 			break
 		}
 
@@ -1058,6 +1049,17 @@ const RtmpServerChunkSize = 60000
 // 6. Chunking, RTMP protocol default chunk size.
 const RtmpProtocolChunkSize = 128
 
+// 6. Chunking
+// The chunk size is configurable. It can be set using a control
+// message(Set Chunk Size) as described in section 7.1. The maximum
+// chunk size can be 65536 bytes and minimum 128 bytes. Larger values
+// reduce CPU usage, but also commit to larger writes that can delay
+// other content on lower bandwidth connections. Smaller chunks are not
+// good for high-bit rate streaming. Chunk size is maintained
+// independently for each direction.
+const RtmpMinChunkSize = 128
+const RtmpMaxChunkSize = 65536
+
 const (
 	// amf0 command message, command name macros
 	Amf0CommandConnect       = "connect"
@@ -1121,15 +1123,30 @@ func (v *RtmpUint8) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
+// the uint16 which suppport marshal and unmarshal.
+type RtmpUint16 uint16
+
+func (v *RtmpUint16) MarshalBinary() (data []byte, err error) {
+	return []byte{byte(*v >> 8), byte(*v)}, nil
+}
+
+func (v *RtmpUint16) Size() int {
+	return 2
+}
+
+func (v *RtmpUint16) UnmarshalBinary(data []byte) (err error) {
+	if len(data) < 2 {
+		return io.EOF
+	}
+	*v = RtmpUint16(uint16(data[0]) | uint16(data[1])<<8)
+	return
+}
+
 // the uint32 which suppport marshal and unmarshal.
 type RtmpUint32 uint32
 
 func (v *RtmpUint32) MarshalBinary() (data []byte, err error) {
-	var b bytes.Buffer
-	if err = binary.Write(&b, binary.BigEndian, uint32(*v)); err != nil {
-		return
-	}
-	return b.Bytes(), nil
+	return []byte{byte(*v >> 24), byte(*v >> 16), byte(*v >> 8), byte(*v)}, nil
 }
 
 func (v *RtmpUint32) Size() int {
@@ -1137,14 +1154,10 @@ func (v *RtmpUint32) Size() int {
 }
 
 func (v *RtmpUint32) UnmarshalBinary(data []byte) (err error) {
-	b := bytes.NewBuffer(data)
-
-	var vb uint32
-	if err = binary.Read(b, binary.BigEndian, &vb); err != nil {
-		return
+	if len(data) < 4 {
+		return io.EOF
 	}
-
-	*v = RtmpUint32(vb)
+	*v = RtmpUint32(uint32(data[3]) | uint32(data[2])<<8 | uint32(data[1])<<16 | uint32(data[0])<<24)
 	return
 }
 
@@ -1323,7 +1336,7 @@ func (v *RtmpCreateStreamPacket) PreferCid() uint32 {
 }
 
 func (v *RtmpCreateStreamPacket) MessageType() RtmpMessageType {
-	return RtmpMsgAbortMessage
+	return RtmpMsgAMF0CommandMessage
 }
 
 // 5.5. Window Acknowledgement Size (5)
@@ -1354,10 +1367,12 @@ func (v *RtmpSetWindowAckSizePacket) MessageType() RtmpMessageType {
 }
 
 // 5.6. Set Peer Bandwidth (6)
+type RtmpSetPeerBandwidthType uint8
+
 const (
 	// The sender can mark this message hard (0), soft (1), or dynamic (2)
 	// using the Limit type field.
-	Hard RtmpUint8 = iota
+	Hard RtmpSetPeerBandwidthType = iota
 	Soft
 	Dynamic
 )
@@ -1367,12 +1382,13 @@ const (
 // bandwidth of the peer.
 type RtmpSetPeerBandwidthPacket struct {
 	Bandwidth RtmpUint32
-	Type      RtmpUint8
+	// @see RtmpSetPeerBandwidthType
+	Type RtmpUint8
 }
 
 func NewRtmpSetPeerBandwidthPacket() RtmpPacket {
 	return &RtmpSetPeerBandwidthPacket{
-		Type: Dynamic,
+		Type: RtmpUint8(Dynamic),
 	}
 }
 
@@ -1554,6 +1570,33 @@ func (v *RtmpPlayPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
+// 7.1. Set Chunk Size
+// Protocol control message 1, Set Chunk Size, is used to notify the
+// peer about the new maximum chunk size.
+type RtmpSetChunkSizePacket struct {
+	ChunkSize RtmpUint32
+}
+
+func NewRtmpSetChunkSizePacket() RtmpPacket {
+	return &RtmpSetChunkSizePacket{}
+}
+
+func (v *RtmpSetChunkSizePacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.ChunkSize)
+}
+
+func (v *RtmpSetChunkSizePacket) UnmarshalBinary(data []byte) (err error) {
+	return core.Unmarshals(bytes.NewBuffer(data), &v.ChunkSize)
+}
+
+func (v *RtmpSetChunkSizePacket) PreferCid() uint32 {
+	return RtmpCidProtocolControl
+}
+
+func (v *RtmpSetChunkSizePacket) MessageType() RtmpMessageType {
+	return RtmpMsgSetChunkSize
+}
+
 // the empty packet is a sample rtmp packet.
 type RtmpEmptyPacket struct {
 	Id Amf0Number
@@ -1577,6 +1620,134 @@ func (v *RtmpEmptyPacket) PreferCid() uint32 {
 
 func (v *RtmpEmptyPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
+}
+
+// 3.7. User Control message
+type RtmpPcucEventType RtmpUint16
+
+const (
+	// 2bytes event-type and generally, 4bytes event-data
+
+	// The server sends this event to notify the client
+	// that a stream has become functional and can be
+	// used for communication. By default, this event
+	// is sent on ID 0 after the application connect
+	// command is successfully received from the
+	// client. The event data is 4-byte and represents
+	// the stream ID of the stream that became
+	// functional.
+	RtmpPcucStreamBegin RtmpPcucEventType = 0x00
+
+	// The server sends this event to notify the client
+	// that the playback of data is over as requested
+	// on this stream. No more data is sent without
+	// issuing additional commands. The client discards
+	// the messages received for the stream. The
+	// 4 bytes of event data represent the ID of the
+	// stream on which playback has ended.
+	RtmpPcucStreamEOF RtmpPcucEventType = 0x01
+
+	// The server sends this event to notify the client
+	// that there is no more data on the stream. If the
+	// server does not detect any message for a time
+	// period, it can notify the subscribed clients
+	// that the stream is dry. The 4 bytes of event
+	// data represent the stream ID of the dry stream.
+	RtmpPcucStreamDry RtmpPcucEventType = 0x02
+
+	// The client sends this event to inform the server
+	// of the buffer size (in milliseconds) that is
+	// used to buffer any data coming over a stream.
+	// This event is sent before the server starts
+	// processing the stream. The first 4 bytes of the
+	// event data represent the stream ID and the next
+	// 4 bytes represent the buffer length, in
+	// milliseconds.
+	RtmpPcucSetBufferLength RtmpPcucEventType = 0x03 // 8bytes event-data
+
+	// The server sends this event to notify the client
+	// that the stream is a recorded stream. The
+	// 4 bytes event data represent the stream ID of
+	// the recorded stream.
+	RtmpPcucStreamIsRecorded RtmpPcucEventType = 0x04
+
+	// The server sends this event to test whether the
+	// client is reachable. Event data is a 4-byte
+	// timestamp, representing the local server time
+	// when the server dispatched the command. The
+	// client responds with kMsgPingResponse on
+	// receiving kMsgPingRequest.
+	RtmpPcucPingRequest RtmpPcucEventType = 0x06
+
+	// The client sends this event to the server in
+	// response to the ping request. The event data is
+	// a 4-byte timestamp, which was received with the
+	// kMsgPingRequest request.
+	RtmpPcucPingResponse RtmpPcucEventType = 0x07
+
+	// for PCUC size=3, the payload is "00 1A 01",
+	// where we think the event is 0x001a, fms defined msg,
+	// which has only 1bytes event data.
+	RtmpPcucFmsEvent0 RtmpPcucEventType = 0x1a
+)
+
+// 5.4. User Control Message (4)
+//
+// for the EventData is 4bytes.
+// Stream Begin(=0)              4-bytes stream ID
+// Stream EOF(=1)                4-bytes stream ID
+// StreamDry(=2)                 4-bytes stream ID
+// SetBufferLength(=3)           8-bytes 4bytes stream ID, 4bytes buffer length.
+// StreamIsRecorded(=4)          4-bytes stream ID
+// PingRequest(=6)               4-bytes timestamp local server time
+// PingResponse(=7)              4-bytes timestamp received ping request.
+//
+// 3.7. User Control message
+// +------------------------------+-------------------------
+// | Event Type ( 2- bytes ) | Event Data
+// +------------------------------+-------------------------
+// Figure 5 Pay load for the 'User Control Message'.
+type RtmpUserControlPacket struct {
+	// Event type is followed by Event data.
+	// @see RtmpPcucEventType
+	EventType RtmpUint16
+	// the event data generally in 4bytes.
+	// @remark for event type is 0x001a, only 1bytes.
+	EventData RtmpUint32
+	// 4bytes if event_type is RtmpPcucSetBufferLength; otherwise 0.
+	ExtraData RtmpUint32
+}
+
+func NewRtmpUserControlPacket() RtmpPacket {
+	return &RtmpUserControlPacket{
+		EventType: RtmpUint16(RtmpPcucStreamBegin),
+	}
+}
+
+func (v *RtmpUserControlPacket) MarshalBinary() (data []byte, err error) {
+	if RtmpPcucEventType(v.EventType) == RtmpPcucSetBufferLength {
+		return core.Marshals(&v.EventType, &v.EventData, &v.ExtraData)
+	}
+	return core.Marshals(&v.EventType, &v.EventData)
+}
+
+func (v *RtmpUserControlPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+	if err = core.Unmarshals(b, &v.EventType, &v.EventData); err != nil {
+		return
+	}
+	if RtmpPcucEventType(v.EventType) == RtmpPcucSetBufferLength {
+		return core.Unmarshals(b, &v.ExtraData)
+	}
+	return
+}
+
+func (v *RtmpUserControlPacket) PreferCid() uint32 {
+	return RtmpCidProtocolControl
+}
+
+func (v *RtmpUserControlPacket) MessageType() RtmpMessageType {
+	return RtmpMsgUserControlMessage
 }
 
 // incoming chunk stream maybe interlaced,
@@ -1694,11 +1865,11 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 			core.Info.Println("drop command message, name is", c)
 		}
 	} else if m.MessageType.isUserControlMessage() {
-		// TODO: FIXME: implements it.
+		p = NewRtmpUserControlPacket()
 	} else if m.MessageType.isWindowAckledgementSize() {
-		// TODO: FIXME: implements it.
+		p = NewRtmpSetWindowAckSizePacket()
 	} else if m.MessageType.isSetChunkSize() {
-		// TODO: FIXME: implements it.
+		p = NewRtmpSetChunkSizePacket()
 	} else {
 		if !m.MessageType.isSetPeerBandwidth() && !m.MessageType.isAckledgement() {
 			core.Trace.Println("drop unknown message, type is", m.MessageType)
@@ -1747,11 +1918,45 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 
 		// truncate the buffer.
 		v.inb.Truncate(v.inb.Len())
+	}
 
-		// not got an entire RTMP message, try next chunk.
-		if m != nil {
-			break
+	if err = v.onRecvMessage(m); err != nil {
+		return nil, err
+	}
+
+	return
+}
+
+func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
+	// acknowledgement
+	// TODO: FIXME: implements it.
+
+	switch m.MessageType {
+	case RtmpMsgSetChunkSize, RtmpMsgUserControlMessage, RtmpMsgWindowAcknowledgementSize:
+		// we will handle these packet.
+	default:
+		return
+	}
+
+	var p RtmpPacket
+	if p, err = v.DecodeMessage(m); err != nil {
+		return
+	}
+
+	switch p := p.(type) {
+	case *RtmpSetWindowAckSizePacket:
+	// TODO: FIXME: implements it.
+	case *RtmpSetChunkSizePacket:
+		// for some server, the actual chunk size can greater than the max value(65536),
+		// so we just warning the invalid chunk size, and actually use it is ok,
+		// @see: https://github.com/ossrs/srs/issues/160
+		if p.ChunkSize < RtmpMinChunkSize || p.ChunkSize > RtmpMaxChunkSize {
+			core.Warn.Println("accept invalid chunk size", p.ChunkSize)
 		}
+		v.inChunkSize = uint32(p.ChunkSize)
+		core.Trace.Println("input chunk size to", v.inChunkSize)
+	case *RtmpUserControlPacket:
+		// TODO: FIXME: implements it.
 	}
 
 	return

@@ -26,7 +26,7 @@ import "time"
 // timeout for rtmp.
 const (
 	HandshakeTimeout        = 2100 * time.Millisecond
-	ConnectAppTimeout       = 5000 * time.Millisecond
+	ConnectAppTimeout       = 5000 * 1000 * time.Millisecond
 	AckTimeout              = ConnectAppTimeout
 	SetPeerBandwidthTimeout = AckTimeout
 	OnBwDoneTimeout         = SetPeerBandwidthTimeout

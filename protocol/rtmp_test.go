@@ -562,6 +562,46 @@ func TestRtmpSetWindowAckSizePacket(t *testing.T) {
 	}
 }
 
+func TestRtmpUserControlPacket(t *testing.T) {
+	p := NewRtmpUserControlPacket().(*RtmpUserControlPacket)
+	if p.EventType != 0 || p.EventData != 0 || p.ExtraData != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{0, 0, 0, 0, 0, 1}); err != nil || p.EventType != 0 || p.EventData != 1 {
+		t.Error("invalid, err is", err)
+	}
+
+	p = NewRtmpUserControlPacket().(*RtmpUserControlPacket)
+	p.EventType = RtmpUint16(RtmpPcucSetBufferLength)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 10 {
+		t.Error("invalid, err is", err)
+	}
+
+	p = NewRtmpUserControlPacket().(*RtmpUserControlPacket)
+	p.EventType = RtmpUint16(RtmpPcucStreamIsRecorded)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 6 {
+		t.Error("invalid, err is", err)
+	}
+}
+
+func TestRtmpSetChunkSizePacket(t *testing.T) {
+	p := NewRtmpSetChunkSizePacket().(*RtmpSetChunkSizePacket)
+	if p.ChunkSize != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{0, 0, 0, 0x0f}); err != nil || p.ChunkSize != 0xf {
+		t.Error("invalid, err is", err)
+	}
+
+	p = NewRtmpSetChunkSizePacket().(*RtmpSetChunkSizePacket)
+	p.ChunkSize = 0xff
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 4 {
+		t.Error("invalid, err is", err)
+	}
+}
+
 func TestRtmpSetPeerBandwidthPacket(t *testing.T) {
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
 	if p.Bandwidth != 0 || p.Type != RtmpUint8(2) {
@@ -574,7 +614,7 @@ func TestRtmpSetPeerBandwidthPacket(t *testing.T) {
 
 	p = NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
 	p.Bandwidth = 0xff
-	p.Type = 0x01
+	p.Type = RtmpUint8(Soft)
 	if b, err := p.MarshalBinary(); err != nil || len(b) != 5 {
 		t.Error("invalid, err is", err)
 	}
