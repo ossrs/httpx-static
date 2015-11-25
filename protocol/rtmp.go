@@ -600,7 +600,14 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 		// support response null first,
 		// @see https://github.com/ossrs/srs/issues/106
 		// TODO: FIXME: response in right way, or forward in edge mode.
-		// TODO: FIXME: implements it.
+		if p, ok := p.(*RtmpCallPacket); ok {
+			res := NewRtmpCallResPacket().(*RtmpCallResPacket)
+			res.TransactionId = p.TransactionId
+			if err = v.write(IdentifyTimeout, res, 0); err != nil {
+				core.Error.Println("response call failed. err is", err)
+				return
+			}
+		}
 
 		return true, nil
 	})
@@ -1335,6 +1342,127 @@ func (v *RtmpConnectAppResPacket) PreferCid() uint32 {
 }
 
 func (v *RtmpConnectAppResPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
+}
+
+// 4.1.2. Call
+// The call method of the NetConnection object runs remote procedure
+// calls (RPC) at the receiving end. The called RPC name is passed as a
+// parameter to the call command.
+type RtmpCallPacket struct {
+	// Name of the remote procedure that is called.
+	Name Amf0String
+	// If a response is expected we give a transaction Id. Else we pass a value of 0
+	TransactionId Amf0Number
+	// If there exists any command info this
+	// is set, else this is set to null type.
+	// @remark, optional, init to and maybe NULL.
+	Command Amf0Any
+	// Any optional arguments to be provided
+	// @remark, optional, init to and maybe NULL.
+	Args Amf0Any
+}
+
+func NewRtmpCallPacket() RtmpPacket {
+	return &RtmpCallPacket{}
+}
+
+func (v *RtmpCallPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, &v.TransactionId, v.Command, v.Args)
+}
+
+func (v *RtmpCallPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionId); err != nil {
+		return
+	}
+
+	if b.Len() > 0 {
+		if v.Command, err = Amf0Discovery(b.Bytes()); err != nil {
+			return
+		}
+		if err = core.Unmarshals(b, v.Command); err != nil {
+			return
+		}
+	}
+
+	if b.Len() > 0 {
+		if v.Args, err = Amf0Discovery(b.Bytes()); err != nil {
+			return
+		}
+		if err = core.Unmarshals(b, v.Args); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+func (v *RtmpCallPacket) PreferCid() uint32 {
+	return RtmpCidOverConnection
+}
+
+func (v *RtmpCallPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
+}
+
+// response for RtmpCallPacket
+type RtmpCallResPacket struct {
+	// Name of the command.
+	Name Amf0String
+	// ID of the command, to which the response belongs to
+	TransactionId Amf0Number
+	// If there exists any command info this
+	// is set, else this is set to null type.
+	// @remark, optional, init to and maybe NULL.
+	Command Amf0Any
+	// Any optional arguments to be provided
+	// @remark, optional, init to and maybe NULL.
+	Args Amf0Any
+}
+
+func NewRtmpCallResPacket() RtmpPacket {
+	return &RtmpCallResPacket{
+		Name: Amf0String(Amf0CommandResult),
+	}
+}
+
+func (v *RtmpCallResPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, &v.TransactionId, v.Command, v.Args)
+}
+
+func (v *RtmpCallResPacket) UnmarshalBinary(data []byte) (err error) {
+	b := bytes.NewBuffer(data)
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionId); err != nil {
+		return
+	}
+
+	if b.Len() > 0 {
+		if v.Command, err = Amf0Discovery(b.Bytes()); err != nil {
+			return
+		}
+		if err = core.Unmarshals(b, v.Command); err != nil {
+			return
+		}
+	}
+
+	if b.Len() > 0 {
+		if v.Args, err = Amf0Discovery(b.Bytes()); err != nil {
+			return
+		}
+		if err = core.Unmarshals(b, v.Args); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+func (v *RtmpCallResPacket) PreferCid() uint32 {
+	return RtmpCidOverConnection
+}
+
+func (v *RtmpCallResPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 

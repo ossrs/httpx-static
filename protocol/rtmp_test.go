@@ -818,6 +818,58 @@ func TestRtmpPlayPacket(t *testing.T) {
 	}
 }
 
+func TestRtmpCallPacket(t *testing.T) {
+	p := NewRtmpCallPacket().(*RtmpCallPacket)
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		2, 0, 4, 'o', 'r', 'y', 'x',
+		2, 0, 4, 'o', 'r', 'y', 'x',
+	}); err != nil {
+		t.Error("invalid")
+	}
+	if p.Name != "_name" || p.TransactionId != 1.0 {
+		t.Error("invalid")
+	}
+	if p, ok := p.Command.(*Amf0String); !ok || *p != "oryx" {
+		t.Error("invalid")
+	}
+	if p, ok := p.Args.(*Amf0String); !ok || *p != "oryx" {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpCallPacket().(*RtmpCallPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 12 {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpCallResPacket(t *testing.T) {
+	p := NewRtmpCallResPacket().(*RtmpCallResPacket)
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		2, 0, 4, 'o', 'r', 'y', 'x',
+		2, 0, 4, 'o', 'r', 'y', 'x',
+	}); err != nil {
+		t.Error("invalid")
+	}
+	if p.Name != "_name" || p.TransactionId != 1.0 {
+		t.Error("invalid")
+	}
+	if p, ok := p.Command.(*Amf0String); !ok || *p != "oryx" {
+		t.Error("invalid")
+	}
+	if p, ok := p.Args.(*Amf0String); !ok || *p != "oryx" {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpCallResPacket().(*RtmpCallResPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 19 {
+		t.Error("invalid")
+	}
+}
+
 func TestRtmpPublishPacket(t *testing.T) {
 	p := NewRtmpPublishPacket().(*RtmpPublishPacket)
 	if p.Name != "publish" || p.TransactionId != 0 {
