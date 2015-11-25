@@ -135,12 +135,14 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 
 	core.Trace.Println("rtmp accept", c.RemoteAddr())
 
+	// handshake with client.
 	if err = conn.Handshake(); err != nil {
 		core.Error.Println("rtmp handshake failed. err is", err)
 		return
 	}
 	core.Info.Println("rtmp handshake ok.")
 
+	// expoect connect app.
 	var r *protocol.RtmpRequest
 	if r, err = conn.ExpectConnectApp(); err != nil {
 		if !core.IsNormalQuit(err) {
@@ -176,11 +178,10 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	// to make OBS happy, @see https://github.com/ossrs/srs/issues/454
 	// TODO: FIXME: support set chunk size.
 
-	// response the client connect ok.
+	// response the client connect ok and onBWDone.
 	if err = conn.ResponseConnectApp(); err != nil {
 		return
 	}
-
 	if err = conn.OnBwDone(); err != nil {
 		return
 	}
@@ -188,15 +189,24 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	// increasing the stream id.
 	v.sid++
 
+	// identify the client, publish or play.
 	var duration float64
 	var streamName string
 	var connType protocol.RtmpConnType
 	if connType, streamName, duration, err = conn.Identify(v.sid); err != nil {
 		return
 	}
-	core.Trace.Println("identify rtmp", connType, streamName, duration)
+	core.Trace.Println(fmt.Sprintf(
+		"client identified, type=%s, stream_name=%s, duration=%.2f",
+		connType, streamName, duration))
 
-	// TODO: FIXME: should set the TCP_NODELAY to false.
+	// security check
+	// TODO: FIXME: implements it.
+
+	// set the TCP_NODELAY to false for high performance.
+	// or set tot true for realtime stream.
+	// TODO: FIXME: implements it.
+
 	return
 }
 
