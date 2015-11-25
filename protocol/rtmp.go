@@ -30,7 +30,11 @@ import (
 	"github.com/ossrs/go-oryx/core"
 	"io"
 	"math"
+	"net"
+	"net/url"
 	"reflect"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -302,6 +306,142 @@ func (v *hsBytes) createS0S1S2() {
 type RtmpRequest struct {
 	// the tcUrl in RTMP connect app request.
 	TcUrl string
+	// the stream to publish or play.
+	Stream string
+	// the type of connection, publish or play.
+	Type RtmpConnType
+	// for play, the duration.
+	Duration float64
+
+	// the vhost parsed from tcUrl or stream.
+	Vhost string
+	// the app parsed from tcUrl.
+	App string
+	// the url, parsed for tcUrl/stream?params.
+	Url *url.URL
+}
+
+func NewRtmpRequest() *RtmpRequest {
+	return &RtmpRequest{
+		Type: RtmpUnknown,
+		Url:  &url.URL{},
+	}
+}
+
+func (v *RtmpRequest) Port() int {
+	if _, p, err := net.SplitHostPort(v.Url.Host); err != nil {
+		return core.RtmpListen
+	} else if p, err := strconv.ParseInt(p, 10, 32); err != nil {
+		return core.RtmpListen
+	} else if p <= 0 {
+		return core.RtmpListen
+	} else {
+		return int(p)
+	}
+}
+
+func (v *RtmpRequest) Host() string {
+	if !strings.Contains(v.Url.Host, ":") {
+		return v.Url.Host
+	}
+
+	if h, _, err := net.SplitHostPort(v.Url.Host); err != nil {
+		return ""
+	} else {
+		return h
+	}
+}
+
+// parse the rtmp request object from tcUrl/stream?params
+// to finger it out the vhost and url.
+func (r *RtmpRequest) Reparse() (err error) {
+	// convert app...pn0...pv0...pn1...pv1...pnn...pvn
+	// to (without space):
+	// 		app ? pn0=pv0 && pn1=pv1 && pnn=pvn
+	// where ... can replaced by ___ or ? or && or &
+	mfn := func(s string) string {
+		r := s
+		matchs := []string{"...", "___", "?", "&&", "&"}
+		for _, m := range matchs {
+			r = strings.Replace(r, m, "...", -1)
+		}
+		return r
+	}
+	ffn := func(s string) string {
+		r := mfn(s)
+		for first := true; ; first = false {
+			if !strings.Contains(r, "...") {
+				break
+			}
+			if first {
+				r = strings.Replace(r, "...", "?", 1)
+			} else {
+				r = strings.Replace(r, "...", "&&", 1)
+			}
+
+			if !strings.Contains(r, "...") {
+				break
+			}
+			r = strings.Replace(r, "...", "=", 1)
+		}
+		return r
+	}
+
+	// format the app and stream.
+	r.TcUrl = ffn(r.TcUrl)
+	r.Stream = ffn(r.Stream)
+
+	// format the tcUrl and stream.
+	var params string
+	if ss := strings.SplitN(r.TcUrl, "?", 2); len(ss) == 2 {
+		r.TcUrl = ss[0]
+		params = ss[1]
+	}
+	if ss := strings.SplitN(r.Stream, "?", 2); len(ss) == 2 {
+		r.Stream = ss[0]
+		params += "&&" + ss[1]
+	}
+	params = strings.TrimLeft(params, "&&")
+
+	// the standard rtmp uri is:
+	//		rtmp://ip:port/app?params
+	// where the simple url is:
+	//		rtmp://vhost/app/stream
+	// and the standard adobe url to support param is:
+	//		rtmp://ip/app?params/stream
+	// some client use stream to pass the params:
+	//		rtmp://ip/app/stream?params
+	// we will parse all uri to the standard rtmp uri.
+	u := fmt.Sprintf("%v?%v", r.TcUrl, params)
+	if r.Url, err = url.Parse(u); err != nil {
+		return
+	}
+	q := r.Url.Query()
+
+	// parse result.
+	r.Vhost = r.Host()
+	if v := q.Get("vhost"); v != "" {
+		r.Vhost = v
+	} else if v := q.Get("domain"); v != "" {
+		r.Vhost = v
+	}
+	r.App = strings.TrimLeft(r.Url.Path, "/")
+
+	// check.
+	if r.Vhost == "" {
+		core.Error.Println("vhost must not be empty")
+		return RequestUrlError
+	}
+	if r.App == "" && r.Stream == "" {
+		core.Error.Println("both app and stream must not be empty")
+		return RequestUrlError
+	}
+	if p := r.Port(); p <= 0 {
+		core.Error.Println("port must be positive, actual is", p)
+		return RequestUrlError
+	}
+
+	return
 }
 
 // the rtmp client type.
@@ -309,11 +449,11 @@ type RtmpConnType uint8
 
 func (v RtmpConnType) String() string {
 	switch v {
-	case Play:
+	case RtmpPlay:
 		return "play"
-	case FmlePublish:
+	case RtmpFmlePublish:
 		return "fmle-publish"
-	case FlashPublish:
+	case RtmpFlashPublish:
 		return "flash-publish"
 	default:
 		return "unknown"
@@ -321,10 +461,10 @@ func (v RtmpConnType) String() string {
 }
 
 const (
-	Unknown RtmpConnType = iota
-	Play
-	FmlePublish
-	FlashPublish
+	RtmpUnknown RtmpConnType = iota
+	RtmpPlay
+	RtmpFmlePublish
+	RtmpFlashPublish
 )
 
 // rtmp protocol stack.
@@ -496,11 +636,9 @@ func (v *RtmpConnection) Handshake() (err error) {
 }
 
 // do connect app with client, to discovery tcUrl.
-func (v *RtmpConnection) ExpectConnectApp() (r *RtmpRequest, err error) {
-	r = &RtmpRequest{}
-
+func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 	// connect(tcUrl)
-	return r, v.read(ConnectAppTimeout, func(m *RtmpMessage) (loop bool, err error) {
+	return v.read(ConnectAppTimeout, func(m *RtmpMessage) (loop bool, err error) {
 		var p RtmpPacket
 		if p, err = v.stack.DecodeMessage(m); err != nil {
 			return
@@ -653,11 +791,11 @@ func (v *RtmpConnection) identifyCreateStream(sid uint32, p0, p1 *RtmpCreateStre
 }
 
 func (v *RtmpConnection) identifyFlashPublish(sid uint32, p *RtmpPublishPacket) (connType RtmpConnType, streamName string, err error) {
-	return FlashPublish, string(p.Stream), nil
+	return RtmpFlashPublish, string(p.Stream), nil
 }
 
 func (v *RtmpConnection) identifyFmlePublish(sid uint32, p *RtmpFMLEStartPacket) (connType RtmpConnType, streamName string, err error) {
-	connType = FmlePublish
+	connType = RtmpFmlePublish
 	streamName = string(p.Stream)
 
 	res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
@@ -672,7 +810,7 @@ func (v *RtmpConnection) identifyFmlePublish(sid uint32, p *RtmpFMLEStartPacket)
 }
 
 func (v *RtmpConnection) identifyPlay(sid uint32, p *RtmpPlayPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
-	connType = Play
+	connType = RtmpPlay
 	streamName = string(p.Stream)
 	if !reflect.ValueOf(p.Duration).IsNil() {
 		duration = float64(*p.Duration)

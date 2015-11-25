@@ -39,6 +39,9 @@ var TimeoutError error = errors.New("io timeout")
 // when sender or receiver closed.
 var ClosedError error = errors.New("io already closed")
 
+// when the rtmp vhost not found.
+var VhostNotFoundError error = errors.New("vhost not found")
+
 // whether the object in recover or returned error can ignore,
 // for instance, the error is a Quit error.
 func IsNormalQuit(err interface{}) bool {

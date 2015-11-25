@@ -74,6 +74,10 @@ func TestConfigBasic(t *testing.T) {
 	if c.Stat.Network != 0 {
 		t.Error("log stat network failed")
 	}
+
+	if len(c.Vhosts) != 0 {
+		t.Error("vhosts is not empty")
+	}
 }
 
 func BenchmarkConfigBasic(b *testing.B) {

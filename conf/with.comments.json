@@ -14,5 +14,11 @@
   /* go section */
   "go": {
     "gc_interval": 5
-  }
+  },
+
+  "vhosts": [
+    {
+      "name": "__defaultVhost__"
+    }
+  ]
 }

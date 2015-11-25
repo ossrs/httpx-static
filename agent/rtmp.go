@@ -137,14 +137,16 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 
 	// handshake with client.
 	if err = conn.Handshake(); err != nil {
-		core.Error.Println("rtmp handshake failed. err is", err)
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("rtmp handshake failed. err is", err)
+		}
 		return
 	}
 	core.Info.Println("rtmp handshake ok.")
 
 	// expoect connect app.
-	var r *protocol.RtmpRequest
-	if r, err = conn.ExpectConnectApp(); err != nil {
+	r := protocol.NewRtmpRequest()
+	if err = conn.ExpectConnectApp(r); err != nil {
 		if !core.IsNormalQuit(err) {
 			core.Error.Println("rtmp connnect app failed. err is", err)
 		}
@@ -180,9 +182,15 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 
 	// response the client connect ok and onBWDone.
 	if err = conn.ResponseConnectApp(); err != nil {
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("response connect app failed. err is", err)
+		}
 		return
 	}
 	if err = conn.OnBwDone(); err != nil {
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("response onBWDone failed. err is", err)
+		}
 		return
 	}
 
@@ -190,15 +198,21 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	v.sid++
 
 	// identify the client, publish or play.
-	var duration float64
-	var streamName string
-	var connType protocol.RtmpConnType
-	if connType, streamName, duration, err = conn.Identify(v.sid); err != nil {
+	if r.Type, r.Stream, r.Duration, err = conn.Identify(v.sid); err != nil {
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("identify client failed. err is", err)
+		}
 		return
 	}
 	core.Trace.Println(fmt.Sprintf(
 		"client identified, type=%s, stream_name=%s, duration=%.2f",
-		connType, streamName, duration))
+		r.Type, r.Stream, r.Duration))
+
+	// reparse the request by connect and play/publish.
+	if err = r.Reparse(); err != nil {
+		core.Error.Println("reparse request failed. err is", err)
+		return
+	}
 
 	// security check
 	// TODO: FIXME: implements it.
@@ -206,6 +220,22 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	// set the TCP_NODELAY to false for high performance.
 	// or set tot true for realtime stream.
 	// TODO: FIXME: implements it.
+
+	// check vhost.
+	// for standard rtmp, the vhost specified in connectApp(tcUrl),
+	// while some new client specifies the vhost in stream.
+	// for example,
+	//		connect("rtmp://vhost/app"), specified in tcUrl.
+	//		connect("rtmp://ip/app?vhost=vhost"), specified in tcUrl.
+	//		connect("rtmp://ip/app") && play("stream?vhost=vhost"), specified in stream.
+	var vhost *core.Vhost
+	if vhost, err = core.Conf.Vhost(r.Vhost); err != nil {
+		core.Error.Println("check vhost failed, vhost is", r.Vhost, "and err is", err)
+		return
+	} else if r.Vhost != vhost.Name {
+		core.Trace.Println("redirect vhost", r.Vhost, "to", vhost.Name)
+		r.Vhost = vhost.Name
+	}
 
 	return
 }

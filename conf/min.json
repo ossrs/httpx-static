@@ -1,3 +1,8 @@
 {
-  "listen": 1935
+  "listen": 1935,
+  "vhosts": [
+    {
+      "name": "__defaultVhost__"
+    }
+  ]
 }

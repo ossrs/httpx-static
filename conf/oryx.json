@@ -4,5 +4,10 @@
     "tank": "file",
     "level": "trace",
     "file": "oryx.log"
-  }
+  },
+  "vhosts": [
+    {
+      "name": "__defaultVhost__"
+    }
+  ]
 }

@@ -895,3 +895,98 @@ func TestRtmpPublishPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 }
+
+func TestRtmpRequest(t *testing.T) {
+	p := NewRtmpRequest()
+	if p.TcUrl != "" || p.Stream != "" || p.App != "" || p.Type != RtmpUnknown {
+		t.Error("invalid")
+	}
+
+	if err := p.Reparse(); err == nil {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app___vhost=xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app?vhost___xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app?vhost=xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app...vhost=xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app?vhost...xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app"
+	p.Stream = "stream?vhost=xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app"
+	p.Stream = "stream?domain=xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app"
+	p.Stream = "stream...domain=xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app"
+	p.Stream = "stream?domain...xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app"
+	p.Stream = "stream___domain=xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip/app"
+	p.Stream = "stream?domain___xx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://vhost/app"
+	p.Stream = "stream"
+	if err := p.Reparse(); err != nil || p.Vhost != "vhost" || p.App != "app" || p.Stream != "stream" || p.Port() != 1935 {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip:1936/app"
+	p.Stream = "stream"
+	if err := p.Reparse(); err != nil || p.Vhost != "ip" || p.App != "app" || p.Stream != "stream" || p.Port() != 1936 || p.Host() != "ip" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip:1936/app?vhost=xxx"
+	p.Stream = "stream?vhost=xxx"
+	if err := p.Reparse(); err != nil || p.Vhost != "xxx" {
+		t.Error("invalid")
+	}
+
+	p.TcUrl = "rtmp://ip:1936/app/sub"
+	if err := p.Reparse(); err != nil || p.App != "app/sub" {
+		t.Error("invalid")
+	}
+}

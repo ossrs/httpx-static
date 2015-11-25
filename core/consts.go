@@ -22,6 +22,7 @@
 package core
 
 const (
-	RtmpListen = 1935
-	HttpJson   = "application/json"
+	RtmpListen       = 1935
+	HttpJson         = "application/json"
+	RtmpDefaultVhost = "__defaultVhost__"
 )
