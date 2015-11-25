@@ -582,7 +582,7 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 // @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
 // @duration, output the play client duration. @see: SrsRequest.duration
 func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName string, duration float64, err error) {
-	return v.identify(sid, func(p RtmpPacket) (loop bool, err error) {
+	err = v.identify(sid, func(p RtmpPacket) (loop bool, err error) {
 		switch p := p.(type) {
 		case *RtmpCreateStreamPacket:
 			connType, streamName, duration, err = v.identifyCreateStream(sid, nil, p)
@@ -604,6 +604,8 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 
 		return true, nil
 	})
+
+	return
 }
 
 func (v *RtmpConnection) identifyCreateStream(sid uint32, p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
@@ -618,7 +620,7 @@ func (v *RtmpConnection) identifyCreateStream(sid uint32, p0, p1 *RtmpCreateStre
 		}
 	}
 
-	return v.identify(sid, func(p RtmpPacket) (loop bool, err error) {
+	err = v.identify(sid, func(p RtmpPacket) (loop bool, err error) {
 		switch p := p.(type) {
 		case *RtmpPlayPacket:
 			connType, streamName, duration, err = v.identifyPlay(sid, p)
@@ -639,6 +641,8 @@ func (v *RtmpConnection) identifyCreateStream(sid uint32, p0, p1 *RtmpCreateStre
 		}
 		return
 	})
+
+	return
 }
 
 func (v *RtmpConnection) identifyFlashPublish(sid uint32, p *RtmpPublishPacket) (connType RtmpConnType, streamName string, err error) {
@@ -675,7 +679,7 @@ func (v *RtmpConnection) identifyPlay(sid uint32, p *RtmpPlayPacket) (connType R
 type rtmpIdentifyHandler func(p RtmpPacket) (loop bool, err error)
 
 // identify the client.
-func (v *RtmpConnection) identify(sid uint32, fn rtmpIdentifyHandler) (connType RtmpConnType, streamName string, duration float64, err error) {
+func (v *RtmpConnection) identify(sid uint32, fn rtmpIdentifyHandler) (err error) {
 	err = v.read(IdentifyTimeout, func(m *RtmpMessage) (loop bool, err error) {
 		var p RtmpPacket
 		if p, err = v.stack.DecodeMessage(m); err != nil {
