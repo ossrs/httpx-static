@@ -96,27 +96,7 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 				return
 			}
 
-			// use gfork to serve the connection.
-			v.wc.GFork("", func(wc core.WorkerContainer) {
-				defer func() {
-					if r := recover(); r != nil {
-						if !core.IsNormalQuit(r) {
-							core.Warn.Println("rtmp ignore", r)
-						}
-
-						core.Error.Println(string(debug.Stack()))
-					}
-				}()
-
-				conn, err := v.identify(c)
-				defer conn.Close()
-
-				if !core.IsNormalQuit(err) {
-					core.Warn.Println("ignore error when identify rtmp. err is", err)
-					return
-				}
-				core.Info.Println("rtmp identify ok.")
-			})
+			v.serve(c)
 		}
 	})
 
@@ -130,7 +110,41 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 	return
 }
 
-func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
+func (v *Rtmp) serve(c net.Conn) {
+	// use gfork to serve the connection.
+	v.wc.GFork("", func(wc core.WorkerContainer) {
+		defer func() {
+			if r := recover(); r != nil {
+				if !core.IsNormalQuit(r) {
+					core.Warn.Println("rtmp ignore", r)
+				}
+
+				core.Error.Println(string(debug.Stack()))
+			}
+		}()
+
+		r, conn, err := v.identify(c)
+		defer conn.Close()
+
+		if !core.IsNormalQuit(err) {
+			core.Warn.Println("ignore error when identify rtmp. err is", err)
+			return
+		}
+		core.Info.Println("rtmp identify ok.")
+
+		if r.Type.IsPlay() {
+			// player.
+		} else if r.Type.IsPublish() {
+			// encoder.
+		} else {
+			core.Warn.Println("close invalid", r.Type, "client")
+		}
+
+		return
+	})
+}
+
+func (v *Rtmp) identify(c net.Conn) (r *protocol.RtmpRequest, conn *protocol.RtmpConnection, err error) {
 	conn = protocol.NewRtmpConnection(c, v.wc)
 
 	core.Trace.Println("rtmp accept", c.RemoteAddr())
@@ -145,7 +159,7 @@ func (v *Rtmp) identify(c net.Conn) (conn *protocol.RtmpConnection, err error) {
 	core.Info.Println("rtmp handshake ok.")
 
 	// expoect connect app.
-	r := protocol.NewRtmpRequest()
+	r = protocol.NewRtmpRequest()
 	if err = conn.ExpectConnectApp(r); err != nil {
 		if !core.IsNormalQuit(err) {
 			core.Error.Println("rtmp connnect app failed. err is", err)

@@ -425,7 +425,10 @@ func (r *RtmpRequest) Reparse() (err error) {
 	} else if v := q.Get("domain"); v != "" {
 		r.Vhost = v
 	}
-	r.App = strings.TrimLeft(r.Url.Path, "/")
+
+	if r.App = strings.TrimLeft(r.Url.Path, "/"); r.App == "" {
+		r.App = core.RtmpDefaultApp
+	}
 
 	// check.
 	if r.Vhost == "" {
@@ -458,6 +461,16 @@ func (v RtmpConnType) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// whether connection is player
+func (v RtmpConnType) IsPlay() bool {
+	return v == RtmpPlay
+}
+
+// whether connection is flash or fmle publisher.
+func (v RtmpConnType) IsPublish() bool {
+	return v == RtmpFlashPublish || v == RtmpFmlePublish
 }
 
 const (

@@ -906,6 +906,12 @@ func TestRtmpRequest(t *testing.T) {
 		t.Error("invalid")
 	}
 
+	p.TcUrl = "rtmp://ip"
+	p.Stream = "xxx"
+	if err := p.Reparse(); err != nil || p.App != "__defaultApp__" {
+		t.Error("invalid")
+	}
+
 	p.TcUrl = "rtmp://ip/app___vhost=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
 		t.Error("invalid")

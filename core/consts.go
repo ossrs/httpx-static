@@ -25,4 +25,5 @@ const (
 	RtmpListen       = 1935
 	HttpJson         = "application/json"
 	RtmpDefaultVhost = "__defaultVhost__"
+	RtmpDefaultApp   = "__defaultApp__"
 )
