@@ -896,6 +896,31 @@ func TestRtmpPublishPacket(t *testing.T) {
 	}
 }
 
+func TestRtmpOnStatusCallPacket(t *testing.T) {
+	p := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
+	if p.Name != "onStatus" || p.TransactionId != 0 {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		0, 0x3f, 0xf0, 0, 0, 0, 0, 0, 0,
+		5,
+		3, 0, 0, 9,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.TransactionId != 1.0 {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 25 {
+		t.Error("invalid")
+	}
+}
+
 func TestRtmpRequest(t *testing.T) {
 	p := NewRtmpRequest()
 	if p.TcUrl != "" || p.Stream != "" || p.App != "" || p.Type != RtmpUnknown {

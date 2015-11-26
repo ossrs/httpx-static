@@ -81,7 +81,7 @@ func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc cor
 	}
 
 	// when dup source not nil, then the source is using.
-	if dup.Source() != nil {
+	if dup.Source().GetSink() != nil {
 		err := AgentBusyError
 		core.Error.Println("source busy. err is", err)
 		return nil, err

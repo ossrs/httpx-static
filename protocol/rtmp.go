@@ -328,6 +328,7 @@ func NewRtmpRequest() *RtmpRequest {
 	}
 }
 
+// the uri to identify the request, vhost/app/stream.
 func (v *RtmpRequest) Uri() string {
 	uri := ""
 	if v.Vhost != core.RtmpDefaultVhost {
@@ -340,6 +341,7 @@ func (v *RtmpRequest) Uri() string {
 	return uri
 }
 
+// the rtmp port, default to 1935.
 func (v *RtmpRequest) Port() int {
 	if _, p, err := net.SplitHostPort(v.Url.Host); err != nil {
 		return core.RtmpListen
@@ -352,6 +354,7 @@ func (v *RtmpRequest) Port() int {
 	}
 }
 
+// the host connected at, the ip or domain name(vhost).
 func (v *RtmpRequest) Host() string {
 	if !strings.Contains(v.Url.Host, ":") {
 		return v.Url.Host
@@ -494,6 +497,8 @@ const (
 
 // rtmp protocol stack.
 type RtmpConnection struct {
+	// the current using stream id.
+	sid uint32
 	// the rtmp request.
 	Req *RtmpRequest
 
@@ -520,6 +525,7 @@ type RtmpConnection struct {
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
+		sid:       0,
 		Req:       NewRtmpRequest(),
 		wc:        wc,
 		handshake: NewHsBytes(),
@@ -748,17 +754,17 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 // @type, output the client type.
 // @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
 // @duration, output the play client duration. @see: SrsRequest.duration
-func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName string, duration float64, err error) {
-	err = v.identify(sid, func(p RtmpPacket) (loop bool, err error) {
+func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, duration float64, err error) {
+	err = v.identify(func(p RtmpPacket) (loop bool, err error) {
 		switch p := p.(type) {
 		case *RtmpCreateStreamPacket:
-			connType, streamName, duration, err = v.identifyCreateStream(sid, nil, p)
+			connType, streamName, duration, err = v.identifyCreateStream(nil, p)
 			return
 		case *RtmpFMLEStartPacket:
-			connType, streamName, err = v.identifyFmlePublish(sid, p)
+			connType, streamName, err = v.identifyFmlePublish(p)
 			return
 		case *RtmpPlayPacket:
-			connType, streamName, duration, err = v.identifyPlay(sid, p)
+			connType, streamName, duration, err = v.identifyPlay(p)
 			return
 		}
 		// TODO: FIXME: implements it.
@@ -782,25 +788,83 @@ func (v *RtmpConnection) Identify(sid uint32) (connType RtmpConnType, streamName
 	return
 }
 
-func (v *RtmpConnection) identifyCreateStream(sid uint32, p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
+// for FMLE encoder, response the start publish event.
+func (v *RtmpConnection) FmleStartPublish() (err error) {
+	return v.read(FmlePublishTimeout, func(m *RtmpMessage) (loop bool, err error) {
+		var p RtmpPacket
+		if p, err = v.stack.DecodeMessage(m); err != nil {
+			return
+		}
+
+		switch p := p.(type) {
+		case *RtmpFMLEStartPacket:
+			res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
+			res.TransactionId = p.TransactionId
+			if err = v.write(FmlePublishTimeout, res, 0); err != nil {
+				return
+			}
+			return true, nil
+		case *RtmpCreateStreamPacket:
+			// increasing the stream id.
+			v.sid++
+
+			res := NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket)
+			res.TransactionId = p.TransactionId
+			res.StreamId = Amf0Number(v.sid)
+
+			if err = v.write(FmlePublishTimeout, res, 0); err != nil {
+				return
+			}
+			return true, nil
+		case *RtmpPublishPacket:
+			res := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
+			res.Name = Amf0String(Amf0CommandFcPublish)
+			res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
+			res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
+			if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+				return
+			}
+
+			res = NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
+			res.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
+			res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
+			res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
+			res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+			if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+				return
+			}
+
+			core.Trace.Println("FMLE start publish ok.")
+			return false, nil
+		default:
+			return true, nil
+		}
+		return
+	})
+}
+
+func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
 	current := p1
 
 	if csr := NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket); csr != nil {
+		// increasing the stream id.
+		v.sid++
+
 		csr.TransactionId = current.TransactionId
-		csr.StreamId = Amf0Number(float64(sid))
+		csr.StreamId = Amf0Number(float64(v.sid))
 		if err = v.write(IdentifyTimeout, csr, 0); err != nil {
 			core.Error.Println("response createStream failed. err is", err)
 			return
 		}
 	}
 
-	err = v.identify(sid, func(p RtmpPacket) (loop bool, err error) {
+	err = v.identify(func(p RtmpPacket) (loop bool, err error) {
 		switch p := p.(type) {
 		case *RtmpPlayPacket:
-			connType, streamName, duration, err = v.identifyPlay(sid, p)
+			connType, streamName, duration, err = v.identifyPlay(p)
 			return
 		case *RtmpPublishPacket:
-			connType, streamName, err = v.identifyFlashPublish(sid, p)
+			connType, streamName, err = v.identifyFlashPublish(p)
 			return
 		case *RtmpCreateStreamPacket:
 			// to avoid stack overflow attach.
@@ -810,7 +874,7 @@ func (v *RtmpConnection) identifyCreateStream(sid uint32, p0, p1 *RtmpCreateStre
 				return
 			}
 
-			connType, streamName, duration, err = v.identifyCreateStream(sid, current, p)
+			connType, streamName, duration, err = v.identifyCreateStream(current, p)
 			return
 		}
 		return
@@ -819,11 +883,11 @@ func (v *RtmpConnection) identifyCreateStream(sid uint32, p0, p1 *RtmpCreateStre
 	return
 }
 
-func (v *RtmpConnection) identifyFlashPublish(sid uint32, p *RtmpPublishPacket) (connType RtmpConnType, streamName string, err error) {
+func (v *RtmpConnection) identifyFlashPublish(p *RtmpPublishPacket) (connType RtmpConnType, streamName string, err error) {
 	return RtmpFlashPublish, string(p.Stream), nil
 }
 
-func (v *RtmpConnection) identifyFmlePublish(sid uint32, p *RtmpFMLEStartPacket) (connType RtmpConnType, streamName string, err error) {
+func (v *RtmpConnection) identifyFmlePublish(p *RtmpFMLEStartPacket) (connType RtmpConnType, streamName string, err error) {
 	connType = RtmpFmlePublish
 	streamName = string(p.Stream)
 
@@ -838,7 +902,7 @@ func (v *RtmpConnection) identifyFmlePublish(sid uint32, p *RtmpFMLEStartPacket)
 	return
 }
 
-func (v *RtmpConnection) identifyPlay(sid uint32, p *RtmpPlayPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
+func (v *RtmpConnection) identifyPlay(p *RtmpPlayPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
 	connType = RtmpPlay
 	streamName = string(p.Stream)
 	if !reflect.ValueOf(p.Duration).IsNil() {
@@ -853,7 +917,7 @@ func (v *RtmpConnection) identifyPlay(sid uint32, p *RtmpPlayPacket) (connType R
 type rtmpIdentifyHandler func(p RtmpPacket) (loop bool, err error)
 
 // identify the client.
-func (v *RtmpConnection) identify(sid uint32, fn rtmpIdentifyHandler) (err error) {
+func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 	err = v.read(IdentifyTimeout, func(m *RtmpMessage) (loop bool, err error) {
 		var p RtmpPacket
 		if p, err = v.stack.DecodeMessage(m); err != nil {
@@ -1286,6 +1350,10 @@ const (
 	Amf0CommandUnpublish     = "FCUnpublish"
 	Amf0CommandPublish       = "publish"
 	Amf0DataSampleAccess     = "|RtmpSampleAccess"
+
+	// FMLE
+	Amf0CommandOnFcPublish   = "onFCPublish"
+	Amf0CommandOnFcUnpublish = "onFCUnpublish"
 
 	// the signature for packets to client.
 	RtmpSigFmsVer   = "3,5,3,888"
@@ -2027,6 +2095,43 @@ func (v *RtmpPublishPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
+// onStatus command, AMF0 Call
+// @remark, user must set the stream_id by SrsCommonMessage.set_packet().
+type RtmpOnStatusCallPacket struct {
+	// Name of command. Set to "onStatus"
+	Name Amf0String
+	// Transaction ID set to 0.
+	TransactionId Amf0Number
+	// Command information does not exist. Set to null type.
+	Command Amf0Null
+	// Name-value pairs that describe the response from the server.
+	// 'code','level', 'description' are names of few among such information.
+	Data *Amf0Object
+}
+
+func NewRtmpOnStatusCallPacket() RtmpPacket {
+	return &RtmpOnStatusCallPacket{
+		Name: Amf0String(Amf0CommandOnStatus),
+		Data: NewAmf0Object(),
+	}
+}
+
+func (v *RtmpOnStatusCallPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, v.Data)
+}
+
+func (v *RtmpOnStatusCallPacket) UnmarshalBinary(data []byte) (err error) {
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command, v.Data)
+}
+
+func (v *RtmpOnStatusCallPacket) PreferCid() uint32 {
+	return RtmpCidOverStream
+}
+
+func (v *RtmpOnStatusCallPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0CommandMessage
+}
+
 // 7.1. Set Chunk Size
 // Protocol control message 1, Set Chunk Size, is used to notify the
 // peer about the new maximum chunk size.
@@ -2316,10 +2421,10 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 		case Amf0CommandReleaseStream, Amf0CommandFcPublish, Amf0CommandUnpublish:
 			p = NewRtmpFMLEStartPacket()
 		case Amf0CommandPublish:
-			// TODO: FIXME: implements it.
+			p = NewRtmpPublishPacket()
 		// TODO: FIXME: implements it.
 		default:
-			core.Info.Println("drop command message, name is", c)
+			core.Trace.Println("drop command message, name is", c)
 		}
 	} else if m.MessageType.isUserControlMessage() {
 		p = NewRtmpUserControlPacket()

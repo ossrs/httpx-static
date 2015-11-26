@@ -33,7 +33,6 @@ import (
 // to listen at RTMP(tcp://1935) and recv data from RTMP publisher or player,
 // when identified the client type, redirect to the specified agent.
 type Rtmp struct {
-	sid      uint32
 	endpoint string
 	wc       core.WorkerContainer
 	l        net.Listener
@@ -41,8 +40,7 @@ type Rtmp struct {
 
 func NewRtmp(wc core.WorkerContainer) (agent core.OpenCloser) {
 	v := &Rtmp{
-		sid: 1,
-		wc:  wc,
+		wc: wc,
 	}
 
 	core.Conf.Subscribe(v)
@@ -199,11 +197,8 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		return
 	}
 
-	// increasing the stream id.
-	v.sid++
-
 	// identify the client, publish or play.
-	if r.Type, r.Stream, r.Duration, err = conn.Identify(v.sid); err != nil {
+	if r.Type, r.Stream, r.Duration, err = conn.Identify(); err != nil {
 		if !core.IsNormalQuit(err) {
 			core.Error.Println("identify client failed. err is", err)
 		}
@@ -299,6 +294,15 @@ type RtmpPublishAgent struct {
 }
 
 func (v *RtmpPublishAgent) Open() (err error) {
+	if v.conn.Req.Type == protocol.RtmpFmlePublish {
+		if err = v.conn.FmleStartPublish(); err != nil {
+			core.Error.Println("fmle start publish failed. err is", err)
+			return
+		}
+	} else {
+		// TODO: FIXME: implements it.
+	}
+
 	return
 }
 

@@ -43,9 +43,17 @@ func (v *DupAgent) Work() (err error) {
 }
 
 func (v *DupAgent) Source() (ss core.Source) {
-	return
+	return v
 }
 
 func (v *DupAgent) Sink() (sk core.Sink) {
+	return
+}
+
+func (v *DupAgent) Tie(sink core.Sink) (err error) {
+	return
+}
+
+func (v *DupAgent) GetSink() (sink core.Sink) {
 	return
 }

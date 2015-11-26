@@ -37,6 +37,8 @@ type Source interface {
 	// tie the source to sink
 	// 		agent.Sink => agent.Source
 	Tie(sink Sink) (err error)
+	// get the tied sink of source.
+	GetSink() (sink Sink)
 }
 
 // the sink of agent,
