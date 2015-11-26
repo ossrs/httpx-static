@@ -123,31 +123,23 @@ func (v *Rtmp) serve(c net.Conn) {
 			}
 		}()
 
-		r, conn, err := v.identify(c)
+		core.Trace.Println("rtmp accept", c.RemoteAddr())
+
+		conn := protocol.NewRtmpConnection(c, v.wc)
 		defer conn.Close()
 
-		if !core.IsNormalQuit(err) {
-			core.Warn.Println("ignore error when identify rtmp. err is", err)
+		if err := v.cycle(conn); !core.IsNormalQuit(err) {
+			core.Warn.Println("ignore error when cycle rtmp. err is", err)
 			return
 		}
-		core.Info.Println("rtmp identify ok.")
-
-		if r.Type.IsPlay() {
-			// player.
-		} else if r.Type.IsPublish() {
-			// encoder.
-		} else {
-			core.Warn.Println("close invalid", r.Type, "client")
-		}
+		core.Info.Println("rtmp cycle ok.")
 
 		return
 	})
 }
 
-func (v *Rtmp) identify(c net.Conn) (r *protocol.RtmpRequest, conn *protocol.RtmpConnection, err error) {
-	conn = protocol.NewRtmpConnection(c, v.wc)
-
-	core.Trace.Println("rtmp accept", c.RemoteAddr())
+func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
+	r := conn.Req
 
 	// handshake with client.
 	if err = conn.Handshake(); err != nil {
@@ -159,7 +151,6 @@ func (v *Rtmp) identify(c net.Conn) (r *protocol.RtmpRequest, conn *protocol.Rtm
 	core.Info.Println("rtmp handshake ok.")
 
 	// expoect connect app.
-	r = protocol.NewRtmpRequest()
 	if err = conn.ExpectConnectApp(r); err != nil {
 		if !core.IsNormalQuit(err) {
 			core.Error.Println("rtmp connnect app failed. err is", err)
@@ -251,6 +242,36 @@ func (v *Rtmp) identify(c net.Conn) (r *protocol.RtmpRequest, conn *protocol.Rtm
 		r.Vhost = vhost.Name
 	}
 
+	var agent core.Agent
+	if conn.Req.Type.IsPlay() {
+		// TODO: FIXME: implements it.
+	} else if conn.Req.Type.IsPublish() {
+		if agent, err = Manager.NewRtmpPublishAgent(conn, v.wc); err != nil {
+			core.Error.Println("create rtmp publish agent failed. err is", err)
+			return
+		}
+	} else {
+		core.Warn.Println("close invalid", conn.Req.Type, "client")
+		return
+	}
+
+	// always create the agent when work done.
+	defer func() {
+		if err := agent.Close(); err != nil {
+			core.Warn.Println("ignore agent close failed. err is", err)
+		}
+	}()
+
+	if err = agent.Open(); err != nil {
+		core.Warn.Println("ignore rtmp publish agent open failed. err is", err)
+		return
+	}
+
+	if err = agent.Work(); err != nil {
+		core.Warn.Println("ignore rtmp publish agent work failed. err is", err)
+		return
+	}
+
 	return
 }
 
@@ -268,5 +289,31 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 		return
 	}
 
+	return
+}
+
+// rtmp publish agent, to serve the FMLE or flash publisher/encoder.
+type RtmpPublishAgent struct {
+	conn *protocol.RtmpConnection
+	wc   core.WorkerContainer
+}
+
+func (v *RtmpPublishAgent) Open() (err error) {
+	return
+}
+
+func (v *RtmpPublishAgent) Close() (err error) {
+	return
+}
+
+func (v *RtmpPublishAgent) Work() (err error) {
+	return
+}
+
+func (v *RtmpPublishAgent) Source() (ss core.Source) {
+	return
+}
+
+func (v *RtmpPublishAgent) Sink() (sk core.Sink) {
 	return
 }

@@ -328,6 +328,18 @@ func NewRtmpRequest() *RtmpRequest {
 	}
 }
 
+func (v *RtmpRequest) Uri() string {
+	uri := ""
+	if v.Vhost != core.RtmpDefaultVhost {
+		uri += v.Vhost
+	}
+
+	uri += "/" + v.App
+	uri += "/" + v.Stream
+
+	return uri
+}
+
 func (v *RtmpRequest) Port() int {
 	if _, p, err := net.SplitHostPort(v.Url.Host); err != nil {
 		return core.RtmpListen
@@ -482,6 +494,9 @@ const (
 
 // rtmp protocol stack.
 type RtmpConnection struct {
+	// the rtmp request.
+	Req *RtmpRequest
+
 	// to receive the quit message from server.
 	wc core.WorkerContainer
 	// the handshake bytes for RTMP.
@@ -505,6 +520,7 @@ type RtmpConnection struct {
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
+		Req:       NewRtmpRequest(),
 		wc:        wc,
 		handshake: NewHsBytes(),
 		transport: transport,

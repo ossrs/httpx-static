@@ -118,6 +118,9 @@ func (s *Server) Close() {
 		core.Warn.Println("close rtmp agent failed. err is", err)
 	}
 
+	// close the agent manager.
+	agent.Manager.Close()
+
 	// ok, closed.
 	s.closed = StateClosed
 	core.Trace.Println("server closed")

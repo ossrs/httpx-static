@@ -61,14 +61,17 @@ type OpenCloser interface {
 // which ingest message from upstream sink
 // write message to channel
 // finally delivery to downstream sink.
+// @remark all method is sync, user should never assume it's async.
 type Agent interface {
 	// an agent is a resource manager.
 	OpenCloser
+	// do agent work,
+	// for example, the rtmp publish terminate when work done,
+	// and the agent may fork another one to work.
+	Work() (err error)
 
 	// the source of agent.
 	Source() (ss Source)
-	// the channel of agent.
-	Channel() (c chan *Message)
 	// the sink of agent.
 	Sink() (sk Sink)
 }
