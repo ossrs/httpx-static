@@ -50,7 +50,7 @@ func (v *DupAgent) Write(m core.Message) (err error) {
 
 func (v *DupAgent) Tie(sink core.Agent) (err error) {
 	v.upstream = sink
-	return sink.Flow(v)
+	return
 }
 
 func (v *DupAgent) Flow(source core.Agent) (err error) {

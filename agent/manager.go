@@ -95,7 +95,11 @@ func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc cor
 
 	// tie the publish agent to dup source.
 	if err := dup.Tie(r); err != nil {
-		core.Error.Println("tie agent publish sink to dup source failed. err is", err)
+		core.Error.Println("tie agent failed. err is", err)
+		return nil, err
+	}
+	if err := r.Flow(dup); err != nil {
+		core.Error.Println("flow agent failed. err is", err)
 		return nil, err
 	}
 
