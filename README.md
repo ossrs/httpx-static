@@ -3,6 +3,7 @@
 <a href="https://godoc.org/github.com/ossrs/go-oryx">
     <img src="https://godoc.org/github.com/ossrs/go-oryx?status.svg" alt="GoDoc">
 </a>
+[![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ossrs/go-oryx?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 Focus on real-time live streaming cluster, advanced [srs][srs].
 
