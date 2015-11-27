@@ -24,6 +24,7 @@ package agent
 import "github.com/ossrs/go-oryx/core"
 
 type DupAgent struct {
+	upstream core.Agent
 }
 
 func NewDupAgent() core.Agent {
@@ -38,22 +39,24 @@ func (v *DupAgent) Close() (err error) {
 	return
 }
 
-func (v *DupAgent) Work() (err error) {
+func (v *DupAgent) Pump() (err error) {
 	return
 }
 
-func (v *DupAgent) Source() (ss core.Source) {
-	return v
-}
-
-func (v *DupAgent) Sink() (sk core.Sink) {
+func (v *DupAgent) Write(m core.Message) (err error) {
+	core.Trace.Println(m)
 	return
 }
 
-func (v *DupAgent) Tie(sink core.Sink) (err error) {
+func (v *DupAgent) Tie(sink core.Agent) (err error) {
+	v.upstream = sink
+	return sink.Flow(v)
+}
+
+func (v *DupAgent) Flow(source core.Agent) (err error) {
 	return
 }
 
-func (v *DupAgent) GetSink() (sink core.Sink) {
-	return
+func (v *DupAgent) TiedSink() (sink core.Agent) {
+	return v.upstream
 }

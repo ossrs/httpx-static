@@ -32,4 +32,5 @@ const (
 	OnBwDoneTimeout         = SetPeerBandwidthTimeout
 	IdentifyTimeout         = OnBwDoneTimeout
 	FmlePublishTimeout      = IdentifyTimeout
+	PublishRecvTimeout      = FmlePublishTimeout
 )

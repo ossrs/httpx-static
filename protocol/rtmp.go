@@ -842,6 +842,13 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 	})
 }
 
+// to receive message from rtmp.
+func (v *RtmpConnection) RecvMessage(timeout time.Duration, fn func(*RtmpMessage) error) (err error) {
+	return v.read(timeout, func(m *RtmpMessage) (loop bool, err error) {
+		return true, fn(m)
+	})
+}
+
 func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
 	current := p1
 
@@ -1467,6 +1474,35 @@ type RtmpMessage struct {
 
 func NewRtmpMessage() *RtmpMessage {
 	return &RtmpMessage{}
+}
+
+// convert the rtmp message to oryx message.
+func (v *RtmpMessage) ToMessage() (core.Message, error) {
+	return NewOryxRtmpMessage(v)
+}
+
+// covert the rtmp message to oryx message.
+type OryxRtmpMessage struct {
+	rtmp *RtmpMessage
+}
+
+func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
+	v := &OryxRtmpMessage{
+		rtmp: m,
+	}
+
+	// parse the message, for example, decode the h.264 sps/pps.
+	// TODO: FIXME: implements it.
+
+	return v, nil
+}
+
+func (v *OryxRtmpMessage) String() string {
+	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, v.rtmp.Payload.Len())
+}
+
+func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {
+	return core.MuxerRtmp
 }
 
 // RTMP packet, which can be

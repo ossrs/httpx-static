@@ -25,3 +25,6 @@ import "errors"
 
 // when agent is busy.
 var AgentBusyError = errors.New("agent is busy")
+
+// when agent not support source or sink.
+var AgentNotSupportError = errors.New("not support source or sink")

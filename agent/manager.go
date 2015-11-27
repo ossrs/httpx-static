@@ -71,7 +71,7 @@ func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc cor
 		core.Recover("", func() (err error) {
 			wait <- true
 
-			if err = dup.Work(); err != nil {
+			if err = dup.Pump(); err != nil {
 				core.Error.Println("dup agent work failed. err is", err)
 				return
 			}
@@ -81,7 +81,7 @@ func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc cor
 	}
 
 	// when dup source not nil, then the source is using.
-	if dup.Source().GetSink() != nil {
+	if dup.TiedSink() != nil {
 		err := AgentBusyError
 		core.Error.Println("source busy. err is", err)
 		return nil, err
@@ -94,7 +94,7 @@ func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc cor
 	}
 
 	// tie the publish agent to dup source.
-	if err := dup.Source().Tie(r.Sink()); err != nil {
+	if err := dup.Tie(r); err != nil {
 		core.Error.Println("tie agent publish sink to dup source failed. err is", err)
 		return nil, err
 	}

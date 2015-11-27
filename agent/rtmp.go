@@ -262,7 +262,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		return
 	}
 
-	if err = agent.Work(); err != nil {
+	if err = agent.Pump(); err != nil {
 		core.Warn.Println("ignore rtmp publish agent work failed. err is", err)
 		return
 	}
@@ -291,6 +291,7 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 type RtmpPublishAgent struct {
 	conn *protocol.RtmpConnection
 	wc   core.WorkerContainer
+	flow core.Agent
 }
 
 func (v *RtmpPublishAgent) Open() (err error) {
@@ -316,14 +317,35 @@ func (v *RtmpPublishAgent) Close() (err error) {
 	return
 }
 
-func (v *RtmpPublishAgent) Work() (err error) {
+func (v *RtmpPublishAgent) Pump() (err error) {
+	tm := protocol.PublishRecvTimeout
+
+	return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) (err error) {
+		var msg core.Message
+
+		if msg, err = m.ToMessage(); err != nil {
+			return
+		}
+
+		return v.flow.Write(msg)
+	})
+}
+
+func (v *RtmpPublishAgent) Write(m core.Message) (err error) {
+	core.Error.Println("rtmp publish agent not support write message.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPublishAgent) Tie(sink core.Agent) (err error) {
+	core.Error.Println("rtmp publish agent has no upstream.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPublishAgent) Flow(source core.Agent) (err error) {
+	v.flow = source
 	return
 }
 
-func (v *RtmpPublishAgent) Source() (ss core.Source) {
-	return
-}
-
-func (v *RtmpPublishAgent) Sink() (sk core.Sink) {
-	return
+func (v *RtmpPublishAgent) TiedSink() (sink core.Agent) {
+	return nil
 }
