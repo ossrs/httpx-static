@@ -839,7 +839,6 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 		default:
 			return true, nil
 		}
-		return
 	})
 }
 

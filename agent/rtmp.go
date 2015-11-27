@@ -303,10 +303,16 @@ func (v *RtmpPublishAgent) Open() (err error) {
 		// TODO: FIXME: implements it.
 	}
 
+	// check refer.
+	// TODO: FIXME: implements it.
+
 	return
 }
 
 func (v *RtmpPublishAgent) Close() (err error) {
+	// release publisher.
+	// TODO: FIXME: implements it.
+
 	return
 }
 
