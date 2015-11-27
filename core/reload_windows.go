@@ -19,11 +19,14 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+// Windows reload by signal.
+
 package core
 
-const (
-	RtmpListen       = 1935
-	HttpJson         = "application/json"
-	RtmpDefaultVhost = "__defaultVhost__"
-	RtmpDefaultApp   = "__defaultApp__"
-)
+func (c *Config) ReloadCycle(wc WorkerContainer) {
+	Warn.Println("windows does not support reload with signal.")
+
+	// wait for server to quit.
+	<-wc.QC()
+	wc.Quit()
+}

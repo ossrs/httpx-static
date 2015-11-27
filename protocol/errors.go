@@ -19,11 +19,18 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+package protocol
 
-const (
-	RtmpListen       = 1935
-	HttpJson         = "application/json"
-	RtmpDefaultVhost = "__defaultVhost__"
-	RtmpDefaultApp   = "__defaultApp__"
-)
+import "errors"
+
+// when read RTMP chunk error.
+var RtmpChunkError = errors.New("rtmp chunk error")
+
+// when got RTMP msg invalid payload.
+var RtmpPayloadError = errors.New("rtmp msg payload error")
+
+// the amf0 object error.
+var Amf0Error = errors.New("amf0 error")
+
+// the rtmp request url error.
+var RequestUrlError = errors.New("rtmp request url error")

@@ -19,18 +19,41 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// Windows reload by signal.
+package agent
 
-package app
+import "github.com/ossrs/go-oryx/core"
 
-import (
-	"github.com/ossrs/go-oryx/core"
-)
+type DupAgent struct {
+}
 
-func (c *Config) reloadCycle(wc WorkerContainer) {
-	core.Warn.Println("windows does not support reload with signal.")
+func NewDupAgent() core.Agent {
+	return &DupAgent{}
+}
 
-	// wait for server to quit.
-	<-wc.QC()
-	wc.Quit()
+func (v *DupAgent) Open() (err error) {
+	return
+}
+
+func (v *DupAgent) Close() (err error) {
+	return
+}
+
+func (v *DupAgent) Work() (err error) {
+	return
+}
+
+func (v *DupAgent) Source() (ss core.Source) {
+	return v
+}
+
+func (v *DupAgent) Sink() (sk core.Sink) {
+	return
+}
+
+func (v *DupAgent) Tie(sink core.Sink) (err error) {
+	return
+}
+
+func (v *DupAgent) GetSink() (sink core.Sink) {
+	return
 }

@@ -4,5 +4,10 @@
   "log": {
     "tank": "file",
     "level": "trace"
-  }
+  },
+  "vhosts": [
+    {
+      "name": "__defaultVhost__"
+    }
+  ]
 }

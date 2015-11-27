@@ -19,12 +19,10 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package app
+package core
 
 import (
 	"encoding/json"
-	"fmt"
-	"github.com/ossrs/go-oryx/core"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -37,7 +35,7 @@ func TestConfigBasic(t *testing.T) {
 		t.Error("workers failed.")
 	}
 
-	if c.Listen != core.RtmpListen {
+	if c.Listen != RtmpListen {
 		t.Error("listen failed.")
 	}
 
@@ -76,6 +74,10 @@ func TestConfigBasic(t *testing.T) {
 	if c.Stat.Network != 0 {
 		t.Error("log stat network failed")
 	}
+
+	if len(c.Vhosts) != 0 {
+		t.Error("vhosts is not empty")
+	}
 }
 
 func BenchmarkConfigBasic(b *testing.B) {
@@ -86,31 +88,15 @@ func BenchmarkConfigBasic(b *testing.B) {
 	}
 }
 
-func ExampleConfig_Loads() {
-	c := NewConfig()
-
-	//if err := c.Loads("config.json"); err != nil {
-	//    panic(err)
-	//}
-
-	fmt.Println("listen at", c.Listen)
-	fmt.Println("workers is", c.Workers)
-	fmt.Println("go gc every", c.Go.GcInterval, "seconds")
-
-	// Output:
-	// listen at 1935
-	// workers is 0
-	// go gc every 300 seconds
-}
-
 func TestConfigReader(t *testing.T) {
-	f := func(vs []string, eh func(string, string, string)) {
+	f := func(vs []string, eh func(string, string, string), ef func(error)) {
 		for i := 0; i < len(vs)-1; i += 2 {
 			o := vs[i]
 			e := vs[i+1]
 
 			if b, err := ioutil.ReadAll(NewReader(strings.NewReader(o))); err != nil {
 				t.Error("read", o, "failed, err is", err)
+				ef(err)
 			} else {
 				eh(o, e, string(b))
 			}
@@ -129,6 +115,8 @@ func TestConfigReader(t *testing.T) {
 		if e != o {
 			t.Error("for", v, "expect", len(e), "size", e, "but got", len(o), "size", o)
 		}
+	}, func(err error) {
+		t.Error(err)
 	})
 }
 

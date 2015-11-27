@@ -76,5 +76,14 @@
     // the device name to stat the disk iops.
     // ignore the device of /proc/diskstats if not configed.
     "disk": ["sda", "sdb", "xvda", "xvdb"]
-  }
+  },
+  // RTMP/HTTP VHOST sections
+  "vhosts": [
+    // the __defaultVhost__ is the default vhost
+    // for example, user use ip to access the stream: rtmp://192.168.1.2/live/livestream.
+    // for which cannot identify the required vhost.
+    {
+      "name": "__defaultVhost__"
+    }
+  ]
 }

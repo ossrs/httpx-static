@@ -19,11 +19,9 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+package agent
 
-const (
-	RtmpListen       = 1935
-	HttpJson         = "application/json"
-	RtmpDefaultVhost = "__defaultVhost__"
-	RtmpDefaultApp   = "__defaultApp__"
-)
+import "errors"
+
+// when agent is busy.
+var AgentBusyError = errors.New("agent is busy")

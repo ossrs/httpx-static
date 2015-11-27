@@ -19,61 +19,21 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
-
-// Unix reload by signal.
-
-package app
+package agent
 
 import (
 	"github.com/ossrs/go-oryx/core"
+	"io/ioutil"
+	"log"
 	"os"
-	"os/signal"
-	"syscall"
+	"testing"
 )
 
-func (c *Config) reloadCycle(wc WorkerContainer) {
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGHUP)
+func TestMain(m *testing.M) {
+	core.Info = log.New(ioutil.Discard, core.LogInfoLabel, log.LstdFlags)
+	core.Trace = log.New(ioutil.Discard, core.LogTraceLabel, log.LstdFlags)
+	core.Warn = log.New(ioutil.Discard, core.LogWarnLabel, log.LstdFlags)
+	core.Error = log.New(ioutil.Discard, core.LogErrorLabel, log.LstdFlags)
 
-	core.Trace.Println("wait for reload signals: kill -1", os.Getpid())
-	for {
-		select {
-		case signal := <-signals:
-			core.Trace.Println("start reload by", signal)
-
-			if err := c.doReload(); err != nil {
-				core.Error.Println("quit for reload failed. err is", err)
-				wc.Quit()
-				return
-			}
-
-		case <-wc.QC():
-			core.Warn.Println("user stop reload")
-			wc.Quit()
-			return
-		}
-	}
-}
-
-func (c *Config) doReload() (err error) {
-	pc := c
-	cc := NewConfig()
-	cc.reloadHandlers = pc.reloadHandlers[:]
-	if err = cc.Loads(c.conf); err != nil {
-		core.Error.Println("reload config failed. err is", err)
-		return
-	}
-	core.Info.Println("reload parse fresh config ok")
-
-	if err = pc.Reload(cc); err != nil {
-		core.Error.Println("apply reload failed. err is", err)
-		return
-	}
-	core.Info.Println("reload completed work")
-
-	Conf = cc
-	core.Trace.Println("reload config ok")
-
-	return
+	os.Exit(m.Run())
 }

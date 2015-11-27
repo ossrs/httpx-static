@@ -23,33 +23,16 @@ package app
 
 import (
 	"fmt"
+	"github.com/ossrs/go-oryx/agent"
 	"github.com/ossrs/go-oryx/core"
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"syscall"
 	"time"
 )
-
-// the container for all worker,
-// which provides the quit and cleanup methods.
-type WorkerContainer interface {
-	// get the quit channel,
-	// worker can fetch the quit signal.
-	// please use Quit to notify the container to quit.
-	QC() <-chan bool
-	// notify the container to quit.
-	// for example, when goroutine fatal error,
-	// which can't be recover, notify server to cleanup and quit.
-	// @remark when got quit signal, the goroutine must notify the
-	//      container to Quit(), for which others goroutines wait.
-	Quit()
-	// fork a new goroutine with work container.
-	// the param f can be a global func or object method.
-	// the param name is the goroutine name.
-	GFork(name string, f func(WorkerContainer))
-}
 
 // the state of server, state graph:
 //      Init => Normal(Ready => Running)
@@ -75,6 +58,7 @@ type Server struct {
 	// core components.
 	htbt   *Heartbeat
 	logger *simpleLogger
+	rtmp   core.OpenCloser
 	// the locker for state, for instance, the closed.
 	lock sync.Mutex
 }
@@ -88,8 +72,9 @@ func NewServer() *Server {
 		htbt:    NewHeartbeat(),
 		logger:  &simpleLogger{},
 	}
+	svr.rtmp = agent.NewRtmp(svr)
 
-	Conf.Subscribe(svr)
+	core.Conf.Subscribe(svr)
 
 	return svr
 }
@@ -100,9 +85,14 @@ func (s *Server) Close() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
+	// only create?
+	if s.closed == StateInit {
+		return
+	}
+
 	// closed?
 	if s.closed == StateClosed {
-		core.Info.Println("server already closed.")
+		core.Warn.Println("server already closed.")
 		return
 	}
 
@@ -121,11 +111,19 @@ func (s *Server) Close() {
 	}
 
 	// do cleanup when stopped.
-	Conf.Unsubscribe(s)
+	core.Conf.Unsubscribe(s)
+
+	// close the rtmp agent.
+	if err := s.rtmp.Close(); err != nil {
+		core.Warn.Println("close rtmp agent failed. err is", err)
+	}
+
+	// close the agent manager.
+	agent.Manager.Close()
 
 	// ok, closed.
 	s.closed = StateClosed
-	core.Info.Println("server closed")
+	core.Trace.Println("server closed")
 }
 
 func (s *Server) ParseConfig(conf string) (err error) {
@@ -135,10 +133,9 @@ func (s *Server) ParseConfig(conf string) (err error) {
 	if s.closed != StateInit {
 		panic("server invalid state.")
 	}
-	s.closed = StateReady
 
 	core.Trace.Println("start to parse config file", conf)
-	if err = Conf.Loads(conf); err != nil {
+	if err = core.Conf.Loads(conf); err != nil {
 		return
 	}
 
@@ -149,11 +146,11 @@ func (s *Server) PrepareLogger() (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.closed != StateReady {
+	if s.closed != StateInit {
 		panic("server invalid state.")
 	}
 
-	if err = s.applyLogger(Conf); err != nil {
+	if err = s.applyLogger(core.Conf); err != nil {
 		return
 	}
 
@@ -164,7 +161,7 @@ func (s *Server) Initialize() (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.closed != StateReady {
+	if s.closed != StateInit {
 		panic("server invalid state.")
 	}
 
@@ -172,19 +169,30 @@ func (s *Server) Initialize() (err error) {
 	// TODO: FIXME: when process the current signal, others may drop.
 	signal.Notify(s.sigs)
 
-	// reload goroutine
-	s.GFork("reload", Conf.reloadCycle)
-	// heartbeat goroutine
-	s.GFork("htbt(discovery)", s.htbt.discoveryCycle)
-	s.GFork("htbt(main)", s.htbt.beatCycle)
+	// use worker container to fork.
+	var wc core.WorkerContainer = s
 
-	c := Conf
+	// reload goroutine
+	wc.GFork("reload", core.Conf.ReloadCycle)
+	// heartbeat goroutine
+	wc.GFork("htbt(discovery)", s.htbt.discoveryCycle)
+	wc.GFork("htbt(main)", s.htbt.beatCycle)
+	// open rtmp agent.
+	if err = s.rtmp.Open(); err != nil {
+		core.Error.Println("open rtmp agent failed. err is", err)
+		return
+	}
+
+	c := core.Conf
 	l := fmt.Sprintf("%v(%v/%v)", c.Log.Tank, c.Log.Level, c.Log.File)
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
 	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v, daemon=%v",
-		c.conf, l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Daemon))
+		c.Conf(), l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Daemon))
+
+	// set to ready, requires cleanup.
+	s.closed = StateReady
 
 	return
 }
@@ -208,12 +216,12 @@ func (s *Server) Run() (err error) {
 		}
 	}()
 
-	core.Info.Println("server running")
+	core.Info.Println("server cycle running")
 
 	// run server, apply settings.
-	s.applyMultipleProcesses(Conf.Workers)
+	s.applyMultipleProcesses(core.Conf.Workers)
 
-	var wc WorkerContainer = s
+	var wc core.WorkerContainer = s
 	for {
 		select {
 		case signal := <-s.sigs:
@@ -228,11 +236,11 @@ func (s *Server) Run() (err error) {
 
 			// wait for all goroutines quit.
 			s.wg.Wait()
-			core.Warn.Println("server quit")
+			core.Warn.Println("server cycle ok")
 			return
-		case <-time.After(time.Second * time.Duration(Conf.Go.GcInterval)):
+		case <-time.After(time.Second * time.Duration(core.Conf.Go.GcInterval)):
 			runtime.GC()
-			core.Info.Println("go runtime gc every", Conf.Go.GcInterval, "seconds")
+			core.Info.Println("go runtime gc every", core.Conf.Go.GcInterval, "seconds")
 		}
 	}
 
@@ -244,39 +252,38 @@ func (s *Server) QC() <-chan bool {
 	return s.quit
 }
 
-func (s *Server) Quit() {
+func (s *Server) Quit() error {
 	select {
 	case s.quit <- true:
 	default:
 	}
+
+	return core.QuitError
 }
 
-func (s *Server) GFork(name string, f func(WorkerContainer)) {
+func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
 
 		defer func() {
 			if r := recover(); r != nil {
-				core.Error.Println(name, "worker panic:", r)
+				if !core.IsNormalQuit(r) {
+					core.Warn.Println("rtmp ignore", r)
+				}
+
+				core.Error.Println(string(debug.Stack()))
+
 				s.Quit()
 			}
 		}()
 
 		f(s)
-		core.Trace.Println(name, "worker terminated.")
+
+		if name != "" {
+			core.Trace.Println(name, "worker terminated.")
+		}
 	}()
-}
-
-// interface ReloadHandler
-func (s *Server) OnReloadGlobal(scope int, cc, pc *Config) (err error) {
-	if scope == ReloadWorkers {
-		s.applyMultipleProcesses(cc.Workers)
-	} else if scope == ReloadLog {
-		s.applyLogger(cc)
-	}
-
-	return
 }
 
 func (s *Server) applyMultipleProcesses(workers int) {
@@ -292,7 +299,7 @@ func (s *Server) applyMultipleProcesses(workers int) {
 	core.Trace.Println("apply workers", workers, "and previous is", pv)
 }
 
-func (s *Server) applyLogger(c *Config) (err error) {
+func (s *Server) applyLogger(c *core.Config) (err error) {
 	if err = s.logger.close(c); err != nil {
 		return
 	}
@@ -302,6 +309,17 @@ func (s *Server) applyLogger(c *Config) (err error) {
 		return
 	}
 	core.Info.Println("open logger ok")
+
+	return
+}
+
+// interface ReloadHandler
+func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+	if scope == core.ReloadWorkers {
+		s.applyMultipleProcesses(cc.Workers)
+	} else if scope == core.ReloadLog {
+		s.applyLogger(cc)
+	}
 
 	return
 }

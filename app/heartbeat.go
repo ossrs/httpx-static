@@ -44,7 +44,12 @@ func NewHeartbeat() *Heartbeat {
 	}
 }
 
-func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
+const (
+	discoveryEmptyInterval   = 3 * time.Second
+	discoveryRefreshInterval = 3600 * time.Second
+)
+
+func (h *Heartbeat) discoveryCycle(w core.WorkerContainer) {
 	interval := time.Duration(0)
 	for {
 		select {
@@ -58,11 +63,11 @@ func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
 				core.Warn.Println("heartbeat discovery failed, err is", err)
 			} else {
 				if len(h.ips) <= 0 {
-					interval = 3 * time.Second
+					interval = discoveryEmptyInterval
 					continue
 				}
 				core.Trace.Println("local ip is", h.ips, "exported", h.exportIp)
-				interval = 300 * time.Second
+				interval = discoveryRefreshInterval
 			}
 		}
 	}
@@ -70,9 +75,9 @@ func (h *Heartbeat) discoveryCycle(w WorkerContainer) {
 	return
 }
 
-func (h *Heartbeat) beatCycle(w WorkerContainer) {
+func (h *Heartbeat) beatCycle(w core.WorkerContainer) {
 	for {
-		c := &Conf.Heartbeat
+		c := &core.Conf.Heartbeat
 
 		select {
 		case <-w.QC():
@@ -139,7 +144,7 @@ func (h *Heartbeat) discovery() (err error) {
 
 	// choose one as exported network address.
 	if len(h.ips) > 0 {
-		h.exportIp = h.ips[Conf.Stat.Network%len(h.ips)]
+		h.exportIp = h.ips[core.Conf.Stat.Network%len(h.ips)]
 	}
 	return
 }
@@ -159,7 +164,7 @@ func (h *Heartbeat) beat() (err error) {
 		Summary  interface{} `json:"summaries,omitempty"`
 	}{}
 
-	c := &Conf.Heartbeat
+	c := &core.Conf.Heartbeat
 	v.DeviceId = c.DeviceId
 	v.Ip = h.exportIp
 

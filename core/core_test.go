@@ -21,9 +21,18 @@
 
 package core
 
-const (
-	RtmpListen       = 1935
-	HttpJson         = "application/json"
-	RtmpDefaultVhost = "__defaultVhost__"
-	RtmpDefaultApp   = "__defaultApp__"
+import (
+	"io/ioutil"
+	"log"
+	"os"
+	"testing"
 )
+
+func TestMain(m *testing.M) {
+	Info = log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags)
+	Trace = log.New(ioutil.Discard, LogTraceLabel, log.LstdFlags)
+	Warn = log.New(ioutil.Discard, LogWarnLabel, log.LstdFlags)
+	Error = log.New(ioutil.Discard, LogErrorLabel, log.LstdFlags)
+
+	os.Exit(m.Run())
+}

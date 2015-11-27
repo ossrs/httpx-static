@@ -21,9 +21,22 @@
 
 package core
 
-const (
-	RtmpListen       = 1935
-	HttpJson         = "application/json"
-	RtmpDefaultVhost = "__defaultVhost__"
-	RtmpDefaultApp   = "__defaultApp__"
-)
+// the container for all worker,
+// which provides the quit and cleanup methods.
+type WorkerContainer interface {
+	// get the quit channel,
+	// worker can fetch the quit signal.
+	// please use Quit to notify the container to quit.
+	QC() <-chan bool
+	// notify the container to quit.
+	// for example, when goroutine fatal error,
+	// which can't be recover, notify server to cleanup and quit.
+	// @remark when got quit signal, the goroutine must notify the
+	//      container to Quit(), for which others goroutines wait.
+	// @remark this quit always return a core.Quit error, which can be ignore.
+	Quit() (err error)
+	// fork a new goroutine with work container.
+	// the param f can be a global func or object method.
+	// the param name is the goroutine name.
+	GFork(name string, f func(WorkerContainer))
+}

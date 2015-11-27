@@ -33,8 +33,8 @@ import (
 func run(svr *app.Server) int {
 	d := new(daemon.Context)
 	var c *os.Process
-	if app.Conf.Daemon {
-		core.Trace.Println("run in daemon mode, log file", app.Conf.Log.File)
+	if core.Conf.Daemon {
+		core.Trace.Println("run in daemon mode, log file", core.Conf.Log.File)
 		if child, err := d.Reborn(); err != nil {
 			core.Error.Println("daemon failed. err is", err)
 			return -1

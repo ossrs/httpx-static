@@ -19,13 +19,12 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package app
+package core
 
 import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/ossrs/go-oryx/core"
 	"io"
 	"io/ioutil"
 	"os"
@@ -35,6 +34,7 @@ import (
 const (
 	ReloadWorkers = iota
 	ReloadLog
+	ReloadListen
 )
 
 // the reload handler,
@@ -217,6 +217,11 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 	return
 }
 
+// the vhost section in config.
+type Vhost struct {
+	Name string `json:"name"`
+}
+
 // the config for this application,
 // which can load from file in json style,
 // and convert to json string.
@@ -256,8 +261,12 @@ type Config struct {
 		Disks   []string `json:"disk"`    // the disks to stat.
 	} `json:"stats"`
 
-	conf           string          `json:"-"` // the config file path.
-	reloadHandlers []ReloadHandler `json:"-"`
+	// the vhosts section.
+	Vhosts []*Vhost `json:"vhosts"`
+
+	conf           string            `json:"-"` // the config file path.
+	reloadHandlers []ReloadHandler   `json:"-"`
+	vhosts         map[string]*Vhost `json:"-"`
 }
 
 // the current global config.
@@ -266,9 +275,11 @@ var Conf = NewConfig()
 func NewConfig() *Config {
 	c := &Config{
 		reloadHandlers: []ReloadHandler{},
+		Vhosts:         make([]*Vhost, 0),
+		vhosts:         make(map[string]*Vhost),
 	}
 
-	c.Listen = core.RtmpListen
+	c.Listen = RtmpListen
 	c.Workers = 0
 	c.Daemon = true
 	c.Go.GcInterval = 300
@@ -285,6 +296,11 @@ func NewConfig() *Config {
 	c.Log.File = "oryx.log"
 
 	return c
+}
+
+// get the config file path.
+func (c *Config) Conf() string {
+	return c.conf
 }
 
 // loads and validate config from config file.
@@ -307,39 +323,67 @@ func (c *Config) Loads(conf string) error {
 		return err
 	}
 
+	// when parse EOF, reparse the config.
+	if err := c.reparse(); err != nil {
+		return err
+	}
+
 	// validate the config.
-	return c.Validate()
+	if err := c.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// reparse the config, to compatible and better structure.
+func (c *Config) reparse() (err error) {
+	for _, v := range c.Vhosts {
+		if _, ok := c.vhosts[v.Name]; ok {
+			return fmt.Errorf("dup vhost name is", v.Name)
+		}
+
+		c.vhosts[v.Name] = v
+	}
+
+	return
 }
 
 // validate the config whether ok.
 func (c *Config) Validate() error {
 	if c.Log.Level == "info" {
-		core.Warn.Println("info level hurts performance")
+		Warn.Println("info level hurts performance")
 	}
 
 	if len(c.Stat.Disks) > 0 {
-		core.Warn.Println("stat disks not support")
+		Warn.Println("stat disks not support")
 	}
 
 	if c.Workers < 0 || c.Workers > 64 {
-		return errors.New(fmt.Sprintf("workers must in [0, 64], actual is %v", c.Workers))
+		return fmt.Errorf("workers must in [0, 64], actual is %v", c.Workers)
 	}
 	if c.Listen <= 0 || c.Listen > 65535 {
-		return errors.New(fmt.Sprintf("listen must in (0, 65535], actual is %v", c.Listen))
+		return fmt.Errorf("listen must in (0, 65535], actual is %v", c.Listen)
 	}
 
 	if c.Go.GcInterval <= 0 || c.Go.GcInterval > 24*3600 {
-		return errors.New(fmt.Sprintf("go gc_interval must in (0, 24*3600], actual is %v", c.Go.GcInterval))
+		return fmt.Errorf("go gc_interval must in (0, 24*3600], actual is %v", c.Go.GcInterval)
 	}
 
 	if c.Log.Level != "info" && c.Log.Level != "trace" && c.Log.Level != "warn" && c.Log.Level != "error" {
-		return errors.New(fmt.Sprintf("log.leve must be info/trace/warn/error, actual is %v", c.Log.Level))
+		return fmt.Errorf("log.leve must be info/trace/warn/error, actual is %v", c.Log.Level)
 	}
 	if c.Log.Tank != "console" && c.Log.Tank != "file" {
-		return errors.New(fmt.Sprintf("log.tank must be console/file, actual is %v", c.Log.Tank))
+		return fmt.Errorf("log.tank must be console/file, actual is %v", c.Log.Tank)
 	}
 	if c.Log.Tank == "file" && len(c.Log.File) == 0 {
 		return errors.New("log.file must not be empty for file tank")
+	}
+
+	for i, v := range c.Vhosts {
+		if v.Name == "" {
+			return fmt.Errorf("the %v vhost is empty", i)
+		}
 	}
 
 	return nil
@@ -407,9 +451,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		core.Trace.Println("reload apply workers ok")
+		Trace.Println("reload apply workers ok")
 	} else {
-		core.Info.Println("reload ignore workers")
+		Info.Println("reload ignore workers")
 	}
 
 	if cc.Log.File != pc.Log.File || cc.Log.Level != pc.Log.Level || cc.Log.Tank != pc.Log.Tank {
@@ -418,10 +462,33 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		core.Trace.Println("reload apply log ok")
+		Trace.Println("reload apply log ok")
 	} else {
-		core.Info.Println("reload ignore log")
+		Info.Println("reload ignore log")
+	}
+
+	if cc.Listen != pc.Listen {
+		for _, h := range cc.reloadHandlers {
+			if err = h.OnReloadGlobal(ReloadListen, cc, pc); err != nil {
+				return
+			}
+		}
+		Trace.Println("reload apply listen ok")
+	} else {
+		Info.Println("reload ignore listen")
 	}
 
 	return
+}
+
+func (c *Config) Vhost(name string) (*Vhost, error) {
+	if v, ok := c.vhosts[name]; ok {
+		return v, nil
+	}
+
+	if name != RtmpDefaultVhost {
+		return c.Vhost(RtmpDefaultVhost)
+	}
+
+	return nil, VhostNotFoundError
 }
