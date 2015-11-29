@@ -1747,7 +1747,9 @@ func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 // copy the message headers, share body.
 func (v *OryxRtmpMessage) Copy() *OryxRtmpMessage {
 	mcp := *v.Rtmp
-	return NewOryxRtmpMessage(&mcp)
+	return &OryxRtmpMessage{
+		Rtmp: &mcp,
+	}
 }
 
 // set the timestamp to zero.
