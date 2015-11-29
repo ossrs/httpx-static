@@ -842,6 +842,112 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 	})
 }
 
+// for Flash player or edge, response the start play event.
+func (v *RtmpConnection) FlashStartPlay() (err error) {
+	// StreamBegin
+	if p, ok := NewRtmpUserControlPacket().(*RtmpUserControlPacket); ok {
+		p.EventType = RtmpUint16(RtmpPcucStreamBegin)
+		p.EventData = RtmpUint32(v.sid)
+		if err = v.write(FlashPlayTimeout, p, 0); err != nil {
+			return
+		}
+	}
+
+	// onStatus(NetStream.Play.Reset)
+	if p, ok := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket); ok {
+		p.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
+		p.Data.Set(StatusCode, NewAmf0String(StatusCodeStreamReset))
+		p.Data.Set(StatusDescription, NewAmf0String("Playing and resetting stream."))
+		p.Data.Set(StatusDetails, NewAmf0String("stream"))
+		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+			return
+		}
+	}
+
+	// onStatus(NetStream.Play.Start)
+	if p, ok := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket); ok {
+		p.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
+		p.Data.Set(StatusCode, NewAmf0String(StatusCodeStreamStart))
+		p.Data.Set(StatusDescription, NewAmf0String("Started playing stream."))
+		p.Data.Set(StatusDetails, NewAmf0String("stream"))
+		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+			return
+		}
+	}
+
+	// |RtmpSampleAccess(false, false)
+	if p, ok := NewRtmpSampleAccessPacket().(*RtmpSampleAccessPacket); ok {
+		// allow audio/video sample.
+		// @see: https://github.com/ossrs/srs/issues/49
+		p.VideoSampleAccess = true
+		p.AudioSampleAccess = true
+		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+			return
+		}
+	}
+
+	// onStatus(NetStream.Data.Start)
+	if p, ok := NewRtmpOnStatusDataPacket().(*RtmpOnStatusDataPacket); ok {
+		p.Data.Set(StatusCode, NewAmf0String(StatusCodeDataStart))
+		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
+// to send message over rtmp.
+func (v *RtmpConnection) SendMessage(timeout time.Duration, m *RtmpMessage) (err error) {
+	select {
+	case v.out <- m:
+		// ok
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+// to receive message from rtmp.
+func (v *RtmpConnection) RecvMessage(timeout time.Duration, fn func(*RtmpMessage) error) (err error) {
+	return v.read(timeout, func(m *RtmpMessage) (loop bool, err error) {
+		return true, fn(m)
+	})
+}
+
+// to receive message from rtmp or another oryx channel.
+func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
+	for {
+		select {
+		case m := <-extra:
+			if err = fn(nil, m); err != nil {
+				return
+			}
+		case m := <-v.in:
+			if err = fn(m, nil); err != nil {
+				return
+			}
+		case <-time.After(timeout):
+			core.Error.Println("timeout for", timeout)
+			return core.TimeoutError
+		case <-v.closing:
+			return core.ClosedError
+		case <-v.wc.QC():
+			return v.wc.Quit()
+		}
+	}
+
+	return
+}
+
 func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
 	current := p1
 
@@ -923,6 +1029,12 @@ func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 			return
 		}
 
+		// when parse got empty packet.
+		if p == nil {
+			core.Warn.Println("ignore empty packet.")
+			return true, nil
+		}
+
 		switch mt := p.MessageType(); mt {
 		// ignore silently.
 		case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:
@@ -990,19 +1102,7 @@ func (v *RtmpConnection) write(timeout time.Duration, p RtmpPacket, sid uint32) 
 		return
 	}
 
-	select {
-	case v.out <- m:
-	// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
+	return v.SendMessage(timeout, m)
 }
 
 // receiver goroutine.
@@ -1467,6 +1567,35 @@ type RtmpMessage struct {
 
 func NewRtmpMessage() *RtmpMessage {
 	return &RtmpMessage{}
+}
+
+// convert the rtmp message to oryx message.
+func (v *RtmpMessage) ToMessage() (core.Message, error) {
+	return NewOryxRtmpMessage(v)
+}
+
+// covert the rtmp message to oryx message.
+type OryxRtmpMessage struct {
+	Rtmp *RtmpMessage
+}
+
+func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
+	v := &OryxRtmpMessage{
+		Rtmp: m,
+	}
+
+	// parse the message, for example, decode the h.264 sps/pps.
+	// TODO: FIXME: implements it.
+
+	return v, nil
+}
+
+func (v *OryxRtmpMessage) String() string {
+	return fmt.Sprintf("%v %vB", v.Rtmp.MessageType, v.Rtmp.Payload.Len())
+}
+
+func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {
+	return core.MuxerRtmp
 }
 
 // RTMP packet, which can be
@@ -2129,6 +2258,74 @@ func (v *RtmpOnStatusCallPacket) PreferCid() uint32 {
 
 func (v *RtmpOnStatusCallPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
+}
+
+// onStatus data, AMF0 Data
+type RtmpOnStatusDataPacket struct {
+	// Name of command. Set to "onStatus"
+	Name Amf0String
+	// Name-value pairs that describe the response from the server.
+	// 'code', are names of few among such information.
+	Data *Amf0Object
+}
+
+func NewRtmpOnStatusDataPacket() RtmpPacket {
+	return &RtmpOnStatusDataPacket{
+		Name: Amf0String(Amf0CommandOnStatus),
+		Data: NewAmf0Object(),
+	}
+}
+
+func (v *RtmpOnStatusDataPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, v.Data)
+}
+
+func (v *RtmpOnStatusDataPacket) UnmarshalBinary(data []byte) (err error) {
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, v.Data)
+}
+
+func (v *RtmpOnStatusDataPacket) PreferCid() uint32 {
+	return RtmpCidOverStream
+}
+
+func (v *RtmpOnStatusDataPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0DataMessage
+}
+
+// AMF0Data RtmpSampleAccess
+type RtmpSampleAccessPacket struct {
+	// Name of command. Set to "|RtmpSampleAccess".
+	Name Amf0String
+	// whether allow access the sample of video.
+	// @see: https://github.com/ossrs/srs/issues/49
+	// @see: http://help.adobe.com/en_US/FlashPlatform/reference/actionscript/3/flash/net/NetStream.html#videoSampleAccess
+	VideoSampleAccess Amf0Boolean
+	// whether allow access the sample of audio.
+	// @see: https://github.com/ossrs/srs/issues/49
+	// @see: http://help.adobe.com/en_US/FlashPlatform/reference/actionscript/3/flash/net/NetStream.html#audioSampleAccess
+	AudioSampleAccess Amf0Boolean
+}
+
+func NewRtmpSampleAccessPacket() RtmpPacket {
+	return &RtmpSampleAccessPacket{
+		Name: Amf0String(Amf0DataSampleAccess),
+	}
+}
+
+func (v *RtmpSampleAccessPacket) MarshalBinary() (data []byte, err error) {
+	return core.Marshals(&v.Name, &v.VideoSampleAccess, &v.AudioSampleAccess)
+}
+
+func (v *RtmpSampleAccessPacket) UnmarshalBinary(data []byte) (err error) {
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.VideoSampleAccess, &v.AudioSampleAccess)
+}
+
+func (v *RtmpSampleAccessPacket) PreferCid() uint32 {
+	return RtmpCidOverStream
+}
+
+func (v *RtmpSampleAccessPacket) MessageType() RtmpMessageType {
+	return RtmpMsgAMF0DataMessage
 }
 
 // 7.1. Set Chunk Size

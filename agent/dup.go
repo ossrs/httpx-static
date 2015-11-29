@@ -21,13 +21,19 @@
 
 package agent
 
-import "github.com/ossrs/go-oryx/core"
+import (
+	"github.com/ossrs/go-oryx/core"
+)
 
 type DupAgent struct {
+	upstream core.Agent
+	sources  []core.Agent
 }
 
 func NewDupAgent() core.Agent {
-	return &DupAgent{}
+	return &DupAgent{
+		sources: make([]core.Agent, 0),
+	}
 }
 
 func (v *DupAgent) Open() (err error) {
@@ -38,22 +44,46 @@ func (v *DupAgent) Close() (err error) {
 	return
 }
 
-func (v *DupAgent) Work() (err error) {
+func (v *DupAgent) Pump() (err error) {
+	core.Error.Println("dup agent not support pump.")
+	return AgentNotSupportError
+}
+
+func (v *DupAgent) Write(m core.Message) (err error) {
+	for _, a := range v.sources {
+		if err = a.Write(m); err != nil {
+			return
+		}
+	}
+
 	return
 }
 
-func (v *DupAgent) Source() (ss core.Source) {
-	return v
+func (v *DupAgent) Tie(sink core.Agent) (err error) {
+	v.upstream = sink
+	return v.upstream.Flow(v)
 }
 
-func (v *DupAgent) Sink() (sk core.Sink) {
+func (v *DupAgent) UnTie(sink core.Agent) (err error) {
+	v.upstream = nil
+	return sink.UnFlow(v)
+}
+
+func (v *DupAgent) Flow(source core.Agent) (err error) {
+	v.sources = append(v.sources, source)
 	return
 }
 
-func (v *DupAgent) Tie(sink core.Sink) (err error) {
+func (v *DupAgent) UnFlow(source core.Agent) (err error) {
+	for i, s := range v.sources {
+		if s == source {
+			v.sources = append(v.sources[:i], v.sources[i+1:]...)
+			break
+		}
+	}
 	return
 }
 
-func (v *DupAgent) GetSink() (sink core.Sink) {
-	return
+func (v *DupAgent) TiedSink() (sink core.Agent) {
+	return v.upstream
 }

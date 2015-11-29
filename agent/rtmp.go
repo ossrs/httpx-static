@@ -239,10 +239,13 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 
 	var agent core.Agent
 	if conn.Req.Type.IsPlay() {
-		// TODO: FIXME: implements it.
+		if agent, err = Manager.NewRtmpPlayAgent(conn, v.wc); err != nil {
+			core.Error.Println("create play agent failed. err is", err)
+			return
+		}
 	} else if conn.Req.Type.IsPublish() {
 		if agent, err = Manager.NewRtmpPublishAgent(conn, v.wc); err != nil {
-			core.Error.Println("create rtmp publish agent failed. err is", err)
+			core.Error.Println("create publish agent failed. err is", err)
 			return
 		}
 	} else {
@@ -262,7 +265,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		return
 	}
 
-	if err = agent.Work(); err != nil {
+	if err = agent.Pump(); err != nil {
 		core.Warn.Println("ignore rtmp publish agent work failed. err is", err)
 		return
 	}
@@ -287,10 +290,112 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	return
 }
 
+// rtmp play agent, to serve the player or edge.
+type RtmpPlayAgent struct {
+	conn     *protocol.RtmpConnection
+	wc       core.WorkerContainer
+	upstream core.Agent
+	msgs     chan core.Message
+}
+
+const RtmpPlayMsgs = 100
+
+func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
+	return &RtmpPlayAgent{
+		conn: conn,
+		wc:   wc,
+		msgs: make(chan core.Message, RtmpPlayMsgs),
+	}
+}
+
+func (v *RtmpPlayAgent) Open() (err error) {
+	if err = v.conn.FlashStartPlay(); err != nil {
+		core.Error.Println("start play failed. err is", err)
+		return
+	}
+
+	// check refer.
+	// TODO: FIXME: implements it.
+
+	return
+}
+
+func (v *RtmpPlayAgent) Close() (err error) {
+	return v.UnTie(v.upstream)
+}
+
+func (v *RtmpPlayAgent) Pump() (err error) {
+	return v.conn.MixRecvMessage(protocol.FlashPlayTimeout, v.msgs,
+		func(m0 *protocol.RtmpMessage, m1 core.Message) (err error) {
+			// message from publisher to send to player.
+			if m1 != nil {
+				switch m1.Muxer() {
+				case core.MuxerRtmp:
+					if m, ok := m1.(*protocol.OryxRtmpMessage); ok {
+						return v.conn.SendMessage(protocol.FlashPlayTimeout, m.Rtmp)
+					}
+					core.Warn.Println("ignore not rtmp message to play agent.")
+					return
+				default:
+					core.Warn.Println("ignore message to play agent.")
+					return
+				}
+			}
+
+			// message from player.
+			if m0 != nil {
+				// TODO: FIXME: implements it.
+				return
+			}
+			return
+		},
+	)
+}
+
+func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
+	// correct message timestamp.
+	// TODO: FIXME: implements it.
+
+	// drop when overflow.
+	// TODO: FIXME: improve it.
+	select {
+	case v.msgs <- m:
+	default:
+		core.Warn.Println("drop msg", m)
+	}
+
+	return
+}
+
+func (v *RtmpPlayAgent) Tie(sink core.Agent) (err error) {
+	v.upstream = sink
+	return sink.Flow(v)
+}
+
+func (v *RtmpPlayAgent) UnTie(sink core.Agent) (err error) {
+	v.upstream = nil
+	return sink.UnFlow(v)
+}
+
+func (v *RtmpPlayAgent) Flow(source core.Agent) (err error) {
+	core.Error.Println("play agent not support flow.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPlayAgent) UnFlow(source core.Agent) (err error) {
+	core.Error.Println("play agent not support flow.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPlayAgent) TiedSink() (sink core.Agent) {
+	return v.upstream
+}
+
 // rtmp publish agent, to serve the FMLE or flash publisher/encoder.
 type RtmpPublishAgent struct {
 	conn *protocol.RtmpConnection
 	wc   core.WorkerContainer
+	flow core.Agent
 }
 
 func (v *RtmpPublishAgent) Open() (err error) {
@@ -310,20 +415,55 @@ func (v *RtmpPublishAgent) Open() (err error) {
 }
 
 func (v *RtmpPublishAgent) Close() (err error) {
+	if err = v.flow.UnTie(v); err != nil {
+		return
+	}
+
 	// release publisher.
 	// TODO: FIXME: implements it.
 
 	return
 }
 
-func (v *RtmpPublishAgent) Work() (err error) {
+func (v *RtmpPublishAgent) Pump() (err error) {
+	tm := protocol.PublishRecvTimeout
+
+	return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) (err error) {
+		var msg core.Message
+
+		if msg, err = m.ToMessage(); err != nil {
+			return
+		}
+
+		return v.flow.Write(msg)
+	})
+}
+
+func (v *RtmpPublishAgent) Write(m core.Message) (err error) {
+	core.Error.Println("publish agent not support write message.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPublishAgent) Tie(sink core.Agent) (err error) {
+	core.Error.Println("publish agent has no upstream.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPublishAgent) UnTie(sink core.Agent) (err error) {
+	core.Error.Println("publish agent has no upstream.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPublishAgent) Flow(source core.Agent) (err error) {
+	v.flow = source
 	return
 }
 
-func (v *RtmpPublishAgent) Source() (ss core.Source) {
+func (v *RtmpPublishAgent) UnFlow(source core.Agent) (err error) {
+	v.flow = nil
 	return
 }
 
-func (v *RtmpPublishAgent) Sink() (sk core.Sink) {
+func (v *RtmpPublishAgent) TiedSink() (sink core.Agent) {
 	return
 }
