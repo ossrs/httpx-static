@@ -921,6 +921,53 @@ func TestRtmpOnStatusCallPacket(t *testing.T) {
 	}
 }
 
+func TestRtmpSampleAccessPacket(t *testing.T) {
+	p := NewRtmpSampleAccessPacket().(*RtmpSampleAccessPacket)
+	if p.Name != "|RtmpSampleAccess" || p.VideoSampleAccess != false || p.AudioSampleAccess != false {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		1, 1,
+		1, 1,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" || p.VideoSampleAccess != true || p.AudioSampleAccess != true {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpSampleAccessPacket().(*RtmpSampleAccessPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 24 {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpOnStatusDataPacket(t *testing.T) {
+	p := NewRtmpOnStatusDataPacket().(*RtmpOnStatusDataPacket)
+	if p.Name != "onStatus" {
+		t.Error("invalid")
+	}
+
+	if err := p.UnmarshalBinary([]byte{
+		2, 0, 5, '_', 'n', 'a', 'm', 'e',
+		3, 0, 0, 9,
+	}); err != nil {
+		t.Error("invalid")
+	}
+
+	if p.Name != "_name" {
+		t.Error("invalid")
+	}
+
+	p = NewRtmpOnStatusDataPacket().(*RtmpOnStatusDataPacket)
+	if b, err := p.MarshalBinary(); err != nil || len(b) != 15 {
+		t.Error("invalid", b)
+	}
+}
+
 func TestRtmpRequest(t *testing.T) {
 	p := NewRtmpRequest()
 	if p.TcUrl != "" || p.Stream != "" || p.App != "" || p.Type != RtmpUnknown {

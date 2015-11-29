@@ -298,6 +298,14 @@ type RtmpPlayAgent struct {
 }
 
 func (v *RtmpPlayAgent) Open() (err error) {
+	if err = v.conn.FlashStartPlay(); err != nil {
+		core.Error.Println("start play failed. err is", err)
+		return
+	}
+
+	// check refer.
+	// TODO: FIXME: implements it.
+
 	return
 }
 

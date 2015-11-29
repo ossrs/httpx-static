@@ -33,4 +33,5 @@ const (
 	IdentifyTimeout         = OnBwDoneTimeout
 	FmlePublishTimeout      = IdentifyTimeout
 	PublishRecvTimeout      = FmlePublishTimeout
+	FlashPlayTimeout        = PublishRecvTimeout
 )
