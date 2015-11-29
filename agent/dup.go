@@ -23,11 +23,19 @@ package agent
 
 import (
 	"github.com/ossrs/go-oryx/core"
+	"github.com/ossrs/go-oryx/protocol"
 )
 
 type DupAgent struct {
 	upstream core.Agent
 	sources  []core.Agent
+
+	// video sequence header cache.
+	vsh *protocol.OryxRtmpMessage
+	// audio sequence header cache.
+	ash *protocol.OryxRtmpMessage
+	// metadata sequence header cache.
+	msh *protocol.OryxRtmpMessage
 }
 
 func NewDupAgent() core.Agent {
@@ -50,6 +58,25 @@ func (v *DupAgent) Pump() (err error) {
 }
 
 func (v *DupAgent) Write(m core.Message) (err error) {
+	// cache the sequence header.
+	if m, ok := m.(*protocol.OryxRtmpMessage); ok {
+		if m.Rtmp.MessageType.IsData() {
+			v.msh = m.Copy()
+			core.Trace.Println("cache metadta sh.")
+		} else if m.Rtmp.MessageType.IsVideo() {
+			if m.Rtmp.IsVideoSequenceHeader() {
+				v.vsh = m.Copy()
+				core.Trace.Println("cache video sh.")
+			}
+		} else if m.Rtmp.MessageType.IsAudio() {
+			if m.Rtmp.IsAudioSequenceHeader() {
+				v.ash = m.Copy()
+				core.Trace.Println("cache audio sh.")
+			}
+		}
+	}
+
+	// copy to all agents.
 	for _, a := range v.sources {
 		if err = a.Write(m); err != nil {
 			return
@@ -71,6 +98,24 @@ func (v *DupAgent) UnTie(sink core.Agent) (err error) {
 
 func (v *DupAgent) Flow(source core.Agent) (err error) {
 	v.sources = append(v.sources, source)
+
+	if v.msh != nil {
+		if err = source.Write(v.msh.Copy().ZeroTimestamp()); err != nil {
+			return
+		}
+	}
+
+	if v.vsh != nil {
+		if err = source.Write(v.vsh.Copy().ZeroTimestamp()); err != nil {
+			return
+		}
+	}
+
+	if v.ash != nil {
+		if err = source.Write(v.ash.Copy().ZeroTimestamp()); err != nil {
+			return
+		}
+	}
 	return
 }
 
