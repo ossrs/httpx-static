@@ -53,7 +53,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. v0.1.5 Extend JSON with c++ style comments.
 1. v0.1.6 Support heartbeat to report for ARM.
 1. v0.1.7 Use agent(source+channel+sink) to build complex stream river.
-1. v0.1.8 Supports Publish and Play VP6+Speex RTMP stream.
+1. v0.1.8 Supports Publish and Play VP6 RTMP stream.
 1. [dev] Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
 1. [dev] Supports Connection Oriented Traceable log.
 
