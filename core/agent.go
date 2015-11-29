@@ -85,8 +85,10 @@ type Agent interface {
 
 	// source tie to the upstream sink.
 	Tie(sink Agent) (err error)
-	// sink flow to the downstream source.
-	Flow(source Agent) (err error)
 	// get the tied upstream sink of source.
 	TiedSink() (sink Agent)
+
+	// sink flow to the downstream source.
+	// @remark internal api, sink.Flow(source) when source.tie(sink).
+	Flow(source Agent) (err error)
 }

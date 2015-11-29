@@ -930,6 +930,12 @@ func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 			return
 		}
 
+		// when parse got empty packet.
+		if p == nil {
+			core.Warn.Println("ignore empty packet.")
+			return true, nil
+		}
+
 		switch mt := p.MessageType(); mt {
 		// ignore silently.
 		case RtmpMsgAcknowledgement, RtmpMsgSetChunkSize, RtmpMsgWindowAcknowledgementSize, RtmpMsgUserControlMessage:

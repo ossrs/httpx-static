@@ -21,7 +21,10 @@
 
 package agent
 
-import "github.com/ossrs/go-oryx/core"
+import (
+	"github.com/ossrs/go-oryx/core"
+	"time"
+)
 
 type DupAgent struct {
 	upstream core.Agent
@@ -40,6 +43,10 @@ func (v *DupAgent) Close() (err error) {
 }
 
 func (v *DupAgent) Pump() (err error) {
+	for {
+		time.Sleep(3 * time.Second)
+		core.Trace.Println("dup agent pump message")
+	}
 	return
 }
 
@@ -50,7 +57,7 @@ func (v *DupAgent) Write(m core.Message) (err error) {
 
 func (v *DupAgent) Tie(sink core.Agent) (err error) {
 	v.upstream = sink
-	return
+	return sink.Flow(v)
 }
 
 func (v *DupAgent) Flow(source core.Agent) (err error) {

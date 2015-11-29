@@ -239,10 +239,13 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 
 	var agent core.Agent
 	if conn.Req.Type.IsPlay() {
-		// TODO: FIXME: implements it.
+		if agent, err = Manager.NewRtmpPlayAgent(conn, v.wc); err != nil {
+			core.Error.Println("create play agent failed. err is", err)
+			return
+		}
 	} else if conn.Req.Type.IsPublish() {
 		if agent, err = Manager.NewRtmpPublishAgent(conn, v.wc); err != nil {
-			core.Error.Println("create rtmp publish agent failed. err is", err)
+			core.Error.Println("create publish agent failed. err is", err)
 			return
 		}
 	} else {
@@ -285,6 +288,43 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	}
 
 	return
+}
+
+// rtmp play agent, to serve the player or edge.
+type RtmpPlayAgent struct {
+	conn     *protocol.RtmpConnection
+	wc       core.WorkerContainer
+	upstream core.Agent
+}
+
+func (v *RtmpPlayAgent) Open() (err error) {
+	return
+}
+
+func (v *RtmpPlayAgent) Close() (err error) {
+	return
+}
+
+func (v *RtmpPlayAgent) Pump() (err error) {
+	return
+}
+
+func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
+	return
+}
+
+func (v *RtmpPlayAgent) Tie(sink core.Agent) (err error) {
+	v.upstream = sink
+	return sink.Flow(v)
+}
+
+func (v *RtmpPlayAgent) Flow(source core.Agent) (err error) {
+	core.Error.Println("play agent not support flow.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPlayAgent) TiedSink() (sink core.Agent) {
+	return v.upstream
 }
 
 // rtmp publish agent, to serve the FMLE or flash publisher/encoder.
@@ -332,12 +372,12 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 }
 
 func (v *RtmpPublishAgent) Write(m core.Message) (err error) {
-	core.Error.Println("rtmp publish agent not support write message.")
+	core.Error.Println("publish agent not support write message.")
 	return AgentNotSupportError
 }
 
 func (v *RtmpPublishAgent) Tie(sink core.Agent) (err error) {
-	core.Error.Println("rtmp publish agent has no upstream.")
+	core.Error.Println("publish agent has no upstream.")
 	return AgentNotSupportError
 }
 
@@ -347,5 +387,5 @@ func (v *RtmpPublishAgent) Flow(source core.Agent) (err error) {
 }
 
 func (v *RtmpPublishAgent) TiedSink() (sink core.Agent) {
-	return nil
+	return
 }

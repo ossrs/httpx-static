@@ -50,20 +50,72 @@ func (v *AgentManager) Close() {
 	}
 }
 
-func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) (core.Agent, error) {
+func (v *AgentManager) NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) (a core.Agent, err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
 	// finger the source agent out, which dup to other agent.
-	var ok bool
 	var dup core.Agent
-	if dup, ok = v.sources[conn.Req.Uri()]; !ok {
-		dup = NewDupAgent()
-		v.sources[conn.Req.Uri()] = dup
+	if dup, err = v.getDupAgent(conn.Req.Uri()); err != nil {
+		return
+	}
 
-		if err := dup.Open(); err != nil {
+	// create the publish agent
+	a = &RtmpPlayAgent{
+		conn: conn,
+		wc:   wc,
+	}
+
+	// tie the play agent to dup sink.
+	if err = a.Tie(dup); err != nil {
+		core.Error.Println("tie agent failed. err is", err)
+		return
+	}
+
+	return
+}
+
+func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) (a core.Agent, err error) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	// finger the source agent out, which dup to other agent.
+	var dup core.Agent
+	if dup, err = v.getDupAgent(conn.Req.Uri()); err != nil {
+		return
+	}
+
+	// when dup source not nil, then the source is using.
+	if dup.TiedSink() != nil {
+		err = AgentBusyError
+		core.Error.Println("source busy. err is", err)
+		return
+	}
+
+	// create the publish agent
+	a = &RtmpPublishAgent{
+		conn: conn,
+		wc:   wc,
+	}
+
+	// tie the publish agent to dup source.
+	if err = dup.Tie(a); err != nil {
+		core.Error.Println("tie agent failed. err is", err)
+		return
+	}
+
+	return
+}
+
+func (v *AgentManager) getDupAgent(uri string) (dup core.Agent, err error) {
+	var ok bool
+	if dup, ok = v.sources[uri]; !ok {
+		dup = NewDupAgent()
+		v.sources[uri] = dup
+
+		if err = dup.Open(); err != nil {
 			core.Error.Println("open dup agent failed. err is", err)
-			return nil, err
+			return
 		}
 
 		// start async work for dup worker.
@@ -80,28 +132,5 @@ func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc cor
 		<-wait
 	}
 
-	// when dup source not nil, then the source is using.
-	if dup.TiedSink() != nil {
-		err := AgentBusyError
-		core.Error.Println("source busy. err is", err)
-		return nil, err
-	}
-
-	// create the publish agent
-	r := &RtmpPublishAgent{
-		conn: conn,
-		wc:   wc,
-	}
-
-	// tie the publish agent to dup source.
-	if err := dup.Tie(r); err != nil {
-		core.Error.Println("tie agent failed. err is", err)
-		return nil, err
-	}
-	if err := r.Flow(dup); err != nil {
-		core.Error.Println("flow agent failed. err is", err)
-		return nil, err
-	}
-
-	return r, nil
+	return
 }
