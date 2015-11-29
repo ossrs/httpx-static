@@ -27,10 +27,13 @@ import (
 
 type DupAgent struct {
 	upstream core.Agent
+	sources  []core.Agent
 }
 
 func NewDupAgent() core.Agent {
-	return &DupAgent{}
+	return &DupAgent{
+		sources: make([]core.Agent, 0),
+	}
 }
 
 func (v *DupAgent) Open() (err error) {
@@ -42,20 +45,42 @@ func (v *DupAgent) Close() (err error) {
 }
 
 func (v *DupAgent) Pump() (err error) {
-	return
+	core.Error.Println("dup agent not support pump.")
+	return AgentNotSupportError
 }
 
 func (v *DupAgent) Write(m core.Message) (err error) {
-	core.Trace.Println(m)
+	for _, a := range v.sources {
+		if err = a.Write(m); err != nil {
+			return
+		}
+	}
+
 	return
 }
 
 func (v *DupAgent) Tie(sink core.Agent) (err error) {
 	v.upstream = sink
-	return sink.Flow(v)
+	return v.upstream.Flow(v)
+}
+
+func (v *DupAgent) UnTie(sink core.Agent) (err error) {
+	v.upstream = nil
+	return sink.UnFlow(v)
 }
 
 func (v *DupAgent) Flow(source core.Agent) (err error) {
+	v.sources = append(v.sources, source)
+	return
+}
+
+func (v *DupAgent) UnFlow(source core.Agent) (err error) {
+	for i, s := range v.sources {
+		if s == source {
+			v.sources = append(v.sources[:i], v.sources[i+1:]...)
+			break
+		}
+	}
 	return
 }
 

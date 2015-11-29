@@ -899,11 +899,53 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	return
 }
 
+// to send message over rtmp.
+func (v *RtmpConnection) SendMessage(timeout time.Duration, m *RtmpMessage) (err error) {
+	select {
+	case v.out <- m:
+		// ok
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
 // to receive message from rtmp.
 func (v *RtmpConnection) RecvMessage(timeout time.Duration, fn func(*RtmpMessage) error) (err error) {
 	return v.read(timeout, func(m *RtmpMessage) (loop bool, err error) {
 		return true, fn(m)
 	})
+}
+
+// to receive message from rtmp or another oryx channel.
+func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
+	for {
+		select {
+		case m := <-extra:
+			if err = fn(nil, m); err != nil {
+				return
+			}
+		case m := <-v.in:
+			if err = fn(m, nil); err != nil {
+				return
+			}
+		case <-time.After(timeout):
+			core.Error.Println("timeout for", timeout)
+			return core.TimeoutError
+		case <-v.closing:
+			return core.ClosedError
+		case <-v.wc.QC():
+			return v.wc.Quit()
+		}
+	}
+
+	return
 }
 
 func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
@@ -1060,19 +1102,7 @@ func (v *RtmpConnection) write(timeout time.Duration, p RtmpPacket, sid uint32) 
 		return
 	}
 
-	select {
-	case v.out <- m:
-	// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
+	return v.SendMessage(timeout, m)
 }
 
 // receiver goroutine.
@@ -1546,12 +1576,12 @@ func (v *RtmpMessage) ToMessage() (core.Message, error) {
 
 // covert the rtmp message to oryx message.
 type OryxRtmpMessage struct {
-	rtmp *RtmpMessage
+	Rtmp *RtmpMessage
 }
 
 func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 	v := &OryxRtmpMessage{
-		rtmp: m,
+		Rtmp: m,
 	}
 
 	// parse the message, for example, decode the h.264 sps/pps.
@@ -1561,7 +1591,7 @@ func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 }
 
 func (v *OryxRtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, v.rtmp.Payload.Len())
+	return fmt.Sprintf("%v %vB", v.Rtmp.MessageType, v.Rtmp.Payload.Len())
 }
 
 func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {

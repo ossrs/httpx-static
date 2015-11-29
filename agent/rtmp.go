@@ -295,6 +295,17 @@ type RtmpPlayAgent struct {
 	conn     *protocol.RtmpConnection
 	wc       core.WorkerContainer
 	upstream core.Agent
+	msgs     chan core.Message
+}
+
+const RtmpPlayMsgs = 100
+
+func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
+	return &RtmpPlayAgent{
+		conn: conn,
+		wc:   wc,
+		msgs: make(chan core.Message, RtmpPlayMsgs),
+	}
 }
 
 func (v *RtmpPlayAgent) Open() (err error) {
@@ -310,14 +321,49 @@ func (v *RtmpPlayAgent) Open() (err error) {
 }
 
 func (v *RtmpPlayAgent) Close() (err error) {
-	return
+	return v.UnTie(v.upstream)
 }
 
 func (v *RtmpPlayAgent) Pump() (err error) {
-	return
+	return v.conn.MixRecvMessage(protocol.FlashPlayTimeout, v.msgs,
+		func(m0 *protocol.RtmpMessage, m1 core.Message) (err error) {
+			// message from publisher to send to player.
+			if m1 != nil {
+				switch m1.Muxer() {
+				case core.MuxerRtmp:
+					if m, ok := m1.(*protocol.OryxRtmpMessage); ok {
+						return v.conn.SendMessage(protocol.FlashPlayTimeout, m.Rtmp)
+					}
+					core.Warn.Println("ignore not rtmp message to play agent.")
+					return
+				default:
+					core.Warn.Println("ignore message to play agent.")
+					return
+				}
+			}
+
+			// message from player.
+			if m0 != nil {
+				// TODO: FIXME: implements it.
+				return
+			}
+			return
+		},
+	)
 }
 
 func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
+	// correct message timestamp.
+	// TODO: FIXME: implements it.
+
+	// drop when overflow.
+	// TODO: FIXME: improve it.
+	select {
+	case v.msgs <- m:
+	default:
+		core.Warn.Println("drop msg", m)
+	}
+
 	return
 }
 
@@ -326,7 +372,17 @@ func (v *RtmpPlayAgent) Tie(sink core.Agent) (err error) {
 	return sink.Flow(v)
 }
 
+func (v *RtmpPlayAgent) UnTie(sink core.Agent) (err error) {
+	v.upstream = nil
+	return sink.UnFlow(v)
+}
+
 func (v *RtmpPlayAgent) Flow(source core.Agent) (err error) {
+	core.Error.Println("play agent not support flow.")
+	return AgentNotSupportError
+}
+
+func (v *RtmpPlayAgent) UnFlow(source core.Agent) (err error) {
 	core.Error.Println("play agent not support flow.")
 	return AgentNotSupportError
 }
@@ -359,6 +415,10 @@ func (v *RtmpPublishAgent) Open() (err error) {
 }
 
 func (v *RtmpPublishAgent) Close() (err error) {
+	if err = v.flow.UnTie(v); err != nil {
+		return
+	}
+
 	// release publisher.
 	// TODO: FIXME: implements it.
 
@@ -389,8 +449,18 @@ func (v *RtmpPublishAgent) Tie(sink core.Agent) (err error) {
 	return AgentNotSupportError
 }
 
+func (v *RtmpPublishAgent) UnTie(sink core.Agent) (err error) {
+	core.Error.Println("publish agent has no upstream.")
+	return AgentNotSupportError
+}
+
 func (v *RtmpPublishAgent) Flow(source core.Agent) (err error) {
 	v.flow = source
+	return
+}
+
+func (v *RtmpPublishAgent) UnFlow(source core.Agent) (err error) {
+	v.flow = nil
 	return
 }
 
