@@ -23,6 +23,9 @@ package protocol
 
 import (
 	"bytes"
+	"crypto"
+	"crypto/hmac"
+	"crypto/sha256"
 	"encoding"
 	"encoding/binary"
 	"errors"
@@ -302,10 +305,325 @@ func (v *hsBytes) createS0S1S2() {
 	_ = copy(v.S2(), v.C1())
 }
 
+// 68bytes FMS key which is used to sign the sever packet.
+var RtmpGenuineFMSKey []byte = []byte{
+	0x47, 0x65, 0x6e, 0x75, 0x69, 0x6e, 0x65, 0x20,
+	0x41, 0x64, 0x6f, 0x62, 0x65, 0x20, 0x46, 0x6c,
+	0x61, 0x73, 0x68, 0x20, 0x4d, 0x65, 0x64, 0x69,
+	0x61, 0x20, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72,
+	0x20, 0x30, 0x30, 0x31, // Genuine Adobe Flash Media Server 001
+	0xf0, 0xee, 0xc2, 0x4a, 0x80, 0x68, 0xbe, 0xe8,
+	0x2e, 0x00, 0xd0, 0xd1, 0x02, 0x9e, 0x7e, 0x57,
+	0x6e, 0xec, 0x5d, 0x2d, 0x29, 0x80, 0x6f, 0xab,
+	0x93, 0xb8, 0xe6, 0x36, 0xcf, 0xeb, 0x31, 0xae,
+} // 68
+
+// 62bytes FP key which is used to sign the client packet.
+var RtmpGenuineFPKey []byte = []byte{
+	0x47, 0x65, 0x6E, 0x75, 0x69, 0x6E, 0x65, 0x20,
+	0x41, 0x64, 0x6F, 0x62, 0x65, 0x20, 0x46, 0x6C,
+	0x61, 0x73, 0x68, 0x20, 0x50, 0x6C, 0x61, 0x79,
+	0x65, 0x72, 0x20, 0x30, 0x30, 0x31, // Genuine Adobe Flash Player 001
+	0xF0, 0xEE, 0xC2, 0x4A, 0x80, 0x68, 0xBE, 0xE8,
+	0x2E, 0x00, 0xD0, 0xD1, 0x02, 0x9E, 0x7E, 0x57,
+	0x6E, 0xEC, 0x5D, 0x2D, 0x29, 0x80, 0x6F, 0xAB,
+	0x93, 0xB8, 0xE6, 0x36, 0xCF, 0xEB, 0x31, 0xAE,
+} // 62
+
+// sha256 digest algorithm.
+// @param key the sha256 key, NULL to use EVP_Digest, for instance,
+//       hashlib.sha256(data).digest().
+func opensslHmacSha256(key []byte, data []byte) (digest []byte, err error) {
+	if key == nil {
+		return crypto.SHA256.New().Sum(data), nil
+	}
+
+	h := hmac.New(sha256.New, key)
+	if _, err = h.Write(data); err != nil {
+		return
+	}
+	return h.Sum(nil), nil
+}
+
+// the schema type for complex handshake.
+type chsSchema uint8
+
+func (v chsSchema) Schema0() bool {
+	return v == Schema0
+}
+
+func (v chsSchema) Schema1() bool {
+	return v == Schema1
+}
+
+const (
+	// c1s1 schema0
+	//     key: 764bytes
+	//     digest: 764bytes
+	Schema0 chsSchema = iota
+	// c1s1 schema1
+	//     digest: 764bytes
+	//     key: 764bytes
+	// @remark FMS only support schema1, please read
+	// 		http://blog.csdn.net/win_lin/article/details/13006803
+	Schema1
+)
+
+// 764bytes key structure
+//     random-data: (offset)bytes
+//     key-data: 128bytes
+//     random-data: (764-offset-128-4)bytes
+//     offset: 4bytes
+// @see also: http://blog.csdn.net/win_lin/article/details/13006803
+type chsKey []byte
+
+func (v chsKey) Random0() []byte {
+	return v[0:v.Offset()]
+}
+
+func (v chsKey) Key() []byte {
+	return v[v.Offset() : v.Offset()+128]
+}
+
+func (v chsKey) Random1() []byte {
+	return v[v.Offset()+128 : 760]
+}
+
+func (v chsKey) Offset() uint32 {
+	max := uint32(764 - 128 - 4)
+	b := v[764-4 : 764]
+
+	var offset uint32
+	offset += uint32(b[0])
+	offset += uint32(b[1])
+	offset += uint32(b[2])
+	offset += uint32(b[3])
+
+	return offset % max
+}
+
+// 764bytes digest structure
+//     offset: 4bytes
+//     random-data: (offset)bytes
+//     digest-data: 32bytes
+//     random-data: (764-4-offset-32)bytes
+// @see also: http://blog.csdn.net/win_lin/article/details/13006803
+type chsDigest []byte
+
+func (v chsDigest) Random0() []byte {
+	return v[4 : 4+v.Offset()]
+}
+
+func (v chsDigest) Digest() []byte {
+	return v[4+v.Offset() : 4+v.Offset()+32]
+}
+
+func (v chsDigest) Random1() []byte {
+	return v[4+v.Offset()+32 : 764]
+}
+
+func (v chsDigest) Offset() uint32 {
+	max := uint32(764 - 32 - 4)
+	b := v[0:4]
+
+	var offset uint32
+	offset += uint32(b[0])
+	offset += uint32(b[1])
+	offset += uint32(b[2])
+	offset += uint32(b[3])
+
+	return offset % max
+}
+
+// c1s1 schema0
+//     time: 4bytes
+//     version: 4bytes
+//     key: 764bytes
+//     digest: 764bytes
+// c1s1 schema1
+//     time: 4bytes
+//     version: 4bytes
+//     digest: 764bytes
+//     key: 764bytes
+// @see also: http://blog.csdn.net/win_lin/article/details/13006803
+type chsC1S1 struct {
+	time    uint32
+	version uint32
+
+	// schema 0 or schema 1
+	schema chsSchema
+	c1s1   []byte
+
+	key    chsKey
+	digest chsDigest
+}
+
+func (v *chsC1S1) Parse(c1s1 []byte, schema chsSchema) (err error) {
+	if v.c1s1 = c1s1; len(c1s1) != 1536 {
+		return fmt.Errorf("c1/s1 must be 1536 bytes, actual is %v bytes", len(c1s1))
+	}
+
+	b := bytes.NewBuffer(c1s1)
+	if err = binary.Read(b, binary.BigEndian, &v.time); err != nil {
+		return
+	}
+	if err = binary.Read(b, binary.BigEndian, &v.version); err != nil {
+		return
+	}
+
+	p := b.Bytes()
+	if v.schema = schema; v.schema.Schema0() {
+		v.key = chsKey(p[:764])
+		v.digest = chsDigest(p[764:])
+	} else {
+		v.digest = chsDigest(p[:764])
+		v.key = chsKey(p[764:])
+	}
+	return
+}
+
+func (v *chsC1S1) S1Create(s1 []byte, time, version uint32, c1 *chsC1S1) (err error) {
+	v.schema = c1.schema
+	v.c1s1 = s1[:]
+
+	v.time = uint32(time)
+	v.version = version
+
+	w := NewBytesWriter(v.c1s1)
+	if err = binary.Write(w, binary.BigEndian, v.time); err != nil {
+		return
+	}
+	if err = binary.Write(w, binary.BigEndian, v.version); err != nil {
+		return
+	}
+
+	p := v.c1s1[8:]
+	if v.schema.Schema0() {
+		v.key = chsKey(p[:764])
+		v.digest = chsDigest(p[764:])
+	} else {
+		v.digest = chsDigest(p[:764])
+		v.key = chsKey(p[764:])
+	}
+
+	// use openssl DH to
+	// 		1. generate public and private key, save to s1 object.
+	// 		2. compute the shared key, copy to s1.key.
+	//		3. client use shared key to communicate.
+	// where the shared key is computed by client and server public key.
+	// for currently we don't use the shared key,
+	// so we just use any random number.
+	// TODO: generate and compute the real shared key.
+
+	// digest s1.
+	var checksum []byte
+	if checksum, err = v.digestS1(); err != nil {
+		return
+	}
+
+	// copy digest to s1.
+	_ = copy(v.digest.Digest(), checksum[0:32])
+	return
+}
+
+func (v *chsC1S1) Validate() (ok bool, err error) {
+	var checksum []byte
+	if checksum, err = v.digestC1(); err != nil {
+		return
+	}
+
+	expect := v.digest.Digest()
+	ok = bytes.Equal(checksum[0:32], expect)
+	return
+}
+
+func (v *chsC1S1) digestOffset() int {
+	if v.schema.Schema0() {
+		return 8 + 764 + 4 + int(v.digest.Offset())
+	}
+	return 8 + 4 + int(v.digest.Offset())
+}
+
+func (v *chsC1S1) part1() []byte {
+	if v.schema.Schema0() {
+		return v.c1s1[0:v.digestOffset()]
+	}
+	return v.c1s1[0:v.digestOffset()]
+}
+
+func (v *chsC1S1) part2() []byte {
+	if v.schema.Schema0() {
+		return v.c1s1[v.digestOffset()+32:]
+	}
+	return v.c1s1[v.digestOffset()+32:]
+}
+
+func (v *chsC1S1) digestC1() ([]byte, error) {
+	// c1s1 is splited by digest:
+	//     c1s1-part1: n bytes (time, version, key and digest-part1).
+	//     digest-data: 32bytes
+	//     c1s1-part2: (1536-n-32)bytes (digest-part2)
+	join := append([]byte{}, v.part1()...)
+	join = append(join, v.part2()...)
+	return opensslHmacSha256(RtmpGenuineFPKey[0:30], join)
+}
+
+func (v *chsC1S1) digestS1() ([]byte, error) {
+	// c1s1 is splited by digest:
+	//     c1s1-part1: n bytes (time, version, key and digest-part1).
+	//     digest-data: 32bytes
+	//     c1s1-part2: (1536-n-32)bytes (digest-part2)
+	join := append([]byte{}, v.part1()...)
+	join = append(join, v.part2()...)
+	return opensslHmacSha256(RtmpGenuineFMSKey[0:36], join)
+}
+
+// the c2s2 complex handshake structure.
+// random-data: 1504bytes
+// digest-data: 32bytes
+// @see also: http://blog.csdn.net/win_lin/article/details/13006803
+type chsC2S2 struct {
+	c2s2 []byte
+}
+
+func (v *chsC2S2) Random() []byte {
+	return v.c2s2[0:1504]
+}
+
+func (v *chsC2S2) Digest() []byte {
+	return v.c2s2[1504:1536]
+}
+
+func (v *chsC2S2) Parse(c2s2 []byte) (err error) {
+	v.c2s2 = c2s2
+	return
+}
+
+func (v *chsC2S2) S2Create(s2 []byte, c1 *chsC1S1) (err error) {
+	v.c2s2 = s2
+
+	var tempKey []byte
+	if tempKey, err = opensslHmacSha256(RtmpGenuineFMSKey[0:68], c1.digest.Digest()); err != nil {
+		return
+	}
+
+	var digest []byte
+	if digest, err = opensslHmacSha256(tempKey[0:32], v.Random()); err != nil {
+		return
+	}
+
+	_ = copy(v.Digest(), digest[0:32])
+
+	return
+}
+
 // rtmp request.
 type RtmpRequest struct {
 	// the tcUrl in RTMP connect app request.
 	TcUrl string
+	// the required object encoding.
+	ObjectEncoding float64
+
 	// the stream to publish or play.
 	Stream string
 	// the type of connection, publish or play.
@@ -623,15 +941,14 @@ func (v *RtmpConnection) Close() {
 	return
 }
 
-// handshake with client, try complex then simple.
-func (v *RtmpConnection) Handshake() (err error) {
+func (v *RtmpConnection) waitC0C1() (err error) {
 	// use short handshake timeout.
 	timeout := HandshakeTimeout
 
 	// wait c0c1
 	select {
 	case <-v.handshake.in:
-		// ok.
+	// ok.
 	case <-time.After(timeout):
 		core.Error.Println("timeout for", timeout)
 		return core.TimeoutError
@@ -641,30 +958,110 @@ func (v *RtmpConnection) Handshake() (err error) {
 		return v.wc.Quit()
 	}
 
-	// plain text required.
-	if !v.handshake.ClientPlaintext() {
-		return fmt.Errorf("only support rtmp plain text.")
+	return
+}
+
+func (v *RtmpConnection) waitC2() (err error) {
+	// use short handshake timeout.
+	timeout := HandshakeTimeout
+
+	// wait c2
+	select {
+	case <-v.handshake.in:
+	// ok.
+	case <-time.After(timeout):
+		core.Error.Println("timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing:
+		return core.ClosedError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+// handshake with client, try complex then simple.
+func (v *RtmpConnection) Handshake() (err error) {
+	// got c0c1.
+	if err = v.waitC0C1(); err != nil {
+		return
 	}
 
 	// create s0s1s2 from c1.
 	v.handshake.createS0S1S2()
+
+	// complex handshake.
+	chs := func() (completed bool, err error) {
+		c1 := &chsC1S1{}
+
+		// try schema0.
+		// @remark, use schema0 to make flash player happy.
+		if err = c1.Parse(v.handshake.C1(), Schema0); err != nil {
+			return
+		}
+		if completed, err = c1.Validate(); err != nil {
+			return
+		}
+
+		// try schema1
+		if !completed {
+			if err = c1.Parse(v.handshake.C1(), Schema1); err != nil {
+				return
+			}
+			if completed, err = c1.Validate(); err != nil {
+				return
+			}
+		}
+
+		// encode s1
+		s1 := &chsC1S1{}
+		time := uint32(time.Now().Unix())
+		version := uint32(0x01000504) // server s1 version
+		if err = s1.S1Create(v.handshake.S1(), time, version, c1); err != nil {
+			return
+		}
+
+		// encode s2
+		s2 := &chsC2S2{}
+		if err = s2.S2Create(v.handshake.S2(), c1); err != nil {
+			return
+		}
+		return
+	}
+
+	// simple handshake.
+	shs := func() (err error) {
+		// plain text required.
+		if !v.handshake.ClientPlaintext() {
+			return fmt.Errorf("only support rtmp plain text.")
+		}
+
+		return
+	}
+
+	// try complex, then simple handshake.
+	var completed bool
+	if completed, err = chs(); err != nil {
+		return
+	}
+	if !completed {
+		core.Trace.Println("rollback to simple handshake.")
+		if err = shs(); err != nil {
+			return
+		}
+	} else {
+		core.Trace.Println("complex handshake ok.")
+	}
 
 	// cache the s0s1s2 for sender to write.
 	if err = v.handshake.outCacheS0S1S2(); err != nil {
 		return
 	}
 
-	// wait c2
-	select {
-	case <-v.handshake.in:
-		// ok.
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
+	// got c2.
+	if err = v.waitC2(); err != nil {
+		return
 	}
 
 	return
@@ -682,7 +1079,12 @@ func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 			if p, ok := p.CommandObject.Get("tcUrl").(*Amf0String); ok {
 				r.TcUrl = string(*p)
 			}
-			core.Trace.Println("connect at", r.TcUrl)
+			if p, ok := p.CommandObject.Get("objectEncoding").(*Amf0Number); ok {
+				r.ObjectEncoding = float64(*p)
+			}
+
+			objectEncoding := fmt.Sprintf("AMF%v", int(r.ObjectEncoding))
+			core.Trace.Println("connect at", r.TcUrl, objectEncoding)
 		} else {
 			// try next.
 			return true, nil
@@ -720,6 +1122,7 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	p.Info.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
 	p.Info.Set(StatusCode, NewAmf0String(StatusCodeConnectSuccess))
 	p.Info.Set(StatusDescription, NewAmf0String("Connection succeeded"))
+	p.Info.Set("objectEncoding", NewAmf0Number(v.Req.ObjectEncoding))
 
 	d := NewAmf0EcmaArray()
 	p.Info.Set("data", d)
