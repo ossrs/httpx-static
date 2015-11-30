@@ -24,6 +24,7 @@ package agent
 import (
 	"github.com/ossrs/go-oryx/core"
 	"github.com/ossrs/go-oryx/protocol"
+	"runtime"
 )
 
 type DupAgent struct {
@@ -90,6 +91,9 @@ func (v *DupAgent) Write(m core.Message) (err error) {
 			return
 		}
 	}
+
+	// manually sched to send more.
+	runtime.Gosched()
 
 	return
 }

@@ -299,7 +299,8 @@ type RtmpPlayAgent struct {
 	jitter   *Jitter
 }
 
-const RtmpPlayMsgs = 100
+// audio+videos, about 10ms per packet.
+const RtmpPlayMsgs = 300
 
 func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
 	return &RtmpPlayAgent{
@@ -355,21 +356,25 @@ func (v *RtmpPlayAgent) Pump() (err error) {
 }
 
 func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
-	if m, ok := m.(*protocol.OryxRtmpMessage); ok {
-		// load the jitter algorithm.
-		// TODO: FIXME: implements it.
-		ag := Full
-
-		// correct message timestamp.
-		m.SetTimestamp(v.jitter.Correct(m.Timestamp(), ag))
+	var ok bool
+	var om *protocol.OryxRtmpMessage
+	if om, ok = m.(*protocol.OryxRtmpMessage); !ok {
+		return
 	}
+
+	// load the jitter algorithm.
+	// TODO: FIXME: implements it.
+	ag := Full
+
+	// correct message timestamp.
+	om.SetTimestamp(v.jitter.Correct(om.Timestamp(), ag))
 
 	// drop when overflow.
 	// TODO: FIXME: improve it.
 	select {
 	case v.msgs <- m:
 	default:
-		core.Warn.Println("drop msg", m)
+		core.Warn.Println("play drop msg", m)
 	}
 
 	return
