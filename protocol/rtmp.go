@@ -357,7 +357,15 @@ func (v chsSchema) Schema1() bool {
 }
 
 const (
+	// c1s1 schema0
+	//     key: 764bytes
+	//     digest: 764bytes
 	Schema0 chsSchema = iota
+	// c1s1 schema1
+	//     digest: 764bytes
+	//     key: 764bytes
+	// @remark FMS only support schema1, please read
+	// 		http://blog.csdn.net/win_lin/article/details/13006803
 	Schema1
 )
 
@@ -465,18 +473,47 @@ func (v *chsC1S1) Parse(c1s1 []byte, schema chsSchema) (err error) {
 
 	p := b.Bytes()
 	if v.schema = schema; v.schema.Schema0() {
-		// c1s1 schema0
-		//     key: 764bytes
-		//     digest: 764bytes
 		v.key = chsKey(p[:764])
 		v.digest = chsDigest(p[764:])
 	} else {
-		// c1s1 schema1
-		//     digest: 764bytes
-		//     key: 764bytes
 		v.digest = chsDigest(p[:764])
 		v.key = chsKey(p[764:])
 	}
+	return
+}
+
+func (v *chsC1S1) S1Create(c1 *chsC1S1) (err error) {
+	v.schema = c1.schema
+	v.c1s1 = make([]byte, 1536)
+
+	v.time = uint32(time.Now().Unix())
+	v.version = 0x01000504 // server s1 version
+
+	w := NewBytesWriter(v.c1s1)
+	if err = binary.Write(w, binary.BigEndian, v.time); err != nil {
+		return
+	}
+	if err = binary.Write(w, binary.BigEndian, v.version); err != nil {
+		return
+	}
+
+	p := v.c1s1[8:]
+	if v.schema.Schema0() {
+		v.key = chsKey(p[:764])
+		v.digest = chsDigest(p[764:])
+	} else {
+		v.digest = chsDigest(p[:764])
+		v.key = chsKey(p[764:])
+	}
+
+	// use openssl DH to
+	// 		1. generate public and private key, save to s1 object.
+	// 		2. compute the shared key, copy to s1.key.
+	//		3. client use shared key to communicate.
+	// where the shared key is computed by client and server public key.
+	// for currently we don't use the shared key,
+	// so we just use any random number.
+	// TODO: generate and compute the real shared key.
 	return
 }
 
@@ -918,6 +955,12 @@ func (v *RtmpConnection) Handshake() (err error) {
 			if completed, err = c1.Validate(); err != nil {
 				return
 			}
+		}
+
+		// encode s1
+		s1 := &chsC1S1{}
+		if err = s1.S1Create(c1); err != nil {
+			return
 		}
 		return
 	}
