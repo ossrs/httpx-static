@@ -1687,13 +1687,43 @@ func NewRtmpMessage() *RtmpMessage {
 	return &RtmpMessage{}
 }
 
-func (v *RtmpMessage) IsVideoSequenceHeader() bool {
+// convert the rtmp message to oryx message.
+func (v *RtmpMessage) ToMessage() (core.Message, error) {
+	return NewOryxRtmpMessage(v)
+}
+
+// covert the rtmp message to oryx message.
+type OryxRtmpMessage struct {
+	Rtmp                *RtmpMessage
+	VideoSequenceHeader bool
+	AudioSequenceHeader bool
+}
+
+func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
+	v := &OryxRtmpMessage{
+		Rtmp: m,
+	}
+
+	// whether sequence header.
+	if v.Rtmp.MessageType.IsVideo() {
+		v.VideoSequenceHeader = v.isVideoSequenceHeader()
+	} else if v.Rtmp.MessageType.IsAudio() {
+		v.AudioSequenceHeader = v.isAudioSequenceHeader()
+	}
+
+	// parse the message, for example, decode the h.264 sps/pps.
+	// TODO: FIXME: implements it.
+
+	return v, nil
+}
+
+func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.Payload.Len() < 2 {
+	if v.Rtmp.Payload.Len() < 2 {
 		return false
 	}
 
-	b := v.Payload.Bytes()
+	b := v.Rtmp.Payload.Bytes()
 
 	// sequence header only for h264
 	codec := RtmpCodecVideo(b[0] & 0x0f)
@@ -1706,13 +1736,13 @@ func (v *RtmpMessage) IsVideoSequenceHeader() bool {
 	return frameType == RtmpKeyFrame && avcPacketType == RtmpSequenceHeader
 }
 
-func (v *RtmpMessage) IsAudioSequenceHeader() bool {
+func (v *OryxRtmpMessage) isAudioSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.Payload.Len() < 2 {
+	if v.Rtmp.Payload.Len() < 2 {
 		return false
 	}
 
-	b := v.Payload.Bytes()
+	b := v.Rtmp.Payload.Bytes()
 
 	soundFormat := RtmpCodecAudio((b[0] >> 4) & 0x0f)
 	if soundFormat != RtmpAAC {
@@ -1721,27 +1751,6 @@ func (v *RtmpMessage) IsAudioSequenceHeader() bool {
 
 	aacPacketType := RtmpAacType(b[1])
 	return aacPacketType == RtmpAacSequenceHeader
-}
-
-// convert the rtmp message to oryx message.
-func (v *RtmpMessage) ToMessage() (core.Message, error) {
-	return NewOryxRtmpMessage(v)
-}
-
-// covert the rtmp message to oryx message.
-type OryxRtmpMessage struct {
-	Rtmp *RtmpMessage
-}
-
-func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
-	v := &OryxRtmpMessage{
-		Rtmp: m,
-	}
-
-	// parse the message, for example, decode the h.264 sps/pps.
-	// TODO: FIXME: implements it.
-
-	return v, nil
 }
 
 // copy the message headers, share body.

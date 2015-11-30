@@ -63,16 +63,12 @@ func (v *DupAgent) Write(m core.Message) (err error) {
 		if m.Rtmp.MessageType.IsData() {
 			v.msh = m.Copy()
 			core.Trace.Println("cache metadta sh.")
-		} else if m.Rtmp.MessageType.IsVideo() {
-			if m.Rtmp.IsVideoSequenceHeader() {
-				v.vsh = m.Copy()
-				core.Trace.Println("cache video sh.")
-			}
-		} else if m.Rtmp.MessageType.IsAudio() {
-			if m.Rtmp.IsAudioSequenceHeader() {
-				v.ash = m.Copy()
-				core.Trace.Println("cache audio sh.")
-			}
+		} else if m.VideoSequenceHeader {
+			v.vsh = m.Copy()
+			core.Trace.Println("cache video sh.")
+		} else if m.AudioSequenceHeader {
+			v.ash = m.Copy()
+			core.Trace.Println("cache audio sh.")
 		}
 	}
 
