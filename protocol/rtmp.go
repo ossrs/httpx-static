@@ -482,12 +482,12 @@ func (v *chsC1S1) Parse(c1s1 []byte, schema chsSchema) (err error) {
 	return
 }
 
-func (v *chsC1S1) S1Create(c1 *chsC1S1) (err error) {
+func (v *chsC1S1) S1Create(s1 []byte, time, version uint32, c1 *chsC1S1) (err error) {
 	v.schema = c1.schema
-	v.c1s1 = make([]byte, 1536)
+	v.c1s1 = s1[:]
 
-	v.time = uint32(time.Now().Unix())
-	v.version = 0x01000504 // server s1 version
+	v.time = uint32(time)
+	v.version = version
 
 	w := NewBytesWriter(v.c1s1)
 	if err = binary.Write(w, binary.BigEndian, v.time); err != nil {
@@ -514,6 +514,15 @@ func (v *chsC1S1) S1Create(c1 *chsC1S1) (err error) {
 	// for currently we don't use the shared key,
 	// so we just use any random number.
 	// TODO: generate and compute the real shared key.
+
+	// digest s1.
+	var checksum []byte
+	if checksum, err = v.digestS1(); err != nil {
+		return
+	}
+
+	// copy digest to s1.
+	_ = copy(v.digest.Digest(), checksum[0:32])
 	return
 }
 
@@ -524,7 +533,7 @@ func (v *chsC1S1) Validate() (ok bool, err error) {
 	}
 
 	expect := v.digest.Digest()
-	ok = bytes.Equal(checksum, expect)
+	ok = bytes.Equal(checksum[0:32], expect)
 	return
 }
 
@@ -549,7 +558,7 @@ func (v *chsC1S1) part2() []byte {
 	return v.c1s1[v.digestOffset()+32:]
 }
 
-func (v *chsC1S1) digestC1() (digest []byte, err error) {
+func (v *chsC1S1) digestC1() ([]byte, error) {
 	// c1s1 is splited by digest:
 	//     c1s1-part1: n bytes (time, version, key and digest-part1).
 	//     digest-data: 32bytes
@@ -559,17 +568,62 @@ func (v *chsC1S1) digestC1() (digest []byte, err error) {
 	return opensslHmacSha256(RtmpGenuineFPKey[0:30], join)
 }
 
+func (v *chsC1S1) digestS1() ([]byte, error) {
+	// c1s1 is splited by digest:
+	//     c1s1-part1: n bytes (time, version, key and digest-part1).
+	//     digest-data: 32bytes
+	//     c1s1-part2: (1536-n-32)bytes (digest-part2)
+	join := append([]byte{}, v.part1()...)
+	join = append(join, v.part2()...)
+	return opensslHmacSha256(RtmpGenuineFMSKey[0:36], join)
+}
+
 // the c2s2 complex handshake structure.
 // random-data: 1504bytes
 // digest-data: 32bytes
 // @see also: http://blog.csdn.net/win_lin/article/details/13006803
 type chsC2S2 struct {
+	c2s2 []byte
+}
+
+func (v *chsC2S2) Random() []byte {
+	return v.c2s2[0:1504]
+}
+
+func (v *chsC2S2) Digest() []byte {
+	return v.c2s2[1504:1536]
+}
+
+func (v *chsC2S2) Parse(c2s2 []byte) (err error) {
+	v.c2s2 = c2s2
+	return
+}
+
+func (v *chsC2S2) S2Create(s2 []byte, c1 *chsC1S1) (err error) {
+	v.c2s2 = s2
+
+	var tempKey []byte
+	if tempKey, err = opensslHmacSha256(RtmpGenuineFMSKey[0:68], c1.digest.Digest()); err != nil {
+		return
+	}
+
+	var digest []byte
+	if digest, err = opensslHmacSha256(tempKey[0:32], v.Random()); err != nil {
+		return
+	}
+
+	_ = copy(v.Digest(), digest[0:32])
+
+	return
 }
 
 // rtmp request.
 type RtmpRequest struct {
 	// the tcUrl in RTMP connect app request.
 	TcUrl string
+	// the required object encoding.
+	ObjectEncoding float64
+
 	// the stream to publish or play.
 	Stream string
 	// the type of connection, publish or play.
@@ -934,6 +988,9 @@ func (v *RtmpConnection) Handshake() (err error) {
 		return
 	}
 
+	// create s0s1s2 from c1.
+	v.handshake.createS0S1S2()
+
 	// complex handshake.
 	chs := func() (completed bool, err error) {
 		c1 := &chsC1S1{}
@@ -959,7 +1016,15 @@ func (v *RtmpConnection) Handshake() (err error) {
 
 		// encode s1
 		s1 := &chsC1S1{}
-		if err = s1.S1Create(c1); err != nil {
+		time := uint32(time.Now().Unix())
+		version := uint32(0x01000504) // server s1 version
+		if err = s1.S1Create(v.handshake.S1(), time, version, c1); err != nil {
+			return
+		}
+
+		// encode s2
+		s2 := &chsC2S2{}
+		if err = s2.S2Create(v.handshake.S2(), c1); err != nil {
 			return
 		}
 		return
@@ -972,19 +1037,6 @@ func (v *RtmpConnection) Handshake() (err error) {
 			return fmt.Errorf("only support rtmp plain text.")
 		}
 
-		// create s0s1s2 from c1.
-		v.handshake.createS0S1S2()
-
-		// cache the s0s1s2 for sender to write.
-		if err = v.handshake.outCacheS0S1S2(); err != nil {
-			return
-		}
-
-		// got c2.
-		if err = v.waitC2(); err != nil {
-			return
-		}
-
 		return
 	}
 
@@ -994,9 +1046,22 @@ func (v *RtmpConnection) Handshake() (err error) {
 		return
 	}
 	if !completed {
+		core.Trace.Println("rollback to simple handshake.")
 		if err = shs(); err != nil {
 			return
 		}
+	} else {
+		core.Trace.Println("complex handshake ok.")
+	}
+
+	// cache the s0s1s2 for sender to write.
+	if err = v.handshake.outCacheS0S1S2(); err != nil {
+		return
+	}
+
+	// got c2.
+	if err = v.waitC2(); err != nil {
+		return
 	}
 
 	return
@@ -1014,7 +1079,12 @@ func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 			if p, ok := p.CommandObject.Get("tcUrl").(*Amf0String); ok {
 				r.TcUrl = string(*p)
 			}
-			core.Trace.Println("connect at", r.TcUrl)
+			if p, ok := p.CommandObject.Get("objectEncoding").(*Amf0Number); ok {
+				r.ObjectEncoding = float64(*p)
+			}
+
+			objectEncoding := fmt.Sprintf("AMF%v", int(r.ObjectEncoding))
+			core.Trace.Println("connect at", r.TcUrl, objectEncoding)
 		} else {
 			// try next.
 			return true, nil
@@ -1052,6 +1122,7 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	p.Info.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
 	p.Info.Set(StatusCode, NewAmf0String(StatusCodeConnectSuccess))
 	p.Info.Set(StatusDescription, NewAmf0String("Connection succeeded"))
+	p.Info.Set("objectEncoding", NewAmf0Number(v.Req.ObjectEncoding))
 
 	d := NewAmf0EcmaArray()
 	p.Info.Set("data", d)
