@@ -296,15 +296,17 @@ type RtmpPlayAgent struct {
 	wc       core.WorkerContainer
 	upstream core.Agent
 	msgs     chan core.Message
+	jitter   *Jitter
 }
 
 const RtmpPlayMsgs = 100
 
 func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
 	return &RtmpPlayAgent{
-		conn: conn,
-		wc:   wc,
-		msgs: make(chan core.Message, RtmpPlayMsgs),
+		conn:   conn,
+		wc:     wc,
+		msgs:   make(chan core.Message, RtmpPlayMsgs),
+		jitter: NewJitter(),
 	}
 }
 
@@ -332,7 +334,7 @@ func (v *RtmpPlayAgent) Pump() (err error) {
 				switch m1.Muxer() {
 				case core.MuxerRtmp:
 					if m, ok := m1.(*protocol.OryxRtmpMessage); ok {
-						return v.conn.SendMessage(protocol.FlashPlayTimeout, m.Rtmp)
+						return v.conn.SendMessage(protocol.FlashPlayTimeout, m.Payload())
 					}
 					core.Warn.Println("ignore not rtmp message to play agent.")
 					return
@@ -353,8 +355,14 @@ func (v *RtmpPlayAgent) Pump() (err error) {
 }
 
 func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
-	// correct message timestamp.
-	// TODO: FIXME: implements it.
+	if m, ok := m.(*protocol.OryxRtmpMessage); ok {
+		// load the jitter algorithm.
+		// TODO: FIXME: implements it.
+		ag := Full
+
+		// correct message timestamp.
+		m.SetTimestamp(v.jitter.Correct(m.Timestamp(), ag))
+	}
 
 	// drop when overflow.
 	// TODO: FIXME: improve it.

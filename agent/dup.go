@@ -36,6 +36,11 @@ type DupAgent struct {
 	ash *protocol.OryxRtmpMessage
 	// metadata sequence header cache.
 	msh *protocol.OryxRtmpMessage
+
+	// the last packet timestamp,
+	// used to set the sequence header timestamp,
+	// for the fresh connection.
+	lastTimestamp uint64
 }
 
 func NewDupAgent() core.Agent {
@@ -58,23 +63,30 @@ func (v *DupAgent) Pump() (err error) {
 }
 
 func (v *DupAgent) Write(m core.Message) (err error) {
+	var ok bool
+	var om *protocol.OryxRtmpMessage
+	if om, ok = m.(*protocol.OryxRtmpMessage); !ok {
+		return
+	}
+
+	// update the timestamp for agent.
+	v.lastTimestamp = om.Timestamp()
+
 	// cache the sequence header.
-	if m, ok := m.(*protocol.OryxRtmpMessage); ok {
-		if m.Rtmp.MessageType.IsData() {
-			v.msh = m.Copy()
-			core.Trace.Println("cache metadta sh.")
-		} else if m.VideoSequenceHeader {
-			v.vsh = m.Copy()
-			core.Trace.Println("cache video sh.")
-		} else if m.AudioSequenceHeader {
-			v.ash = m.Copy()
-			core.Trace.Println("cache audio sh.")
-		}
+	if om.Metadata {
+		v.msh = om.Copy()
+		core.Trace.Println("cache metadta sh.")
+	} else if om.VideoSequenceHeader {
+		v.vsh = om.Copy()
+		core.Trace.Println("cache video sh.")
+	} else if om.AudioSequenceHeader {
+		v.ash = om.Copy()
+		core.Trace.Println("cache audio sh.")
 	}
 
 	// copy to all agents.
 	for _, a := range v.sources {
-		if err = a.Write(m); err != nil {
+		if err = a.Write(om.Copy()); err != nil {
 			return
 		}
 	}
@@ -96,22 +108,26 @@ func (v *DupAgent) Flow(source core.Agent) (err error) {
 	v.sources = append(v.sources, source)
 
 	if v.msh != nil {
-		if err = source.Write(v.msh.Copy().ZeroTimestamp()); err != nil {
+		m := v.msh.Copy().SetTimestamp(v.lastTimestamp)
+		if err = source.Write(m); err != nil {
 			return
 		}
 	}
 
 	if v.vsh != nil {
-		if err = source.Write(v.vsh.Copy().ZeroTimestamp()); err != nil {
+		m := v.vsh.Copy().SetTimestamp(v.lastTimestamp)
+		if err = source.Write(m); err != nil {
 			return
 		}
 	}
 
 	if v.ash != nil {
-		if err = source.Write(v.ash.Copy().ZeroTimestamp()); err != nil {
+		m := v.ash.Copy().SetTimestamp(v.lastTimestamp)
+		if err = source.Write(m); err != nil {
 			return
 		}
 	}
+
 	return
 }
 

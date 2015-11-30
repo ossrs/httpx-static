@@ -1257,11 +1257,11 @@ func (v RtmpMessageType) String() string {
 	}
 }
 
-func (v RtmpMessageType) IsAudio() bool {
+func (v RtmpMessageType) isAudio() bool {
 	return v == RtmpMsgAudioMessage
 }
 
-func (v RtmpMessageType) IsVideo() bool {
+func (v RtmpMessageType) isVideo() bool {
 	return v == RtmpMsgVideoMessage
 }
 
@@ -1313,7 +1313,7 @@ func (v RtmpMessageType) isAmf3() bool {
 	return v.isAmf3Command() || v.isAmf3Data()
 }
 
-func (v RtmpMessageType) IsData() bool {
+func (v RtmpMessageType) isData() bool {
 	return v == RtmpMsgAMF0DataMessage || v == RtmpMsgAMF3DataMessage
 }
 
@@ -1694,21 +1694,26 @@ func (v *RtmpMessage) ToMessage() (core.Message, error) {
 
 // covert the rtmp message to oryx message.
 type OryxRtmpMessage struct {
-	Rtmp                *RtmpMessage
+	rtmp *RtmpMessage
+
+	Metadata            bool
 	VideoSequenceHeader bool
 	AudioSequenceHeader bool
 }
 
 func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 	v := &OryxRtmpMessage{
-		Rtmp: m,
+		rtmp: m,
 	}
 
 	// whether sequence header.
-	if v.Rtmp.MessageType.IsVideo() {
+	if v.rtmp.MessageType.isVideo() {
 		v.VideoSequenceHeader = v.isVideoSequenceHeader()
-	} else if v.Rtmp.MessageType.IsAudio() {
+	} else if v.rtmp.MessageType.isAudio() {
 		v.AudioSequenceHeader = v.isAudioSequenceHeader()
+	} else if v.rtmp.MessageType.isData() {
+		// TODO: FIXME: implements it.
+		v.Metadata = true
 	}
 
 	// parse the message, for example, decode the h.264 sps/pps.
@@ -1719,11 +1724,11 @@ func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 
 func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.Rtmp.Payload.Len() < 2 {
+	if v.rtmp.Payload.Len() < 2 {
 		return false
 	}
 
-	b := v.Rtmp.Payload.Bytes()
+	b := v.rtmp.Payload.Bytes()
 
 	// sequence header only for h264
 	codec := RtmpCodecVideo(b[0] & 0x0f)
@@ -1738,11 +1743,11 @@ func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 
 func (v *OryxRtmpMessage) isAudioSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.Rtmp.Payload.Len() < 2 {
+	if v.rtmp.Payload.Len() < 2 {
 		return false
 	}
 
-	b := v.Rtmp.Payload.Bytes()
+	b := v.rtmp.Payload.Bytes()
 
 	soundFormat := RtmpCodecAudio((b[0] >> 4) & 0x0f)
 	if soundFormat != RtmpAAC {
@@ -1755,20 +1760,27 @@ func (v *OryxRtmpMessage) isAudioSequenceHeader() bool {
 
 // copy the message headers, share body.
 func (v *OryxRtmpMessage) Copy() *OryxRtmpMessage {
-	mcp := *v.Rtmp
+	mcp := *v.rtmp
 	return &OryxRtmpMessage{
-		Rtmp: &mcp,
+		rtmp: &mcp,
 	}
 }
 
-// set the timestamp to zero.
-func (v *OryxRtmpMessage) ZeroTimestamp() *OryxRtmpMessage {
-	v.Rtmp.Timestamp = 0
+func (v *OryxRtmpMessage) Timestamp() uint64 {
+	return v.rtmp.Timestamp
+}
+
+func (v *OryxRtmpMessage) SetTimestamp(ts uint64) *OryxRtmpMessage {
+	v.rtmp.Timestamp = ts
 	return v
 }
 
+func (v *OryxRtmpMessage) Payload() *RtmpMessage {
+	return v.rtmp
+}
+
 func (v *OryxRtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.Rtmp.MessageType, v.Rtmp.Payload.Len())
+	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, v.rtmp.Payload.Len())
 }
 
 func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {

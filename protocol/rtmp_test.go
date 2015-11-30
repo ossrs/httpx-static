@@ -23,6 +23,7 @@ package protocol
 
 import (
 	"bytes"
+	"github.com/ossrs/go-oryx/core"
 	"io"
 	"testing"
 )
@@ -1065,6 +1066,73 @@ func TestRtmpRequest(t *testing.T) {
 
 	p.TcUrl = "rtmp://ip:1936/app/sub"
 	if err := p.Reparse(); err != nil || p.App != "app/sub" {
+		t.Error("invalid")
+	}
+}
+
+func TestRtmpMessage(t *testing.T) {
+	var err error
+	m := NewRtmpMessage()
+
+	if _, err = m.Payload.Write([]byte{7, 9, 3, 4, 2}); err != nil {
+		t.Error("invalid", err)
+	}
+
+	b := m.Payload.Bytes()
+	if b[0] != 7 || b[4] != 2 {
+		t.Error("invalid")
+	}
+
+	if m.Timestamp = 100; m.Timestamp != 100 {
+		t.Error("invalid")
+	}
+
+	var o core.Message
+	if o, err = m.ToMessage(); err != nil {
+		t.Error("invalid", err)
+	}
+
+	var ok bool
+	var om *OryxRtmpMessage
+	if om, ok = o.(*OryxRtmpMessage); !ok {
+		t.Error("invalid")
+	}
+	if om.Timestamp() != 100 {
+		t.Error("invalid")
+	}
+
+	cp := om.Copy()
+	if cp.Timestamp() != 100 {
+		t.Error("invalid")
+	}
+
+	if cp.SetTimestamp(200); cp.Timestamp() != 200 || om.Timestamp() != 100 {
+		t.Error("invalid")
+	}
+
+	if cp.rtmp.Payload.Bytes()[0] != 7 {
+		t.Error("invalid")
+	}
+	if om.rtmp.Payload.Bytes()[0] != 7 {
+		t.Error("invalid")
+	}
+
+	// the Buffer shares the bytes.
+	if cp.rtmp.Payload.Bytes()[0] = 8; cp.rtmp.Payload.Bytes()[0] != 8 {
+		t.Error("invalid")
+	}
+	if om.rtmp.Payload.Bytes()[0] != 8 {
+		t.Error("invalid")
+	}
+
+	// when write, the Buffer copy it.
+	if _, err = cp.rtmp.Payload.Write([]byte{3}); err != nil {
+		t.Error("invalid", err)
+	}
+	if cp.rtmp.Payload.Len() != 6 || cp.rtmp.Payload.Bytes()[5] != 3 {
+		t.Error("invalid")
+	}
+	if om.rtmp.Payload.Len() != 5 {
 		t.Error("invalid")
 	}
 }
