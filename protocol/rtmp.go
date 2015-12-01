@@ -1648,7 +1648,7 @@ func (v *RtmpConnection) sender() (err error) {
 			msgs = append(msgs, m)
 
 			// TODO: FIXME: config the msgs to group.
-			for len(msgs) < RtmpOutCache/2 {
+			for len(msgs) < RtmpOutCache/3 {
 				if m, ok := <-v.out; ok {
 					msgs = append(msgs, m)
 				} else {
