@@ -130,6 +130,7 @@ func (v *Rtmp) serve(c net.Conn) {
 		if c, ok := c.(*net.TCPConn); ok {
 			// set TCP_NODELAY to false for performance issue.
 			// TODO: FIXME: config it.
+			// TODO: FIXME: refine for the realtime streaming.
 			if err := c.SetNoDelay(false); err != nil {
 				core.Error.Println("set TCP_NODELAY failed. err is", err)
 				return

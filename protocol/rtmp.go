@@ -841,6 +841,12 @@ type RtmpConnection struct {
 	lock   sync.Mutex
 }
 
+// the input cache, to read from network and put in it.
+const RtmpInCache = 16
+
+// the output cache, the messages to send.
+const RtmpOutCache = 32
+
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
 		sid:       0,
@@ -849,8 +855,8 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		handshake: NewHsBytes(),
 		transport: transport,
 		stack:     NewRtmpStack(transport, transport),
-		in:        make(chan *RtmpMessage, 1),
-		out:       make(chan *RtmpMessage, 1),
+		in:        make(chan *RtmpMessage, RtmpInCache),
+		out:       make(chan *RtmpMessage, RtmpOutCache),
 		closing:   make(chan bool, 2),
 	}
 
@@ -1625,8 +1631,29 @@ func (v *RtmpConnection) sender() (err error) {
 	}
 
 	// send out all messages in cache
+	// TODO: FIXME: refine for the realtime streaming.
 	for m := range v.out {
-		if err = v.stack.SendMessage(m); err != nil {
+		msgs := []*RtmpMessage{}
+		msgs = append(msgs, m)
+
+		// wait for a little while to got more packets.
+		// TODO: FIXME: config it.
+	loop:
+		// limit the max got messages.
+		for len(msgs) < RtmpOutCache/2 {
+			select {
+			case m, ok := <-v.out:
+				// closed?
+				if !ok {
+					return
+				}
+				msgs = append(msgs, m)
+			case <-time.After(RtmpOutCache * time.Millisecond):
+				break loop
+			}
+		}
+
+		if err = v.stack.SendMessage(msgs...); err != nil {
 			return
 		}
 	}
