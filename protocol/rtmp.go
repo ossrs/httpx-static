@@ -3378,99 +3378,97 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 	return
 }
 
-func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
+// to sendout multiple messages.
+func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 	// cache the messages to send to descrease the syscall.
 	cache := &bytes.Buffer{}
 
-	// we directly send out the packet,
-	// use very simple algorithm, not very fast,
-	// but it's ok.
-	var written uint32 = 0
+	for _, m := range msgs {
+		// we directly send out the packet,
+		// use very simple algorithm, not very fast,
+		// but it's ok.
+		for written := uint32(0); written < uint32(len(m.Payload)); {
+			// for chunk header without extended timestamp.
+			if firstChunk := bool(written == 0); firstChunk {
+				// write new chunk stream header, fmt is 0
+				if err = cache.WriteByte(byte(0x00 | (byte(m.PreferCid) & 0x3f))); err != nil {
+					return
+				}
 
-	for written < uint32(len(m.Payload)) {
-		// first chunk, c0.
-		vb := cache
+				// chunk message header, 11 bytes
+				// timestamp, 3bytes, big-endian
+				ts := []byte{0xff, 0xff, 0xff}
+				if m.Timestamp < RtmpExtendedTimestamp {
+					ts[0] = byte(m.Timestamp >> 16)
+					ts[1] = byte(m.Timestamp >> 8)
+					ts[2] = byte(m.Timestamp)
+				}
+				if _, err = cache.Write(ts); err != nil {
+					return
+				}
 
-		// for chunk header without extended timestamp.
-		if firstChunk := bool(written == 0); firstChunk {
-			// write new chunk stream header, fmt is 0
-			if err = vb.WriteByte(byte(0x00 | (byte(m.PreferCid) & 0x3f))); err != nil {
+				// message_length, 3bytes, big-endian
+				ts[0] = byte(len(m.Payload) >> 16)
+				ts[1] = byte(len(m.Payload) >> 8)
+				ts[2] = byte(len(m.Payload))
+				if _, err = cache.Write(ts); err != nil {
+					return
+				}
+
+				// message_type, 1bytes
+				if err = cache.WriteByte(byte(m.MessageType)); err != nil {
+					return
+				}
+
+				// stream_id, 4bytes, little-endian
+				if err = binary.Write(cache, binary.LittleEndian, m.StreamId); err != nil {
+					return
+				}
+			} else {
+				// write no message header chunk stream, fmt is 3
+				// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
+				// SRS will rollback to 1B chunk header.
+				if err = cache.WriteByte(byte(0xC0 | (byte(m.PreferCid) & 0x3f))); err != nil {
+					return
+				}
+			}
+
+			// for chunk extended timestamp.
+			//
+			// for c0
+			// chunk extended timestamp header, 0 or 4 bytes, big-endian
+			//
+			// for c3:
+			// chunk extended timestamp header, 0 or 4 bytes, big-endian
+			// 6.1.3. Extended Timestamp
+			// This field is transmitted only when the normal time stamp in the
+			// chunk message header is set to 0x00ffffff. If normal time stamp is
+			// set to any value less than 0x00ffffff, this field MUST NOT be
+			// present. This field MUST NOT be present if the timestamp field is not
+			// present. Type 3 chunks MUST NOT have this field.
+			// adobe changed for Type3 chunk:
+			//        FMLE always sendout the extended-timestamp,
+			//        must send the extended-timestamp to FMS,
+			//        must send the extended-timestamp to flash-player.
+			// @see: ngx_rtmp_prepare_message
+			// @see: http://blog.csdn.net/win_lin/article/details/13363699
+			if m.Timestamp >= RtmpExtendedTimestamp {
+				if err = binary.Write(cache, binary.LittleEndian, uint32(m.Timestamp)); err != nil {
+					return
+				}
+			}
+
+			// write chunk payload
+			var size uint32
+			if size = uint32(len(m.Payload)) - written; size > v.outChunkSize {
+				size = v.outChunkSize
+			}
+			if _, err = cache.Write(m.Payload[written : written+size]); err != nil {
 				return
 			}
 
-			// chunk message header, 11 bytes
-			// timestamp, 3bytes, big-endian
-			ts := []byte{0xff, 0xff, 0xff}
-			if m.Timestamp < RtmpExtendedTimestamp {
-				ts[0] = byte(m.Timestamp >> 16)
-				ts[1] = byte(m.Timestamp >> 8)
-				ts[2] = byte(m.Timestamp)
-			}
-			if _, err = vb.Write(ts); err != nil {
-				return
-			}
-
-			// message_length, 3bytes, big-endian
-			ts[0] = byte(len(m.Payload) >> 16)
-			ts[1] = byte(len(m.Payload) >> 8)
-			ts[2] = byte(len(m.Payload))
-			if _, err = vb.Write(ts); err != nil {
-				return
-			}
-
-			// message_type, 1bytes
-			if err = vb.WriteByte(byte(m.MessageType)); err != nil {
-				return
-			}
-
-			// stream_id, 4bytes, little-endian
-			if err = binary.Write(vb, binary.LittleEndian, m.StreamId); err != nil {
-				return
-			}
-		} else {
-			// write no message header chunk stream, fmt is 3
-			// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
-			// SRS will rollback to 1B chunk header.
-			if err = vb.WriteByte(byte(0xC0 | (byte(m.PreferCid) & 0x3f))); err != nil {
-				return
-			}
+			written += size
 		}
-
-		// for chunk extended timestamp.
-		//
-		// for c0
-		// chunk extended timestamp header, 0 or 4 bytes, big-endian
-		//
-		// for c3:
-		// chunk extended timestamp header, 0 or 4 bytes, big-endian
-		// 6.1.3. Extended Timestamp
-		// This field is transmitted only when the normal time stamp in the
-		// chunk message header is set to 0x00ffffff. If normal time stamp is
-		// set to any value less than 0x00ffffff, this field MUST NOT be
-		// present. This field MUST NOT be present if the timestamp field is not
-		// present. Type 3 chunks MUST NOT have this field.
-		// adobe changed for Type3 chunk:
-		//        FMLE always sendout the extended-timestamp,
-		//        must send the extended-timestamp to FMS,
-		//        must send the extended-timestamp to flash-player.
-		// @see: ngx_rtmp_prepare_message
-		// @see: http://blog.csdn.net/win_lin/article/details/13363699
-		if m.Timestamp >= RtmpExtendedTimestamp {
-			if err = binary.Write(vb, binary.LittleEndian, uint32(m.Timestamp)); err != nil {
-				return
-			}
-		}
-
-		// write chunk payload
-		var size uint32
-		if size = uint32(len(m.Payload)) - written; size > v.outChunkSize {
-			size = v.outChunkSize
-		}
-		if _, err = vb.Write(m.Payload[written : written+size]); err != nil {
-			return
-		}
-
-		written += size
 	}
 
 	// sendout the whole messages.
