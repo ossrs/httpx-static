@@ -1641,12 +1641,12 @@ func (v *RtmpConnection) sender() (err error) {
 	// send out all messages in cache
 	// TODO: FIXME: refine for the realtime streaming.
 	for m := range v.out {
-		msgs := []*RtmpMessage{}
-		msgs = append(msgs, m)
-
 		// when group messages,
 		// we wait util we got the expect messages.
 		if v.groupMessages {
+			msgs := []*RtmpMessage{}
+			msgs = append(msgs, m)
+
 			// TODO: FIXME: config the msgs to group.
 			for len(msgs) < RtmpOutCache/2 {
 				if m, ok := <-v.out; ok {
@@ -1656,9 +1656,15 @@ func (v *RtmpConnection) sender() (err error) {
 					return
 				}
 			}
+
+			if err = v.stack.SendMessage(msgs...); err != nil {
+				return
+			}
+			continue
 		}
 
-		if err = v.stack.SendMessage(msgs...); err != nil {
+		// when not group message, send message one by one.
+		if err = v.stack.SendMessage(m); err != nil {
 			return
 		}
 	}
