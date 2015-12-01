@@ -120,7 +120,21 @@ func (v *Rtmp) serve(c net.Conn) {
 				core.Error.Println(string(debug.Stack()))
 			}
 		}()
+		defer func() {
+			if err := c.Close(); err != nil {
+				core.Warn.Println("ignore close failed. err is", err)
+			}
+		}()
 
+		// for tcp connections.
+		if c, ok := c.(*net.TCPConn); ok {
+			// set TCP_NODELAY to false for performance issue.
+			// TODO: FIXME: config it.
+			if err := c.SetNoDelay(false); err != nil {
+				core.Error.Println("set TCP_NODELAY failed. err is", err)
+				return
+			}
+		}
 		core.Trace.Println("rtmp accept", c.RemoteAddr())
 
 		conn := protocol.NewRtmpConnection(c, v.wc)
