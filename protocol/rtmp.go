@@ -1191,6 +1191,21 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 	return
 }
 
+// for Flash encoder, response the start publish event.
+func (v *RtmpConnection) FlashStartPublish() (err error) {
+	res := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
+	res.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
+	res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
+	res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
+	res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+	if err = v.write(FlashPublishTimeout, res, v.sid); err != nil {
+		return
+	}
+
+	core.Trace.Println("Flash start publish ok.")
+	return
+}
+
 // for FMLE encoder, response the start publish event.
 func (v *RtmpConnection) FmleStartPublish() (err error) {
 	return v.read(FmlePublishTimeout, func(m *RtmpMessage) (loop bool, err error) {
@@ -1251,7 +1266,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	if p, ok := NewRtmpUserControlPacket().(*RtmpUserControlPacket); ok {
 		p.EventType = RtmpUint16(RtmpPcucStreamBegin)
 		p.EventData = RtmpUint32(v.sid)
-		if err = v.write(FlashPlayTimeout, p, 0); err != nil {
+		if err = v.write(FlashPlayIoTimeout, p, 0); err != nil {
 			return
 		}
 	}
@@ -1263,7 +1278,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusDescription, NewAmf0String("Playing and resetting stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
 		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1275,7 +1290,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusDescription, NewAmf0String("Started playing stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
 		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1286,7 +1301,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		// @see: https://github.com/ossrs/srs/issues/49
 		p.VideoSampleAccess = true
 		p.AudioSampleAccess = true
-		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1294,7 +1309,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	// onStatus(NetStream.Data.Start)
 	if p, ok := NewRtmpOnStatusDataPacket().(*RtmpOnStatusDataPacket); ok {
 		p.Data.Set(StatusCode, NewAmf0String(StatusCodeDataStart))
-		if err = v.write(FlashPlayTimeout, p, v.sid); err != nil {
+		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
 			return
 		}
 	}

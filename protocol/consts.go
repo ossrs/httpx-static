@@ -32,6 +32,9 @@ const (
 	OnBwDoneTimeout         = SetPeerBandwidthTimeout
 	IdentifyTimeout         = OnBwDoneTimeout
 	FmlePublishTimeout      = IdentifyTimeout
-	PublishRecvTimeout      = FmlePublishTimeout
-	FlashPlayTimeout        = PublishRecvTimeout
+	FlashPublishTimeout     = FmlePublishTimeout
+	PublishRecvTimeout      = FlashPublishTimeout
+
+	FlashPlayWaitTimeout = 300 * time.Second
+	FlashPlayIoTimeout   = ConnectAppTimeout
 )

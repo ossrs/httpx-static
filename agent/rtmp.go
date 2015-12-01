@@ -261,12 +261,12 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	}()
 
 	if err = agent.Open(); err != nil {
-		core.Warn.Println("ignore rtmp publish agent open failed. err is", err)
+		core.Warn.Println("ignore rtmp agent open failed. err is", err)
 		return
 	}
 
 	if err = agent.Pump(); err != nil {
-		core.Warn.Println("ignore rtmp publish agent work failed. err is", err)
+		core.Warn.Println("ignore rtmp agent work failed. err is", err)
 		return
 	}
 
@@ -328,14 +328,14 @@ func (v *RtmpPlayAgent) Close() (err error) {
 }
 
 func (v *RtmpPlayAgent) Pump() (err error) {
-	return v.conn.MixRecvMessage(protocol.FlashPlayTimeout, v.msgs,
+	return v.conn.MixRecvMessage(protocol.FlashPlayWaitTimeout, v.msgs,
 		func(m0 *protocol.RtmpMessage, m1 core.Message) (err error) {
 			// message from publisher to send to player.
 			if m1 != nil {
 				switch m1.Muxer() {
 				case core.MuxerRtmp:
 					if m, ok := m1.(*protocol.OryxRtmpMessage); ok {
-						return v.conn.SendMessage(protocol.FlashPlayTimeout, m.Payload())
+						return v.conn.SendMessage(protocol.FlashPlayIoTimeout, m.Payload())
 					}
 					core.Warn.Println("ignore not rtmp message to play agent.")
 					return
@@ -418,7 +418,10 @@ func (v *RtmpPublishAgent) Open() (err error) {
 			return
 		}
 	} else {
-		// TODO: FIXME: implements it.
+		if err = v.conn.FlashStartPublish(); err != nil {
+			core.Error.Println("flash start publish failed. err is", err)
+			return
+		}
 	}
 
 	// check refer.
