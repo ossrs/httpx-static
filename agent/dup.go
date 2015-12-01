@@ -105,6 +105,7 @@ func (v *DupAgent) Tie(sink core.Agent) (err error) {
 
 func (v *DupAgent) UnTie(sink core.Agent) (err error) {
 	v.upstream = nil
+	v.msh, v.vsh, v.ash = nil, nil, nil
 	return sink.UnFlow(v)
 }
 

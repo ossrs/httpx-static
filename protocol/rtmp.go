@@ -1261,6 +1261,40 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 	})
 }
 
+// for FMLE encoder, to unpublish.
+func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
+	// publish response onFCUnpublish(NetStream.unpublish.Success)
+	if res, ok := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket); ok {
+		res.Name = Amf0String(Amf0CommandOnFcUnpublish)
+		res.Data.Set(StatusCode, NewAmf0String(StatusCodeUnpublishSuccess))
+		res.Data.Set(StatusDescription, NewAmf0String("Stop publishing stream."))
+		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+			return
+		}
+	}
+
+	// FCUnpublish response
+	if res, ok := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket); ok {
+		res.TransactionId = upp.TransactionId
+		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+			return
+		}
+	}
+
+	// publish response onStatus(NetStream.Unpublish.Success)
+	if res, ok := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket); ok {
+		res.Name = Amf0String(Amf0CommandOnFcUnpublish)
+		res.Data.Set(StatusCode, NewAmf0String(StatusCodeUnpublishSuccess))
+		res.Data.Set(StatusDescription, NewAmf0String("Stream is now unpublished"))
+		res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+			return
+		}
+	}
+
+	return
+}
+
 // for Flash player or edge, response the start play event.
 func (v *RtmpConnection) FlashStartPlay() (err error) {
 	// StreamBegin
@@ -1340,6 +1374,11 @@ func (v *RtmpConnection) RecvMessage(timeout time.Duration, fn func(*RtmpMessage
 	return v.read(timeout, func(m *RtmpMessage) (loop bool, err error) {
 		return true, fn(m)
 	})
+}
+
+// to decode the message to packet.
+func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
+	return v.stack.DecodeMessage(m)
 }
 
 // to receive message from rtmp or another oryx channel.
@@ -1733,7 +1772,11 @@ func (v RtmpMessageType) isAmf3() bool {
 }
 
 func (v RtmpMessageType) isData() bool {
-	return v == RtmpMsgAMF0DataMessage || v == RtmpMsgAMF3DataMessage
+	return v.isAmf0Data() || v.isAmf3Data()
+}
+
+func (v RtmpMessageType) IsCommand() bool {
+	return v.isAmf0Command() || v.isAmf3Command()
 }
 
 const (

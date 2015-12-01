@@ -445,8 +445,35 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 	tm := protocol.PublishRecvTimeout
 
 	return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) (err error) {
-		var msg core.Message
+		if m.MessageType.IsCommand() {
+			// for flash, any packet is republish.
+			if v.conn.Req.Type == protocol.RtmpFlashPublish {
+				// flash unpublish.
+				// TODO: maybe need to support republish.
+				core.Trace.Println("flash publish finished.")
+				return AgentControlRepublishError
+			}
 
+			// for fmle, drop others except the fmle start packet.
+			var p protocol.RtmpPacket
+			if p, err = v.conn.DecodeMessage(m); err != nil {
+				return
+			}
+
+			if p, ok := p.(*protocol.RtmpFMLEStartPacket); ok {
+				if err = v.conn.FmleUnpublish(p); err != nil {
+					return
+				}
+
+				core.Trace.Println("fmle publish finished.")
+				return AgentControlRepublishError
+			}
+
+			core.Trace.Println("fmle ignore AMF0/AMF3 command message.")
+			return
+		}
+
+		var msg core.Message
 		if msg, err = m.ToMessage(); err != nil {
 			return
 		}
