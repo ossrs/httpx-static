@@ -444,7 +444,7 @@ func (v *RtmpPublishAgent) Close() (err error) {
 func (v *RtmpPublishAgent) Pump() (err error) {
 	tm := protocol.PublishRecvTimeout
 
-	return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) (err error) {
+	err = v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) (err error) {
 		if m.MessageType.IsCommand() {
 			// for flash, any packet is republish.
 			if v.conn.Req.Type == protocol.RtmpFlashPublish {
@@ -480,6 +480,17 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 
 		return v.flow.Write(msg)
 	})
+
+	// when republish, we expect more one more message
+	// to ensure client got the unpublish response.
+	// TODO: FIXME: support republish over same connection.
+	if err == AgentControlRepublishError {
+		return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) error {
+			core.Trace.Println("publish drop message", m)
+			return AgentControlRepublishError
+		})
+	}
+	return
 }
 
 func (v *RtmpPublishAgent) Write(m core.Message) (err error) {

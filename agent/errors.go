@@ -27,7 +27,7 @@ import "errors"
 var AgentBusyError = errors.New("agent is busy")
 
 // when agent not support source or sink.
-var AgentNotSupportError = errors.New("not support source or sink")
+var AgentNotSupportError = errors.New("agent not support")
 
 // for flash or fmle to republish stream.
-var AgentControlRepublishError = errors.New("agent republish command")
+var AgentControlRepublishError = errors.New("agent republish")

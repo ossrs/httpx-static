@@ -2149,6 +2149,10 @@ func NewRtmpMessage() *RtmpMessage {
 	return &RtmpMessage{}
 }
 
+func (v *RtmpMessage) String() string {
+	return fmt.Sprintf("%v %vB", v.MessageType, v.Payload.Len())
+}
+
 // convert the rtmp message to oryx message.
 func (v *RtmpMessage) ToMessage() (core.Message, error) {
 	return NewOryxRtmpMessage(v)
