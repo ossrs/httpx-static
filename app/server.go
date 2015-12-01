@@ -29,6 +29,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -121,6 +122,11 @@ func (s *Server) Close() {
 	// close the agent manager.
 	agent.Manager.Close()
 
+	// when cpu profile is enabled, close it.
+	if core.Conf.Go.CpuProfile != "" {
+		pprof.StopCPUProfile()
+	}
+
 	// ok, closed.
 	s.closed = StateClosed
 	core.Trace.Println("server closed")
@@ -151,6 +157,10 @@ func (s *Server) PrepareLogger() (err error) {
 	}
 
 	if err = s.applyLogger(core.Conf); err != nil {
+		return
+	}
+
+	if err = s.applyCpuProfile(core.Conf); err != nil {
 		return
 	}
 
@@ -313,12 +323,33 @@ func (s *Server) applyLogger(c *core.Config) (err error) {
 	return
 }
 
+func (s *Server) applyCpuProfile(c *core.Config) (err error) {
+	pprof.StopCPUProfile()
+
+	if c.Go.CpuProfile == "" {
+		return
+	}
+
+	var f *os.File
+	if f, err = os.Create(c.Go.CpuProfile); err != nil {
+		core.Error.Println("open cpu profile file failed. err is", err)
+		return
+	}
+	if err = pprof.StartCPUProfile(f); err != nil {
+		core.Error.Println("start cpu profile failed. err is", err)
+		return
+	}
+	return
+}
+
 // interface ReloadHandler
 func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	if scope == core.ReloadWorkers {
 		s.applyMultipleProcesses(cc.Workers)
 	} else if scope == core.ReloadLog {
 		s.applyLogger(cc)
+	} else if scope == core.ReloadCpuProfile {
+		s.applyCpuProfile(cc)
 	}
 
 	return

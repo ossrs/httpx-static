@@ -1516,13 +1516,15 @@ func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessage, err error) {
 	m = NewRtmpMessage()
 
+	var b bytes.Buffer
+	if err = core.Marshal(p, &b); err != nil {
+		return nil, err
+	}
+
 	m.MessageType = p.MessageType()
 	m.PreferCid = p.PreferCid()
 	m.StreamId = sid
-
-	if err = core.Marshal(p, &m.Payload); err != nil {
-		return nil, err
-	}
+	m.Payload = b.Bytes()
 
 	return m, nil
 }
@@ -1604,7 +1606,7 @@ func (v *RtmpConnection) receiver() (err error) {
 		}
 
 		// cache the message when got non empty one.
-		if m != nil && m.Payload.Len() > 0 {
+		if m != nil && len(m.Payload) > 0 {
 			v.in <- m
 		}
 	}
@@ -2142,7 +2144,7 @@ type RtmpMessage struct {
 	// user must use SrsProtocol.decode_message to get concrete packet.
 	// @remark, not all message payload can be decoded to packet. for example,
 	//       video/audio packet use raw bytes, no video/audio packet.
-	Payload bytes.Buffer
+	Payload []byte
 }
 
 func NewRtmpMessage() *RtmpMessage {
@@ -2150,7 +2152,7 @@ func NewRtmpMessage() *RtmpMessage {
 }
 
 func (v *RtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.MessageType, v.Payload.Len())
+	return fmt.Sprintf("%v %vB", v.MessageType, len(v.Payload))
 }
 
 // convert the rtmp message to oryx message.
@@ -2190,11 +2192,11 @@ func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 
 func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.rtmp.Payload.Len() < 2 {
+	if len(v.rtmp.Payload) < 2 {
 		return false
 	}
 
-	b := v.rtmp.Payload.Bytes()
+	b := v.rtmp.Payload
 
 	// sequence header only for h264
 	codec := RtmpCodecVideo(b[0] & 0x0f)
@@ -2209,11 +2211,11 @@ func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 
 func (v *OryxRtmpMessage) isAudioSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.rtmp.Payload.Len() < 2 {
+	if len(v.rtmp.Payload) < 2 {
 		return false
 	}
 
-	b := v.rtmp.Payload.Bytes()
+	b := v.rtmp.Payload
 
 	soundFormat := RtmpCodecAudio((b[0] >> 4) & 0x0f)
 	if soundFormat != RtmpAAC {
@@ -2246,7 +2248,7 @@ func (v *OryxRtmpMessage) Payload() *RtmpMessage {
 }
 
 func (v *OryxRtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, v.rtmp.Payload.Len())
+	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, len(v.rtmp.Payload))
 }
 
 func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {
@@ -3178,6 +3180,8 @@ type RtmpChunk struct {
 	isFresh bool
 	// the partial message which not completed.
 	partialMessage *RtmpMessage
+	// the number of already received payload size.
+	nbPayload uint32
 
 	// 4.1. Message Header
 	// 3bytes.
@@ -3238,7 +3242,7 @@ func (v *RtmpStack) Close() {
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
-	b := bytes.NewBuffer(m.Payload.Bytes())
+	b := bytes.NewBuffer(m.Payload)
 
 	// decode specified packet type
 	if m.MessageType.isAmf0() || m.MessageType.isAmf3() {
@@ -3379,14 +3383,14 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 	// we directly send out the packet,
 	// use very simple algorithm, not very fast,
 	// but it's ok.
-	b := bytes.NewBuffer(m.Payload.Bytes())
+	b := bytes.NewBuffer(m.Payload)
 
 	for b.Len() > 0 {
 		// first chunk, c0.
 		var vb bytes.Buffer
 
 		// for chunk header without extended timestamp.
-		if firstChunk := bool(b.Len() == m.Payload.Len()); firstChunk {
+		if firstChunk := bool(b.Len() == len(m.Payload)); firstChunk {
 			// write new chunk stream header, fmt is 0
 			if err = vb.WriteByte(byte(0x00 | (byte(m.PreferCid) & 0x3f))); err != nil {
 				return
@@ -3405,9 +3409,9 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 			}
 
 			// message_length, 3bytes, big-endian
-			ts[0] = byte(m.Payload.Len() >> 16)
-			ts[1] = byte(m.Payload.Len() >> 8)
-			ts[2] = byte(m.Payload.Len())
+			ts[0] = byte(len(m.Payload) >> 16)
+			ts[1] = byte(len(m.Payload) >> 8)
+			ts[2] = byte(len(m.Payload))
 			if _, err = vb.Write(ts); err != nil {
 				return
 			}
@@ -3483,7 +3487,7 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	r := NewMixReader(inb, in)
 
 	// the preload body must be consumed in a time.
-	left := (int)(chunk.payloadLength - uint32(m.Payload.Len()))
+	left := (int)(chunk.payloadLength - chunk.nbPayload)
 	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
@@ -3496,14 +3500,17 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	}
 
 	// read payload to buffer
-	if _, err = io.CopyN(&m.Payload, r, int64(left)); err != nil {
+	w := NewBytesWriter(m.Payload[chunk.nbPayload : int(chunk.nbPayload)+left])
+	if _, err = io.CopyN(w, r, int64(left)); err != nil {
 		core.Error.Println("read body failed. err is", err)
 		return
 	}
+	chunk.nbPayload += uint32(left)
 
 	// got entire RTMP message?
-	if chunk.payloadLength == uint32(m.Payload.Len()) {
+	if chunk.payloadLength == chunk.nbPayload {
 		chunk.partialMessage = nil
+		chunk.nbPayload = 0
 		return
 	}
 
@@ -3752,6 +3759,9 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	chunk.partialMessage.Timestamp = chunk.timestamp
 	chunk.partialMessage.PreferCid = chunk.cid
 	chunk.partialMessage.StreamId = chunk.streamId
+	if chunk.partialMessage.Payload == nil {
+		chunk.partialMessage.Payload = make([]byte, chunk.payloadLength)
+	}
 
 	// update chunk information.
 	chunk.fmt = fmt

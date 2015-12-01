@@ -35,6 +35,7 @@ const (
 	ReloadWorkers = iota
 	ReloadLog
 	ReloadListen
+	ReloadCpuProfile
 )
 
 // the reload handler,
@@ -236,7 +237,8 @@ type Config struct {
 
 	// the go section.
 	Go struct {
-		GcInterval int `json:"gc_interval"` // the gc interval in seconds.
+		GcInterval int    `json:"gc_interval"` // the gc interval in seconds.
+		CpuProfile string `json:"cpu_profile"` // the cpu profile file.
 	}
 
 	// the log config.
@@ -476,6 +478,17 @@ func (pc *Config) Reload(cc *Config) (err error) {
 		Trace.Println("reload apply listen ok")
 	} else {
 		Info.Println("reload ignore listen")
+	}
+
+	if cc.Go.CpuProfile != pc.Go.CpuProfile {
+		for _, h := range cc.reloadHandlers {
+			if err = h.OnReloadGlobal(ReloadCpuProfile, cc, pc); err != nil {
+				return
+			}
+		}
+		Trace.Println("reload apply cpu profile ok")
+	} else {
+		Info.Println("reload ignore cpu profile")
 	}
 
 	return
