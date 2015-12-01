@@ -27,18 +27,35 @@ import (
 	"io"
 	"math/rand"
 	"reflect"
+	"runtime"
 	"runtime/debug"
 	"time"
 )
 
-// the random object to fill bytes.
-var random *rand.Rand = rand.New(rand.NewSource(time.Now().UnixNano()))
+// the buffered random, for the rand is not thread-safe.
+// @see http://stackoverflow.com/questions/14298523/why-does-adding-concurrency-slow-down-this-golang-code
+var randoms chan *rand.Rand = make(chan *rand.Rand, runtime.NumCPU())
 
 // randome fill the bytes.
 func RandomFill(b []byte) {
+	// fetch in buffered chan.
+	var random *rand.Rand
+	select {
+	case random = <-randoms:
+	default:
+		random = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
+	// use the random.
 	for i := 0; i < len(b); i++ {
 		// the common value in [0x0f, 0xf0]
 		b[i] = byte(0x0f + (random.Int() % (256 - 0x0f - 0x0f)))
+	}
+
+	// put back in buffered chan.
+	select {
+	case randoms <- random:
+	default:
 	}
 }
 

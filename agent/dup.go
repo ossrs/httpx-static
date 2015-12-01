@@ -92,8 +92,10 @@ func (v *DupAgent) Write(m core.Message) (err error) {
 		}
 	}
 
-	// manually sched to send more.
-	runtime.Gosched()
+	// for single core, manually sched to send more.
+	if core.Conf.Workers == 1 {
+		runtime.Gosched()
+	}
 
 	return
 }
