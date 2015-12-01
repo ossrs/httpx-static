@@ -762,6 +762,7 @@ func (r *RtmpRequest) Reparse() (err error) {
 	if r.App = strings.TrimLeft(r.Url.Path, "/"); r.App == "" {
 		r.App = core.RtmpDefaultApp
 	}
+	r.Stream = strings.Trim(r.Stream, "/")
 
 	// check.
 	if r.Vhost == "" {
