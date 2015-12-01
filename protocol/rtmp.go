@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
 	"io"
-	"math"
 	"net"
 	"net/url"
 	"reflect"
@@ -3380,17 +3379,20 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 }
 
 func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
+	// cache the messages to send to descrease the syscall.
+	cache := &bytes.Buffer{}
+
 	// we directly send out the packet,
 	// use very simple algorithm, not very fast,
 	// but it's ok.
-	b := bytes.NewBuffer(m.Payload)
+	var written uint32 = 0
 
-	for b.Len() > 0 {
+	for written < uint32(len(m.Payload)) {
 		// first chunk, c0.
-		var vb bytes.Buffer
+		vb := cache
 
 		// for chunk header without extended timestamp.
-		if firstChunk := bool(b.Len() == len(m.Payload)); firstChunk {
+		if firstChunk := bool(written == 0); firstChunk {
 			// write new chunk stream header, fmt is 0
 			if err = vb.WriteByte(byte(0x00 | (byte(m.PreferCid) & 0x3f))); err != nil {
 				return
@@ -3422,7 +3424,7 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 			}
 
 			// stream_id, 4bytes, little-endian
-			if err = binary.Write(&vb, binary.LittleEndian, m.StreamId); err != nil {
+			if err = binary.Write(vb, binary.LittleEndian, m.StreamId); err != nil {
 				return
 			}
 		} else {
@@ -3454,22 +3456,26 @@ func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
 		// @see: ngx_rtmp_prepare_message
 		// @see: http://blog.csdn.net/win_lin/article/details/13363699
 		if m.Timestamp >= RtmpExtendedTimestamp {
-			if err = binary.Write(&vb, binary.LittleEndian, uint32(m.Timestamp)); err != nil {
+			if err = binary.Write(vb, binary.LittleEndian, uint32(m.Timestamp)); err != nil {
 				return
 			}
 		}
 
-		// write chunk header.
-		nvb := int64(vb.Len())
-		if _, err = io.CopyN(v.out, &vb, nvb); err != nil {
+		// write chunk payload
+		var size uint32
+		if size = uint32(len(m.Payload)) - written; size > v.outChunkSize {
+			size = v.outChunkSize
+		}
+		if _, err = vb.Write(m.Payload[written : written+size]); err != nil {
 			return
 		}
 
-		// write chunk payload
-		size := int64(math.Min(float64(v.outChunkSize), float64(b.Len())))
-		if _, err = io.CopyN(v.out, b, size); err != nil {
-			return
-		}
+		written += size
+	}
+
+	// sendout the whole messages.
+	if _, err = io.CopyN(v.out, cache, int64(cache.Len())); err != nil {
+		return
 	}
 
 	return
