@@ -826,6 +826,10 @@ type RtmpConnection struct {
 	handshake *hsBytes
 	// the underlayer transport.
 	transport io.ReadWriteCloser
+	// when handshake and negotiate,
+	// the connection must send message one when got it,
+	// while we can group messages when send audio/video stream.
+	groupMessages bool
 	// the RTMP protocol stack.
 	stack *RtmpStack
 	// input channel, receive message from client.
@@ -849,15 +853,16 @@ const RtmpOutCache = 32
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
-		sid:       0,
-		Req:       NewRtmpRequest(),
-		wc:        wc,
-		handshake: NewHsBytes(),
-		transport: transport,
-		stack:     NewRtmpStack(transport, transport),
-		in:        make(chan *RtmpMessage, RtmpInCache),
-		out:       make(chan *RtmpMessage, RtmpOutCache),
-		closing:   make(chan bool, 2),
+		sid:           0,
+		Req:           NewRtmpRequest(),
+		wc:            wc,
+		handshake:     NewHsBytes(),
+		transport:     transport,
+		groupMessages: false,
+		stack:         NewRtmpStack(transport, transport),
+		in:            make(chan *RtmpMessage, RtmpInCache),
+		out:           make(chan *RtmpMessage, RtmpOutCache),
+		closing:       make(chan bool, 2),
 	}
 
 	// wait for goroutine to run.
@@ -1354,6 +1359,9 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		}
 	}
 
+	// ok, we enter group message mode.
+	v.groupMessages = true
+
 	return
 }
 
@@ -1636,20 +1644,17 @@ func (v *RtmpConnection) sender() (err error) {
 		msgs := []*RtmpMessage{}
 		msgs = append(msgs, m)
 
-		// wait for a little while to got more packets.
-		// TODO: FIXME: config it.
-	loop:
-		// limit the max got messages.
-		for len(msgs) < RtmpOutCache/2 {
-			select {
-			case m, ok := <-v.out:
-				// closed?
-				if !ok {
+		// when group messages,
+		// we wait util we got the expect messages.
+		if v.groupMessages {
+			// TODO: FIXME: config the msgs to group.
+			for len(msgs) < RtmpOutCache/2 {
+				if m, ok := <-v.out; ok {
+					msgs = append(msgs, m)
+				} else {
+					// closed?
 					return
 				}
-				msgs = append(msgs, m)
-			case <-time.After(RtmpOutCache * time.Millisecond):
-				break loop
 			}
 		}
 
