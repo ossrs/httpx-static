@@ -21,6 +21,6 @@
 
 package protocol
 
-func (v *RtmpStack) fastSendMessages(msgs ...*RtmpMessage) (err error) {
-	return v.slowSendMessages(msgs...)
+func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
+	return v.slowSendMessages(iovs...)
 }

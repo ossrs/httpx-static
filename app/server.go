@@ -203,6 +203,7 @@ func (s *Server) Initialize() (err error) {
 		panic("server invalid state.")
 	}
 
+	// about the runtime.
 	if err = s.initializeRuntime(); err != nil {
 		return
 	}

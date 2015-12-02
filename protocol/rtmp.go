@@ -3427,15 +3427,8 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 
 // to sendout multiple messages.
 func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
-	return v.fastSendMessages(msgs...)
-}
-
-// group all messages to a big buffer and send it,
-// for the os which not support writev.
-// @remark this method will be invoked by platform depends fast send messages.
-func (v *RtmpStack) slowSendMessages(msgs ...*RtmpMessage) (err error) {
 	// cache the messages to send to descrease the syscall.
-	cache := &bytes.Buffer{}
+	iovs := make([][]byte, 0)
 
 	for _, m := range msgs {
 		// we directly send out the packet,
@@ -3444,47 +3437,47 @@ func (v *RtmpStack) slowSendMessages(msgs ...*RtmpMessage) (err error) {
 		for written := uint32(0); written < uint32(len(m.Payload)); {
 			// for chunk header without extended timestamp.
 			if firstChunk := bool(written == 0); firstChunk {
+				// the fmt0 is 12bytes header.
+				iov := make([]byte, 12)
+				iovs = append(iovs, iov)
+
 				// write new chunk stream header, fmt is 0
-				if err = cache.WriteByte(byte(0x00 | (byte(m.PreferCid) & 0x3f))); err != nil {
-					return
-				}
+				iov[0] = byte(0x00 | (byte(m.PreferCid) & 0x3f))
 
 				// chunk message header, 11 bytes
 				// timestamp, 3bytes, big-endian
-				ts := []byte{0xff, 0xff, 0xff}
 				if m.Timestamp < RtmpExtendedTimestamp {
-					ts[0] = byte(m.Timestamp >> 16)
-					ts[1] = byte(m.Timestamp >> 8)
-					ts[2] = byte(m.Timestamp)
-				}
-				if _, err = cache.Write(ts); err != nil {
-					return
+					iov[1] = byte(m.Timestamp >> 16)
+					iov[2] = byte(m.Timestamp >> 8)
+					iov[3] = byte(m.Timestamp)
+				} else {
+					iov[1] = 0xff
+					iov[2] = 0xff
+					iov[3] = 0xff
 				}
 
 				// message_length, 3bytes, big-endian
-				ts[0] = byte(len(m.Payload) >> 16)
-				ts[1] = byte(len(m.Payload) >> 8)
-				ts[2] = byte(len(m.Payload))
-				if _, err = cache.Write(ts); err != nil {
-					return
-				}
+				iov[4] = byte(len(m.Payload) >> 16)
+				iov[5] = byte(len(m.Payload) >> 8)
+				iov[6] = byte(len(m.Payload))
 
 				// message_type, 1bytes
-				if err = cache.WriteByte(byte(m.MessageType)); err != nil {
-					return
-				}
+				iov[7] = byte(m.MessageType)
 
 				// stream_id, 4bytes, little-endian
-				if err = binary.Write(cache, binary.LittleEndian, m.StreamId); err != nil {
-					return
-				}
+				iov[8] = byte(m.StreamId)
+				iov[9] = byte(m.StreamId >> 8)
+				iov[10] = byte(m.StreamId >> 16)
+				iov[11] = byte(m.StreamId >> 24)
 			} else {
+				// the fmt3 is 1bytes header.
+				iov := make([]byte, 1)
+				iovs = append(iovs, iov)
+
 				// write no message header chunk stream, fmt is 3
 				// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
 				// SRS will rollback to 1B chunk header.
-				if err = cache.WriteByte(byte(0xC0 | (byte(m.PreferCid) & 0x3f))); err != nil {
-					return
-				}
+				iov[0] = byte(0xC0 | (byte(m.PreferCid) & 0x3f))
 			}
 
 			// for chunk extended timestamp.
@@ -3507,9 +3500,15 @@ func (v *RtmpStack) slowSendMessages(msgs ...*RtmpMessage) (err error) {
 			// @see: ngx_rtmp_prepare_message
 			// @see: http://blog.csdn.net/win_lin/article/details/13363699
 			if m.Timestamp >= RtmpExtendedTimestamp {
-				if err = binary.Write(cache, binary.LittleEndian, uint32(m.Timestamp)); err != nil {
-					return
-				}
+				// the extended-timestamp is 4bytes.
+				iov := make([]byte, 4)
+				iovs = append(iovs, iov)
+
+				// big-endian.
+				iov[0] = byte(len(m.Payload) >> 24)
+				iov[1] = byte(len(m.Payload) >> 16)
+				iov[2] = byte(len(m.Payload) >> 8)
+				iov[3] = byte(len(m.Payload))
 			}
 
 			// write chunk payload
@@ -3517,19 +3516,29 @@ func (v *RtmpStack) slowSendMessages(msgs ...*RtmpMessage) (err error) {
 			if size = uint32(len(m.Payload)) - written; size > v.outChunkSize {
 				size = v.outChunkSize
 			}
-			if _, err = cache.Write(m.Payload[written : written+size]); err != nil {
-				return
-			}
+			iovs = append(iovs, m.Payload[written:written+size])
 
 			written += size
 		}
 	}
 
-	// sendout the whole messages.
-	if _, err = io.CopyN(v.out, cache, int64(cache.Len())); err != nil {
-		return
+	return v.fastSendMessages(iovs...)
+}
+
+// group all messages to a big buffer and send it,
+// for the os which not support writev.
+// @remark this method will be invoked by platform depends fastSendMessages.
+func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
+	var b bytes.Buffer
+	for _, iov := range iovs {
+		if _, err = b.Write(iov); err != nil {
+			return
+		}
 	}
 
+	if _, err = io.CopyN(v.out, &b, int64(b.Len())); err != nil {
+		return
+	}
 	return
 }
 
