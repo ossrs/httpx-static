@@ -3260,7 +3260,11 @@ type RtmpStack struct {
 	// the input and output stream.
 	in  io.Reader
 	out io.Writer
+	// the underlayer fd, for writev to use.
+	// @remark unix only, other os ignore it.
+	fd int64
 	// use bytes.Buffer to parse RTMP.
+	// TODO: FIXME: use bufio.Reader instead.
 	inb bytes.Buffer
 	// the chunks for RTMP,
 	// key is the cid from basic header.
@@ -3520,6 +3524,11 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 
 			written += size
 		}
+	}
+
+	// use simple slow send when got one message to send.
+	if len(msgs) == 1 {
+		return v.slowSendMessages(iovs...)
 	}
 
 	return v.fastSendMessages(iovs...)

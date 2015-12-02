@@ -23,6 +23,68 @@
 
 package protocol
 
+import (
+	"fmt"
+	"github.com/ossrs/go-oryx/core"
+	"net"
+	"reflect"
+	"syscall"
+	"unsafe"
+)
+
 func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
+	// initialize the fd.
+	if v.fd == 0 {
+		var ok bool
+		var c *net.TCPConn
+		if c, ok = v.out.(*net.TCPConn); !ok {
+			return v.slowSendMessages(iovs...)
+		}
+
+		var vfd reflect.Value
+		// get c which is net.TCPConn
+		if vfd = reflect.ValueOf(c); vfd.Kind() == reflect.Ptr {
+			vfd = vfd.Elem()
+		}
+		// get c.fd which is net.netFD, in net/net.go
+		if vfd = vfd.FieldByName("fd"); vfd.Kind() == reflect.Ptr {
+			vfd = vfd.Elem()
+		}
+		// get c.fd.sysfd which is int, in net/fd_unix.go
+		if vfd = vfd.FieldByName("sysfd"); vfd.Kind() == reflect.Ptr {
+			vfd = vfd.Elem()
+		}
+		// get fd value.
+		v.fd = vfd.Int()
+	}
+
+	// use writev when got fd.
+	// @see https://github.com/winlinvip/vectorio/blob/master/vectorio.go
+	if v.fd > 0 {
+		iovecs := make([]syscall.Iovec, len(iovs))
+		for i, iov := range iovs {
+			iovecs[i] = syscall.Iovec{&iov[0], uint64(len(iov))}
+		}
+
+		if _, err = writev(uintptr(v.fd), iovecs); err != nil {
+			return
+		}
+		core.Trace.Println("ok")
+		return
+	}
+
 	return v.slowSendMessages(iovs...)
+}
+
+func writev(fd uintptr, iovs []syscall.Iovec) (int, error) {
+	iovsPtr := uintptr(unsafe.Pointer(&iovs[0]))
+	iovsLen := uintptr(len(iovs))
+
+	n, _, errno := syscall.Syscall(syscall.SYS_WRITEV, fd, iovsPtr, iovsLen)
+
+	if errno != 0 {
+		return 0, fmt.Errorf("writev failed, errno=%v", int64(errno))
+	}
+
+	return int(n), nil
 }
