@@ -309,11 +309,12 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 
 // rtmp play agent, to serve the player or edge.
 type RtmpPlayAgent struct {
-	conn     *protocol.RtmpConnection
-	wc       core.WorkerContainer
-	upstream core.Agent
-	msgs     chan core.Message
-	jitter   *Jitter
+	conn      *protocol.RtmpConnection
+	wc        core.WorkerContainer
+	upstream  core.Agent
+	msgs      chan core.Message
+	jitter    *Jitter
+	nbDropped uint32
 }
 
 // audio+videos, about 10ms per packet.
@@ -391,7 +392,12 @@ func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
 	select {
 	case v.msgs <- m:
 	default:
-		core.Warn.Println("play drop msg", m)
+		v.nbDropped++
+		if (v.nbDropped % 1000) == 0 {
+			core.Warn.Println("play drop msg", m)
+		} else if (v.nbDropped % 100) == 0 {
+			core.Trace.Println("play drop msg", m)
+		}
 	}
 
 	return

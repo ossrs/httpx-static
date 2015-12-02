@@ -25,7 +25,6 @@ package protocol
 
 import (
 	"fmt"
-	"github.com/ossrs/go-oryx/core"
 	"net"
 	"reflect"
 	"syscall"
@@ -61,15 +60,20 @@ func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
 	// use writev when got fd.
 	// @see https://github.com/winlinvip/vectorio/blob/master/vectorio.go
 	if v.fd > 0 {
+		var total int
+
 		iovecs := make([]syscall.Iovec, len(iovs))
 		for i, iov := range iovs {
+			total += len(iov)
 			iovecs[i] = syscall.Iovec{&iov[0], uint64(len(iov))}
 		}
 
-		if _, err = writev(uintptr(v.fd), iovecs); err != nil {
+		var n int
+		if n, err = writev(uintptr(v.fd), iovecs); err != nil {
 			return
+		} else if n != total {
+			panic(fmt.Sprintf("writev n=%v, total=%v", n, total))
 		}
-		core.Trace.Println("ok")
 		return
 	}
 
