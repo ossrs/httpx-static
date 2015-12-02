@@ -174,9 +174,23 @@ func (s *Server) PrepareLogger() (err error) {
 		return
 	}
 
+	return
+}
+
+func (s *Server) initializeRuntime() (err error) {
+	// install signals.
+	// TODO: FIXME: when process the current signal, others may drop.
+	signal.Notify(s.sigs)
+
+	// apply the cpu profile.
 	if err = s.applyCpuProfile(core.Conf); err != nil {
 		return
 	}
+
+	// set the gc percent.
+	v := GcPercent
+	pv := debug.SetGCPercent(v)
+	core.Trace.Println("set gc percent to", v, "where old is", pv)
 
 	return
 }
@@ -189,9 +203,9 @@ func (s *Server) Initialize() (err error) {
 		panic("server invalid state.")
 	}
 
-	// install signals.
-	// TODO: FIXME: when process the current signal, others may drop.
-	signal.Notify(s.sigs)
+	if err = s.initializeRuntime(); err != nil {
+		return
+	}
 
 	// use worker container to fork.
 	var wc core.WorkerContainer = s
