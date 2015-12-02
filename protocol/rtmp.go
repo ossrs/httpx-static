@@ -3532,12 +3532,6 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 		}
 	}
 
-	// use simple slow send when got one message to send.
-	if len(msgs) == 1 && !v.fastMode {
-		return v.slowSendMessages(iovs...)
-	}
-
-	v.fastMode = true
 	return v.fastSendMessages(iovs...)
 }
 
