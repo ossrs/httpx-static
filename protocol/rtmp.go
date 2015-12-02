@@ -3260,9 +3260,6 @@ type RtmpStack struct {
 	// the input and output stream.
 	in  io.Reader
 	out io.Writer
-	// the underlayer fd, for writev to use.
-	// @remark unix only, other os ignore it.
-	fd int64
 	// use bytes.Buffer to parse RTMP.
 	// TODO: FIXME: use bufio.Reader instead.
 	inb bytes.Buffer
@@ -3275,12 +3272,21 @@ type RtmpStack struct {
 	outChunkSize uint32
 	// whether the stack is closing.
 	closing bool
+
+	// the system fd, for writev to use.
+	// @remark unix only, other os ignore it.
+	sysfd interface{}
+	// once start the fast send mode(writev),
+	// we should never use slow again in stack.
+	// @remark maybe the fast still use slow, it's ok.
+	fastMode bool
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	return &RtmpStack{
 		in:           r,
 		out:          w,
+		sysfd:        nil,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
@@ -3527,10 +3533,11 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 	}
 
 	// use simple slow send when got one message to send.
-	if len(msgs) == 1 {
+	if len(msgs) == 1 && !v.fastMode {
 		return v.slowSendMessages(iovs...)
 	}
 
+	v.fastMode = true
 	return v.fastSendMessages(iovs...)
 }
 
@@ -3545,8 +3552,14 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 		}
 	}
 
-	if _, err = io.CopyN(v.out, &b, int64(b.Len())); err != nil {
+	var n int
+	bb := b.Bytes()
+	if n, err = v.out.Write(bb); err != nil {
 		return
+	}
+
+	if n != len(bb) {
+		panic(fmt.Sprintf("netFD.Write EAGAIN, n=%v, nb=%v", n, len(bb)))
 	}
 	return
 }
