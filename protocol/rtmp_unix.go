@@ -24,5 +24,7 @@
 package protocol
 
 func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
+	// wait for golang to implements the writev.
+	// @see https://github.com/golang/go/issues/13451
 	return v.slowSendMessages(iovs...)
 }
