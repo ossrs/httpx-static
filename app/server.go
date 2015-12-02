@@ -125,6 +125,20 @@ func (s *Server) Close() {
 	// when cpu profile is enabled, close it.
 	if core.Conf.Go.CpuProfile != "" {
 		pprof.StopCPUProfile()
+		core.Trace.Println("cpu profile ok, file is", core.Conf.Go.CpuProfile)
+	}
+
+	// when memory profile enabled, write heap info.
+	if core.Conf.Go.MemProfile != "" {
+		if f, err := os.Create(core.Conf.Go.MemProfile); err != nil {
+			core.Warn.Println("ignore open memory profile failed. err is", err)
+		} else {
+			defer f.Close()
+			if err = pprof.Lookup("heap").WriteTo(f, 0); err != nil {
+				core.Warn.Println("write memory profile failed. err is", err)
+			}
+		}
+		core.Trace.Println("mem profile ok, file is", core.Conf.Go.MemProfile)
 	}
 
 	// ok, closed.

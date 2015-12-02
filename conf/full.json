@@ -15,10 +15,14 @@
     // the interval for gc, in seconds.
     // default: 300
     "gc_interval": 300,
-    // the profile file, for example
+    // the cpu profile filename, for example
     //    go tool pprof oryx cpu.prof
     // default or empty string to ignore.
-    "cpu_profile": "cpu.prof"
+    "cpu_profile": "cpu.prof",
+    // the memory profile filename, for example
+    //    go tool pprof oryx mem.prof
+    // default for empty string to ignore.
+    "mem_profile": "mem.prof"
   },
   // the log section.
   "log": {

@@ -239,6 +239,7 @@ type Config struct {
 	Go struct {
 		GcInterval int    `json:"gc_interval"` // the gc interval in seconds.
 		CpuProfile string `json:"cpu_profile"` // the cpu profile file.
+		MemProfile string `json:"mem_profile"` // the memory profile file.
 	}
 
 	// the log config.

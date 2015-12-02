@@ -23,8 +23,8 @@ package protocol
 
 import "time"
 
-// timeout for rtmp.
 const (
+	// timeout for rtmp.
 	HandshakeTimeout        = 2100 * time.Millisecond
 	ConnectAppTimeout       = 5000 * time.Millisecond
 	AckTimeout              = ConnectAppTimeout
@@ -35,6 +35,14 @@ const (
 	FlashPublishTimeout     = FmlePublishTimeout
 	PublishRecvTimeout      = FlashPublishTimeout
 
-	FlashPlayWaitTimeout = 300 * time.Second
-	FlashPlayIoTimeout   = ConnectAppTimeout
+	FlashPlayIoTimeout = ConnectAppTimeout
+
+	// the input cache, to read from network and put in it.
+	RtmpInCache = 16
+
+	// the output cache, the messages to send.
+	RtmpOutCache = 32
+
+	// how many messages send in a group.
+	RtmpGroupMessageCount = 10
 )

@@ -845,12 +845,6 @@ type RtmpConnection struct {
 	lock   sync.Mutex
 }
 
-// the input cache, to read from network and put in it.
-const RtmpInCache = 16
-
-// the output cache, the messages to send.
-const RtmpOutCache = 32
-
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
 		sid:           0,
@@ -1394,8 +1388,26 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 	return v.stack.DecodeMessage(m)
 }
 
+// to send message over rtmp.
+// @remark for performance issue, the send for player never use timer,
+//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
+func (v *RtmpConnection) SendMessageNoTimeout(m *RtmpMessage) (err error) {
+	select {
+	case v.out <- m:
+	// ok
+	case <-v.closing:
+		return core.ClosedError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
 // to receive message from rtmp or another oryx channel.
-func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
+// @remark for performance issue, the mix recv for player never use timer,
+//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
+func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
 	for {
 		select {
 		case m := <-extra:
@@ -1406,9 +1418,6 @@ func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core
 			if err = fn(m, nil); err != nil {
 				return
 			}
-		case <-time.After(timeout):
-			core.Error.Println("timeout for", timeout)
-			return core.TimeoutError
 		case <-v.closing:
 			return core.ClosedError
 		case <-v.wc.QC():
@@ -1648,7 +1657,7 @@ func (v *RtmpConnection) sender() (err error) {
 			msgs = append(msgs, m)
 
 			// TODO: FIXME: config the msgs to group.
-			for len(msgs) < RtmpOutCache/3 {
+			for len(msgs) < RtmpGroupMessageCount {
 				if m, ok := <-v.out; ok {
 					msgs = append(msgs, m)
 				} else {
