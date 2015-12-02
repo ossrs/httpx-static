@@ -1652,7 +1652,7 @@ func (v *RtmpConnection) sender() (err error) {
 	for m := range v.out {
 		// when group messages,
 		// we wait util we got the expect messages.
-		if v.groupMessages {
+		if v.groupMessages && RtmpGroupMessageCount > 1 {
 			msgs := []*RtmpMessage{}
 			msgs = append(msgs, m)
 

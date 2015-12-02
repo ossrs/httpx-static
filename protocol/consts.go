@@ -44,5 +44,6 @@ const (
 	RtmpOutCache = 32
 
 	// how many messages send in a group.
-	RtmpGroupMessageCount = 10
+	// @remark 0 to disable group messages to send one by one.
+	RtmpGroupMessageCount = 8
 )
