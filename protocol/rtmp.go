@@ -1394,7 +1394,7 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 func (v *RtmpConnection) SendMessageNoTimeout(m *RtmpMessage) (err error) {
 	select {
 	case v.out <- m:
-	// ok
+		// ok
 	case <-v.closing:
 		return core.ClosedError
 	case <-v.wc.QC():
@@ -3427,6 +3427,13 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 
 // to sendout multiple messages.
 func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
+	return v.fastSendMessages(msgs...)
+}
+
+// group all messages to a big buffer and send it,
+// for the os which not support writev.
+// @remark this method will be invoked by platform depends fast send messages.
+func (v *RtmpStack) slowSendMessages(msgs ...*RtmpMessage) (err error) {
 	// cache the messages to send to descrease the syscall.
 	cache := &bytes.Buffer{}
 
