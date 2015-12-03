@@ -378,10 +378,12 @@ func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
 		return
 	}
 
-	// unblock the sender.
-	select {
-	case v.cond <- true:
-	default:
+	// unblock the sender when got enough messages.
+	if v.conn.NeedNotify() {
+		select {
+		case v.cond <- true:
+		default:
+		}
 	}
 
 	return

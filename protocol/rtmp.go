@@ -1369,6 +1369,10 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	return
 }
 
+func (v *RtmpConnection) NeedNotify() bool {
+	return len(v.out) > RtmpGroupMessageCount
+}
+
 // to push message to send queue.
 func (v *RtmpConnection) Flush() (err error) {
 	v.writeLock.Lock()
