@@ -3272,21 +3272,12 @@ type RtmpStack struct {
 	outChunkSize uint32
 	// whether the stack is closing.
 	closing bool
-
-	// the system fd, for writev to use.
-	// @remark unix only, other os ignore it.
-	sysfd interface{}
-	// once start the fast send mode(writev),
-	// we should never use slow again in stack.
-	// @remark maybe the fast still use slow, it's ok.
-	fastMode bool
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	return &RtmpStack{
 		in:           r,
 		out:          w,
-		sysfd:        nil,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
