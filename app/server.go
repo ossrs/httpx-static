@@ -29,6 +29,7 @@ import (
 	"os/signal"
 	"runtime"
 	"runtime/debug"
+	"runtime/pprof"
 	"sync"
 	"syscall"
 	"time"
@@ -121,6 +122,25 @@ func (s *Server) Close() {
 	// close the agent manager.
 	agent.Manager.Close()
 
+	// when cpu profile is enabled, close it.
+	if core.Conf.Go.CpuProfile != "" {
+		pprof.StopCPUProfile()
+		core.Trace.Println("cpu profile ok, file is", core.Conf.Go.CpuProfile)
+	}
+
+	// when memory profile enabled, write heap info.
+	if core.Conf.Go.MemProfile != "" {
+		if f, err := os.Create(core.Conf.Go.MemProfile); err != nil {
+			core.Warn.Println("ignore open memory profile failed. err is", err)
+		} else {
+			defer f.Close()
+			if err = pprof.Lookup("heap").WriteTo(f, 0); err != nil {
+				core.Warn.Println("write memory profile failed. err is", err)
+			}
+		}
+		core.Trace.Println("mem profile ok, file is", core.Conf.Go.MemProfile)
+	}
+
 	// ok, closed.
 	s.closed = StateClosed
 	core.Trace.Println("server closed")
@@ -157,6 +177,24 @@ func (s *Server) PrepareLogger() (err error) {
 	return
 }
 
+func (s *Server) initializeRuntime() (err error) {
+	// install signals.
+	// TODO: FIXME: when process the current signal, others may drop.
+	signal.Notify(s.sigs)
+
+	// apply the cpu profile.
+	if err = s.applyCpuProfile(core.Conf); err != nil {
+		return
+	}
+
+	// apply the gc percent.
+	if err = s.applyGcPercent(core.Conf); err != nil {
+		return
+	}
+
+	return
+}
+
 func (s *Server) Initialize() (err error) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -165,9 +203,10 @@ func (s *Server) Initialize() (err error) {
 		panic("server invalid state.")
 	}
 
-	// install signals.
-	// TODO: FIXME: when process the current signal, others may drop.
-	signal.Notify(s.sigs)
+	// about the runtime.
+	if err = s.initializeRuntime(); err != nil {
+		return
+	}
 
 	// use worker container to fork.
 	var wc core.WorkerContainer = s
@@ -188,8 +227,8 @@ func (s *Server) Initialize() (err error) {
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
-	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v, daemon=%v",
-		c.Conf(), l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Daemon))
+	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v/%v%%, daemon=%v",
+		c.Conf(), l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Go.GcPercent, c.Daemon))
 
 	// set to ready, requires cleanup.
 	s.closed = StateReady
@@ -223,6 +262,11 @@ func (s *Server) Run() (err error) {
 
 	var wc core.WorkerContainer = s
 	for {
+		var gcc <-chan time.Time = nil
+		if core.Conf.Go.GcInterval > 0 {
+			gcc = time.After(time.Second * time.Duration(core.Conf.Go.GcInterval))
+		}
+
 		select {
 		case signal := <-s.sigs:
 			core.Trace.Println("got signal", signal)
@@ -238,7 +282,7 @@ func (s *Server) Run() (err error) {
 			s.wg.Wait()
 			core.Warn.Println("server cycle ok")
 			return
-		case <-time.After(time.Second * time.Duration(core.Conf.Go.GcInterval)):
+		case <-gcc:
 			runtime.GC()
 			core.Info.Println("go runtime gc every", core.Conf.Go.GcInterval, "seconds")
 		}
@@ -313,12 +357,46 @@ func (s *Server) applyLogger(c *core.Config) (err error) {
 	return
 }
 
+func (s *Server) applyCpuProfile(c *core.Config) (err error) {
+	pprof.StopCPUProfile()
+
+	if c.Go.CpuProfile == "" {
+		return
+	}
+
+	var f *os.File
+	if f, err = os.Create(c.Go.CpuProfile); err != nil {
+		core.Error.Println("open cpu profile file failed. err is", err)
+		return
+	}
+	if err = pprof.StartCPUProfile(f); err != nil {
+		core.Error.Println("start cpu profile failed. err is", err)
+		return
+	}
+	return
+}
+
+func (s *Server) applyGcPercent(c *core.Config) (err error) {
+	if c.Go.GcPercent == 0 {
+		debug.SetGCPercent(100)
+		return
+	}
+
+	pv := debug.SetGCPercent(c.Go.GcPercent)
+	core.Trace.Println("set gc percent from", pv, "to", c.Go.GcPercent)
+	return
+}
+
 // interface ReloadHandler
 func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	if scope == core.ReloadWorkers {
 		s.applyMultipleProcesses(cc.Workers)
 	} else if scope == core.ReloadLog {
 		s.applyLogger(cc)
+	} else if scope == core.ReloadCpuProfile {
+		s.applyCpuProfile(cc)
+	} else if scope == core.ReloadGcPercent {
+		s.applyGcPercent(cc)
 	}
 
 	return

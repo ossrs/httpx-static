@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
 	"io"
-	"math"
 	"net"
 	"net/url"
 	"reflect"
@@ -827,6 +826,10 @@ type RtmpConnection struct {
 	handshake *hsBytes
 	// the underlayer transport.
 	transport io.ReadWriteCloser
+	// when handshake and negotiate,
+	// the connection must send message one when got it,
+	// while we can group messages when send audio/video stream.
+	groupMessages bool
 	// the RTMP protocol stack.
 	stack *RtmpStack
 	// input channel, receive message from client.
@@ -844,15 +847,16 @@ type RtmpConnection struct {
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
-		sid:       0,
-		Req:       NewRtmpRequest(),
-		wc:        wc,
-		handshake: NewHsBytes(),
-		transport: transport,
-		stack:     NewRtmpStack(transport, transport),
-		in:        make(chan *RtmpMessage, 1),
-		out:       make(chan *RtmpMessage, 1),
-		closing:   make(chan bool, 2),
+		sid:           0,
+		Req:           NewRtmpRequest(),
+		wc:            wc,
+		handshake:     NewHsBytes(),
+		transport:     transport,
+		groupMessages: false,
+		stack:         NewRtmpStack(transport, transport),
+		in:            make(chan *RtmpMessage, RtmpInCache),
+		out:           make(chan *RtmpMessage, RtmpOutCache),
+		closing:       make(chan bool, 2),
 	}
 
 	// wait for goroutine to run.
@@ -1349,6 +1353,9 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		}
 	}
 
+	// ok, we enter group message mode.
+	v.groupMessages = true
+
 	return
 }
 
@@ -1381,8 +1388,26 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 	return v.stack.DecodeMessage(m)
 }
 
+// to send message over rtmp.
+// @remark for performance issue, the send for player never use timer,
+//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
+func (v *RtmpConnection) SendMessageNoTimeout(m *RtmpMessage) (err error) {
+	select {
+	case v.out <- m:
+		// ok
+	case <-v.closing:
+		return core.ClosedError
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
 // to receive message from rtmp or another oryx channel.
-func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
+// @remark for performance issue, the mix recv for player never use timer,
+//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
+func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
 	for {
 		select {
 		case m := <-extra:
@@ -1393,9 +1418,6 @@ func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core
 			if err = fn(m, nil); err != nil {
 				return
 			}
-		case <-time.After(timeout):
-			core.Error.Println("timeout for", timeout)
-			return core.TimeoutError
 		case <-v.closing:
 			return core.ClosedError
 		case <-v.wc.QC():
@@ -1516,13 +1538,15 @@ func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessage, err error) {
 	m = NewRtmpMessage()
 
+	var b bytes.Buffer
+	if err = core.Marshal(p, &b); err != nil {
+		return nil, err
+	}
+
 	m.MessageType = p.MessageType()
 	m.PreferCid = p.PreferCid()
 	m.StreamId = sid
-
-	if err = core.Marshal(p, &m.Payload); err != nil {
-		return nil, err
-	}
+	m.Payload = b.Bytes()
 
 	return m, nil
 }
@@ -1604,7 +1628,7 @@ func (v *RtmpConnection) receiver() (err error) {
 		}
 
 		// cache the message when got non empty one.
-		if m != nil && m.Payload.Len() > 0 {
+		if m != nil && len(m.Payload) > 0 {
 			v.in <- m
 		}
 	}
@@ -1623,8 +1647,35 @@ func (v *RtmpConnection) sender() (err error) {
 		return
 	}
 
+	// msgs cache.
+	msgs := make([]*RtmpMessage, RtmpGroupMessageCount)
+
 	// send out all messages in cache
+	// TODO: FIXME: refine for the realtime streaming.
 	for m := range v.out {
+		// when group messages,
+		// we wait util we got the expect messages.
+		if v.groupMessages && RtmpGroupMessageCount > 1 {
+			// put first msg.
+			msgs[0] = m
+
+			// TODO: FIXME: config the msgs to group.
+			for n := 1; n < RtmpGroupMessageCount; n++ {
+				if m, ok := <-v.out; ok {
+					msgs[n] = m
+				} else {
+					// closed?
+					return
+				}
+			}
+
+			if err = v.stack.SendMessage(msgs...); err != nil {
+				return
+			}
+			continue
+		}
+
+		// when not group message, send message one by one.
 		if err = v.stack.SendMessage(m); err != nil {
 			return
 		}
@@ -2142,7 +2193,7 @@ type RtmpMessage struct {
 	// user must use SrsProtocol.decode_message to get concrete packet.
 	// @remark, not all message payload can be decoded to packet. for example,
 	//       video/audio packet use raw bytes, no video/audio packet.
-	Payload bytes.Buffer
+	Payload []byte
 }
 
 func NewRtmpMessage() *RtmpMessage {
@@ -2150,7 +2201,7 @@ func NewRtmpMessage() *RtmpMessage {
 }
 
 func (v *RtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.MessageType, v.Payload.Len())
+	return fmt.Sprintf("%v %vB", v.MessageType, len(v.Payload))
 }
 
 // convert the rtmp message to oryx message.
@@ -2190,11 +2241,11 @@ func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 
 func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.rtmp.Payload.Len() < 2 {
+	if len(v.rtmp.Payload) < 2 {
 		return false
 	}
 
-	b := v.rtmp.Payload.Bytes()
+	b := v.rtmp.Payload
 
 	// sequence header only for h264
 	codec := RtmpCodecVideo(b[0] & 0x0f)
@@ -2209,11 +2260,11 @@ func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 
 func (v *OryxRtmpMessage) isAudioSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.rtmp.Payload.Len() < 2 {
+	if len(v.rtmp.Payload) < 2 {
 		return false
 	}
 
-	b := v.rtmp.Payload.Bytes()
+	b := v.rtmp.Payload
 
 	soundFormat := RtmpCodecAudio((b[0] >> 4) & 0x0f)
 	if soundFormat != RtmpAAC {
@@ -2246,7 +2297,7 @@ func (v *OryxRtmpMessage) Payload() *RtmpMessage {
 }
 
 func (v *OryxRtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, v.rtmp.Payload.Len())
+	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, len(v.rtmp.Payload))
 }
 
 func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {
@@ -3178,6 +3229,8 @@ type RtmpChunk struct {
 	isFresh bool
 	// the partial message which not completed.
 	partialMessage *RtmpMessage
+	// the number of already received payload size.
+	nbPayload uint32
 
 	// 4.1. Message Header
 	// 3bytes.
@@ -3211,6 +3264,7 @@ type RtmpStack struct {
 	in  io.Reader
 	out io.Writer
 	// use bytes.Buffer to parse RTMP.
+	// TODO: FIXME: use bufio.Reader instead.
 	inb bytes.Buffer
 	// the chunks for RTMP,
 	// key is the cid from basic header.
@@ -3221,16 +3275,28 @@ type RtmpStack struct {
 	outChunkSize uint32
 	// whether the stack is closing.
 	closing bool
+
+	// the protocol caches, for gc efficiency.
+	// the chunk header c0, c3 and extended-timestamp caches.
+	c0c3Cache chan []byte
+	// the large buffer cache, for slow send used to concat iovs.
+	slowSendBuffer []byte
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
-	return &RtmpStack{
+	v := &RtmpStack{
 		in:           r,
 		out:          w,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
 	}
+
+	// assume each message contains 10 chunks,
+	// and each chunk need 3 header(c0, c3, extended-timestamp).
+	v.c0c3Cache = make(chan []byte, RtmpGroupMessageCount*10*3)
+
+	return v
 }
 
 func (v *RtmpStack) Close() {
@@ -3238,7 +3304,7 @@ func (v *RtmpStack) Close() {
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
-	b := bytes.NewBuffer(m.Payload.Bytes())
+	b := bytes.NewBuffer(m.Payload)
 
 	// decode specified packet type
 	if m.MessageType.isAmf0() || m.MessageType.isAmf3() {
@@ -3375,99 +3441,164 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 	return
 }
 
-func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
-	// we directly send out the packet,
-	// use very simple algorithm, not very fast,
-	// but it's ok.
-	b := bytes.NewBuffer(m.Payload.Bytes())
+func (v *RtmpStack) getC0c3Cache() []byte {
+	select {
+	case c := <-v.c0c3Cache:
+		return c
+	default:
+		return make([]byte, 12)
+	}
+}
 
-	for b.Len() > 0 {
-		// first chunk, c0.
-		var vb bytes.Buffer
+func (v *RtmpStack) putC0c3Cache(c []byte) {
+	select {
+	case v.c0c3Cache <- c:
+	default:
+	}
+}
 
-		// for chunk header without extended timestamp.
-		if firstChunk := bool(b.Len() == m.Payload.Len()); firstChunk {
-			// write new chunk stream header, fmt is 0
-			if err = vb.WriteByte(byte(0x00 | (byte(m.PreferCid) & 0x3f))); err != nil {
-				return
+// to sendout multiple messages.
+func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
+	// cache the messages to send to descrease the syscall.
+	iovs := make([][]byte, 0)
+
+	for _, m := range msgs {
+		// we directly send out the packet,
+		// use very simple algorithm, not very fast,
+		// but it's ok.
+		for written := uint32(0); written < uint32(len(m.Payload)); {
+			// for chunk header without extended timestamp.
+			if firstChunk := bool(written == 0); firstChunk {
+				// the fmt0 is 12bytes header.
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:12])
+
+				// write new chunk stream header, fmt is 0
+				iov[0] = byte(0x00 | (byte(m.PreferCid) & 0x3f))
+
+				// chunk message header, 11 bytes
+				// timestamp, 3bytes, big-endian
+				if m.Timestamp < RtmpExtendedTimestamp {
+					iov[1] = byte(m.Timestamp >> 16)
+					iov[2] = byte(m.Timestamp >> 8)
+					iov[3] = byte(m.Timestamp)
+				} else {
+					iov[1] = 0xff
+					iov[2] = 0xff
+					iov[3] = 0xff
+				}
+
+				// message_length, 3bytes, big-endian
+				iov[4] = byte(len(m.Payload) >> 16)
+				iov[5] = byte(len(m.Payload) >> 8)
+				iov[6] = byte(len(m.Payload))
+
+				// message_type, 1bytes
+				iov[7] = byte(m.MessageType)
+
+				// stream_id, 4bytes, little-endian
+				iov[8] = byte(m.StreamId)
+				iov[9] = byte(m.StreamId >> 8)
+				iov[10] = byte(m.StreamId >> 16)
+				iov[11] = byte(m.StreamId >> 24)
+			} else {
+				// the fmt3 is 1bytes header.
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:1])
+
+				// write no message header chunk stream, fmt is 3
+				// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
+				// SRS will rollback to 1B chunk header.
+				iov[0] = byte(0xC0 | (byte(m.PreferCid) & 0x3f))
 			}
 
-			// chunk message header, 11 bytes
-			// timestamp, 3bytes, big-endian
-			ts := []byte{0xff, 0xff, 0xff}
-			if m.Timestamp < RtmpExtendedTimestamp {
-				ts[0] = byte(m.Timestamp >> 16)
-				ts[1] = byte(m.Timestamp >> 8)
-				ts[2] = byte(m.Timestamp)
-			}
-			if _, err = vb.Write(ts); err != nil {
-				return
+			// for chunk extended timestamp.
+			//
+			// for c0
+			// chunk extended timestamp header, 0 or 4 bytes, big-endian
+			//
+			// for c3:
+			// chunk extended timestamp header, 0 or 4 bytes, big-endian
+			// 6.1.3. Extended Timestamp
+			// This field is transmitted only when the normal time stamp in the
+			// chunk message header is set to 0x00ffffff. If normal time stamp is
+			// set to any value less than 0x00ffffff, this field MUST NOT be
+			// present. This field MUST NOT be present if the timestamp field is not
+			// present. Type 3 chunks MUST NOT have this field.
+			// adobe changed for Type3 chunk:
+			//        FMLE always sendout the extended-timestamp,
+			//        must send the extended-timestamp to FMS,
+			//        must send the extended-timestamp to flash-player.
+			// @see: ngx_rtmp_prepare_message
+			// @see: http://blog.csdn.net/win_lin/article/details/13363699
+			if m.Timestamp >= RtmpExtendedTimestamp {
+				// the extended-timestamp is 4bytes.
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:4])
+
+				// big-endian.
+				iov[0] = byte(len(m.Payload) >> 24)
+				iov[1] = byte(len(m.Payload) >> 16)
+				iov[2] = byte(len(m.Payload) >> 8)
+				iov[3] = byte(len(m.Payload))
 			}
 
-			// message_length, 3bytes, big-endian
-			ts[0] = byte(m.Payload.Len() >> 16)
-			ts[1] = byte(m.Payload.Len() >> 8)
-			ts[2] = byte(m.Payload.Len())
-			if _, err = vb.Write(ts); err != nil {
-				return
+			// write chunk payload
+			var size uint32
+			if size = uint32(len(m.Payload)) - written; size > v.outChunkSize {
+				size = v.outChunkSize
 			}
+			iovs = append(iovs, m.Payload[written:written+size])
 
-			// message_type, 1bytes
-			if err = vb.WriteByte(byte(m.MessageType)); err != nil {
-				return
-			}
-
-			// stream_id, 4bytes, little-endian
-			if err = binary.Write(&vb, binary.LittleEndian, m.StreamId); err != nil {
-				return
-			}
-		} else {
-			// write no message header chunk stream, fmt is 3
-			// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
-			// SRS will rollback to 1B chunk header.
-			if err = vb.WriteByte(byte(0xC0 | (byte(m.PreferCid) & 0x3f))); err != nil {
-				return
-			}
+			written += size
 		}
+	}
 
-		// for chunk extended timestamp.
-		//
-		// for c0
-		// chunk extended timestamp header, 0 or 4 bytes, big-endian
-		//
-		// for c3:
-		// chunk extended timestamp header, 0 or 4 bytes, big-endian
-		// 6.1.3. Extended Timestamp
-		// This field is transmitted only when the normal time stamp in the
-		// chunk message header is set to 0x00ffffff. If normal time stamp is
-		// set to any value less than 0x00ffffff, this field MUST NOT be
-		// present. This field MUST NOT be present if the timestamp field is not
-		// present. Type 3 chunks MUST NOT have this field.
-		// adobe changed for Type3 chunk:
-		//        FMLE always sendout the extended-timestamp,
-		//        must send the extended-timestamp to FMS,
-		//        must send the extended-timestamp to flash-player.
-		// @see: ngx_rtmp_prepare_message
-		// @see: http://blog.csdn.net/win_lin/article/details/13363699
-		if m.Timestamp >= RtmpExtendedTimestamp {
-			if err = binary.Write(&vb, binary.LittleEndian, uint32(m.Timestamp)); err != nil {
-				return
-			}
-		}
+	return v.fastSendMessages(iovs...)
+}
 
-		// write chunk header.
-		nvb := int64(vb.Len())
-		if _, err = io.CopyN(v.out, &vb, nvb); err != nil {
-			return
-		}
+// group all messages to a big buffer and send it,
+// for the os which not support writev.
+// @remark this method will be invoked by platform depends fastSendMessages.
+func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
+	// delay init buffer.
+	if v.slowSendBuffer == nil {
+		// assume each message about 16kB
+		v.slowSendBuffer = make([]byte, RtmpGroupMessageCount*16*1024)
+	}
 
-		// write chunk payload
-		size := int64(math.Min(float64(v.outChunkSize), float64(b.Len())))
-		if _, err = io.CopyN(v.out, b, size); err != nil {
+	// calculate the total size of bytes to send.
+	var total int
+	for _, iov := range iovs {
+		total += len(iov)
+	}
+
+	// ensure the buffer is ok.
+	if total > len(v.slowSendBuffer) {
+		v.slowSendBuffer = make([]byte, 2*total)
+	}
+	b := v.slowSendBuffer[0:total]
+
+	// write all pieces of iovs to buffer.
+	w := NewBytesWriter(b)
+	for _, iov := range iovs {
+		if _, err = w.Write(iov); err != nil {
 			return
 		}
 	}
 
+	// send the buffer out.
+	var n int
+	if n, err = v.out.Write(b); err != nil {
+		return
+	}
+
+	if n != len(b) {
+		panic(fmt.Sprintf("netFD.Write EAGAIN, n=%v, nb=%v", n, len(b)))
+	}
 	return
 }
 
@@ -3483,7 +3614,7 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	r := NewMixReader(inb, in)
 
 	// the preload body must be consumed in a time.
-	left := (int)(chunk.payloadLength - uint32(m.Payload.Len()))
+	left := (int)(chunk.payloadLength - chunk.nbPayload)
 	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
@@ -3496,14 +3627,17 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	}
 
 	// read payload to buffer
-	if _, err = io.CopyN(&m.Payload, r, int64(left)); err != nil {
+	w := NewBytesWriter(m.Payload[chunk.nbPayload : int(chunk.nbPayload)+left])
+	if _, err = io.CopyN(w, r, int64(left)); err != nil {
 		core.Error.Println("read body failed. err is", err)
 		return
 	}
+	chunk.nbPayload += uint32(left)
 
 	// got entire RTMP message?
-	if chunk.payloadLength == uint32(m.Payload.Len()) {
+	if chunk.payloadLength == chunk.nbPayload {
 		chunk.partialMessage = nil
+		chunk.nbPayload = 0
 		return
 	}
 
@@ -3752,6 +3886,9 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	chunk.partialMessage.Timestamp = chunk.timestamp
 	chunk.partialMessage.PreferCid = chunk.cid
 	chunk.partialMessage.StreamId = chunk.streamId
+	if chunk.partialMessage.Payload == nil {
+		chunk.partialMessage.Payload = make([]byte, chunk.payloadLength)
+	}
 
 	// update chunk information.
 	chunk.fmt = fmt

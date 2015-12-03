@@ -120,7 +120,22 @@ func (v *Rtmp) serve(c net.Conn) {
 				core.Error.Println(string(debug.Stack()))
 			}
 		}()
+		defer func() {
+			if err := c.Close(); err != nil {
+				core.Info.Println("ignore close failed. err is", err)
+			}
+		}()
 
+		// for tcp connections.
+		if c, ok := c.(*net.TCPConn); ok {
+			// set TCP_NODELAY to false for performance issue.
+			// TODO: FIXME: config it.
+			// TODO: FIXME: refine for the realtime streaming.
+			if err := c.SetNoDelay(false); err != nil {
+				core.Error.Println("set TCP_NODELAY failed. err is", err)
+				return
+			}
+		}
 		core.Trace.Println("rtmp accept", c.RemoteAddr())
 
 		conn := protocol.NewRtmpConnection(c, v.wc)
@@ -266,7 +281,9 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	}
 
 	if err = agent.Pump(); err != nil {
-		core.Warn.Println("ignore rtmp agent work failed. err is", err)
+		if !core.IsNormalQuit(err) {
+			core.Warn.Println("ignore rtmp agent work failed. err is", err)
+		}
 		return
 	}
 
@@ -292,11 +309,12 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 
 // rtmp play agent, to serve the player or edge.
 type RtmpPlayAgent struct {
-	conn     *protocol.RtmpConnection
-	wc       core.WorkerContainer
-	upstream core.Agent
-	msgs     chan core.Message
-	jitter   *Jitter
+	conn      *protocol.RtmpConnection
+	wc        core.WorkerContainer
+	upstream  core.Agent
+	msgs      chan core.Message
+	jitter    *Jitter
+	nbDropped uint32
 }
 
 // audio+videos, about 10ms per packet.
@@ -328,14 +346,14 @@ func (v *RtmpPlayAgent) Close() (err error) {
 }
 
 func (v *RtmpPlayAgent) Pump() (err error) {
-	return v.conn.MixRecvMessage(protocol.FlashPlayWaitTimeout, v.msgs,
+	return v.conn.RecvMessageNoTimeout(v.msgs,
 		func(m0 *protocol.RtmpMessage, m1 core.Message) (err error) {
 			// message from publisher to send to player.
 			if m1 != nil {
 				switch m1.Muxer() {
 				case core.MuxerRtmp:
 					if m, ok := m1.(*protocol.OryxRtmpMessage); ok {
-						return v.conn.SendMessage(protocol.FlashPlayIoTimeout, m.Payload())
+						return v.conn.SendMessageNoTimeout(m.Payload())
 					}
 					core.Warn.Println("ignore not rtmp message to play agent.")
 					return
@@ -374,7 +392,12 @@ func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
 	select {
 	case v.msgs <- m:
 	default:
-		core.Warn.Println("play drop msg", m)
+		v.nbDropped++
+		if (v.nbDropped % 1000) == 0 {
+			core.Warn.Println("play drop msg", m)
+		} else if (v.nbDropped % 100) == 0 {
+			core.Trace.Println("play drop msg", m)
+		}
 	}
 
 	return

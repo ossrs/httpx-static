@@ -33,6 +33,7 @@ type simpleLogger struct {
 	file *os.File
 }
 
+// TODO: FIXME: maybe we can got goroutine id by reflect.
 func (l *simpleLogger) open(c *core.Config) (err error) {
 	core.Info.Println("apply log tank", c.Log.Tank)
 	core.Info.Println("apply log level", c.Log.Level)

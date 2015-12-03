@@ -19,32 +19,12 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
+
 package protocol
 
-import "time"
-
-const (
-	// timeout for rtmp.
-	HandshakeTimeout        = 2100 * time.Millisecond
-	ConnectAppTimeout       = 5000 * time.Millisecond
-	AckTimeout              = ConnectAppTimeout
-	SetPeerBandwidthTimeout = AckTimeout
-	OnBwDoneTimeout         = SetPeerBandwidthTimeout
-	IdentifyTimeout         = OnBwDoneTimeout
-	FmlePublishTimeout      = IdentifyTimeout
-	FlashPublishTimeout     = FmlePublishTimeout
-	PublishRecvTimeout      = FlashPublishTimeout
-
-	FlashPlayIoTimeout = ConnectAppTimeout
-
-	// the input cache, to read from network and put in it.
-	RtmpInCache = 16
-
-	// the output cache, the messages to send.
-	RtmpOutCache = 32
-
-	// how many messages send in a group.
-	// one message is about 15ms for RTMP audio and video.
-	// @remark 0 to disable group messages to send one by one.
-	RtmpGroupMessageCount = 10
-)
+func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
+	// wait for golang to implements the writev.
+	// @see https://github.com/golang/go/issues/13451
+	return v.slowSendMessages(iovs...)
+}

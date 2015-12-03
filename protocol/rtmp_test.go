@@ -311,7 +311,7 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 		0x0d,
 		0x0c, 0x00, 0x00, 0x00,
 	}, 0, f0, func(b []byte, c *RtmpChunk) {
-		if c.partialMessage.Payload.Len() != 0x00 {
+		if len(c.partialMessage.Payload) != 0x0e {
 			t.Error("invalid payload")
 		}
 		if c.payloadLength != 0x0e || c.messageType != 0x0d || c.streamId != 0x0c {
@@ -405,6 +405,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 2
+	c.partialMessage.Payload = make([]byte, c.payloadLength)
 	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
 		0x01, 0x02, 0x03, 0x04, 0x05,
 	}), &bytes.Buffer{}, c); err != nil || m == nil {
@@ -413,6 +414,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 2
+	c.partialMessage.Payload = make([]byte, c.payloadLength)
 	if m, err := RtmpReadMessagePayload(2, nil, bytes.NewBuffer([]byte{
 		0x01, 0x02,
 	}), c); err != nil || m == nil {
@@ -421,6 +423,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 5
+	c.partialMessage.Payload = make([]byte, c.payloadLength)
 	if m, err := RtmpReadMessagePayload(5, bytes.NewReader([]byte{
 		0x01, 0x02,
 	}), bytes.NewBuffer([]byte{
@@ -431,6 +434,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 5
+	c.partialMessage.Payload = make([]byte, c.payloadLength)
 	if m, err := RtmpReadMessagePayload(6, bytes.NewReader([]byte{
 		0x01, 0x02,
 	}), bytes.NewBuffer([]byte{
@@ -441,6 +445,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 5
+	c.partialMessage.Payload = make([]byte, c.payloadLength)
 	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
 		0x01, 0x02, 0x05,
 	}), bytes.NewBuffer([]byte{
@@ -1071,14 +1076,10 @@ func TestRtmpRequest(t *testing.T) {
 }
 
 func TestRtmpMessage(t *testing.T) {
-	var err error
 	m := NewRtmpMessage()
+	m.Payload = []byte{7, 9, 3, 4, 2}
 
-	if _, err = m.Payload.Write([]byte{7, 9, 3, 4, 2}); err != nil {
-		t.Error("invalid", err)
-	}
-
-	b := m.Payload.Bytes()
+	b := m.Payload
 	if b[0] != 7 || b[4] != 2 {
 		t.Error("invalid")
 	}
@@ -1087,6 +1088,7 @@ func TestRtmpMessage(t *testing.T) {
 		t.Error("invalid")
 	}
 
+	var err error
 	var o core.Message
 	if o, err = m.ToMessage(); err != nil {
 		t.Error("invalid", err)
@@ -1110,29 +1112,27 @@ func TestRtmpMessage(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if cp.rtmp.Payload.Bytes()[0] != 7 {
+	if cp.rtmp.Payload[0] != 7 {
 		t.Error("invalid")
 	}
-	if om.rtmp.Payload.Bytes()[0] != 7 {
+	if om.rtmp.Payload[0] != 7 {
 		t.Error("invalid")
 	}
 
 	// the Buffer shares the bytes.
-	if cp.rtmp.Payload.Bytes()[0] = 8; cp.rtmp.Payload.Bytes()[0] != 8 {
+	if cp.rtmp.Payload[0] = 8; cp.rtmp.Payload[0] != 8 {
 		t.Error("invalid")
 	}
-	if om.rtmp.Payload.Bytes()[0] != 8 {
+	if om.rtmp.Payload[0] != 8 {
 		t.Error("invalid")
 	}
 
-	// when write, the Buffer copy it.
-	if _, err = cp.rtmp.Payload.Write([]byte{3}); err != nil {
-		t.Error("invalid", err)
-	}
-	if cp.rtmp.Payload.Len() != 6 || cp.rtmp.Payload.Bytes()[5] != 3 {
+	// when write, copy the slice
+	cp.rtmp.Payload = []byte{3, 2, 1}
+	if len(cp.rtmp.Payload) != 3 {
 		t.Error("invalid")
 	}
-	if om.rtmp.Payload.Len() != 5 {
+	if len(om.rtmp.Payload) != 5 {
 		t.Error("invalid")
 	}
 }
