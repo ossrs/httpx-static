@@ -1647,19 +1647,22 @@ func (v *RtmpConnection) sender() (err error) {
 		return
 	}
 
+	// msgs cache.
+	msgs := make([]*RtmpMessage, RtmpGroupMessageCount)
+
 	// send out all messages in cache
 	// TODO: FIXME: refine for the realtime streaming.
 	for m := range v.out {
 		// when group messages,
 		// we wait util we got the expect messages.
 		if v.groupMessages && RtmpGroupMessageCount > 1 {
-			msgs := []*RtmpMessage{}
-			msgs = append(msgs, m)
+			// put first msg.
+			msgs[0] = m
 
 			// TODO: FIXME: config the msgs to group.
-			for len(msgs) < RtmpGroupMessageCount {
+			for n := 1; n < RtmpGroupMessageCount; n++ {
 				if m, ok := <-v.out; ok {
-					msgs = append(msgs, m)
+					msgs[n] = m
 				} else {
 					// closed?
 					return
@@ -3272,16 +3275,30 @@ type RtmpStack struct {
 	outChunkSize uint32
 	// whether the stack is closing.
 	closing bool
+
+	// the protocol caches, for gc efficiency.
+	// the chunk header c0, c3 and extended-timestamp caches.
+	c0c3Cache chan []byte
+	// the large buffer cache, for slow send used to concat iovs.
+	slowSendBuffer []byte
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
-	return &RtmpStack{
+	v := &RtmpStack{
 		in:           r,
 		out:          w,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
 	}
+
+	// assume each message contains 10 chunks,
+	// and each chunk need 3 header(c0, c3, extended-timestamp).
+	v.c0c3Cache = make(chan []byte, RtmpGroupMessageCount*10*3)
+	// assume each message about 32kB
+	v.slowSendBuffer = make([]byte, RtmpGroupMessageCount*32*1024)
+
+	return v
 }
 
 func (v *RtmpStack) Close() {
@@ -3426,6 +3443,22 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 	return
 }
 
+func (v *RtmpStack) getC0c3Cache() []byte {
+	select {
+	case c := <-v.c0c3Cache:
+		return c
+	default:
+		return make([]byte, 12)
+	}
+}
+
+func (v *RtmpStack) putC0c3Cache(c []byte) {
+	select {
+	case v.c0c3Cache <- c:
+	default:
+	}
+}
+
 // to sendout multiple messages.
 func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 	// cache the messages to send to descrease the syscall.
@@ -3439,8 +3472,9 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 			// for chunk header without extended timestamp.
 			if firstChunk := bool(written == 0); firstChunk {
 				// the fmt0 is 12bytes header.
-				iov := make([]byte, 12)
-				iovs = append(iovs, iov)
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:12])
 
 				// write new chunk stream header, fmt is 0
 				iov[0] = byte(0x00 | (byte(m.PreferCid) & 0x3f))
@@ -3472,8 +3506,9 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 				iov[11] = byte(m.StreamId >> 24)
 			} else {
 				// the fmt3 is 1bytes header.
-				iov := make([]byte, 1)
-				iovs = append(iovs, iov)
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:1])
 
 				// write no message header chunk stream, fmt is 3
 				// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
@@ -3502,8 +3537,9 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 			// @see: http://blog.csdn.net/win_lin/article/details/13363699
 			if m.Timestamp >= RtmpExtendedTimestamp {
 				// the extended-timestamp is 4bytes.
-				iov := make([]byte, 4)
-				iovs = append(iovs, iov)
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:4])
 
 				// big-endian.
 				iov[0] = byte(len(m.Payload) >> 24)
@@ -3530,21 +3566,34 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 // for the os which not support writev.
 // @remark this method will be invoked by platform depends fastSendMessages.
 func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
-	var b bytes.Buffer
+	// calculate the total size of bytes to send.
+	var total int
 	for _, iov := range iovs {
-		if _, err = b.Write(iov); err != nil {
+		total += len(iov)
+	}
+
+	// ensure the buffer is ok.
+	if total > len(v.slowSendBuffer) {
+		v.slowSendBuffer = make([]byte, 2*total)
+	}
+	b := v.slowSendBuffer[0:total]
+
+	// write all pieces of iovs to buffer.
+	w := NewBytesWriter(b)
+	for _, iov := range iovs {
+		if _, err = w.Write(iov); err != nil {
 			return
 		}
 	}
 
+	// send the buffer out.
 	var n int
-	bb := b.Bytes()
-	if n, err = v.out.Write(bb); err != nil {
+	if n, err = v.out.Write(b); err != nil {
 		return
 	}
 
-	if n != len(bb) {
-		panic(fmt.Sprintf("netFD.Write EAGAIN, n=%v, nb=%v", n, len(bb)))
+	if n != len(b) {
+		panic(fmt.Sprintf("netFD.Write EAGAIN, n=%v, nb=%v", n, len(b)))
 	}
 	return
 }

@@ -36,6 +36,7 @@ const (
 	ReloadLog
 	ReloadListen
 	ReloadCpuProfile
+	ReloadGcPercent
 )
 
 // the reload handler,
@@ -238,6 +239,7 @@ type Config struct {
 	// the go section.
 	Go struct {
 		GcInterval int    `json:"gc_interval"` // the gc interval in seconds.
+		GcPercent  int    `json:"gc_percent"`  // the gc percent.
 		CpuProfile string `json:"cpu_profile"` // the cpu profile file.
 		MemProfile string `json:"mem_profile"` // the memory profile file.
 	}
@@ -285,7 +287,7 @@ func NewConfig() *Config {
 	c.Listen = RtmpListen
 	c.Workers = 0
 	c.Daemon = true
-	c.Go.GcInterval = 300
+	c.Go.GcInterval = 0
 
 	c.Heartbeat.Enabled = false
 	c.Heartbeat.Interval = 9.3
@@ -341,12 +343,18 @@ func (c *Config) Loads(conf string) error {
 
 // reparse the config, to compatible and better structure.
 func (c *Config) reparse() (err error) {
+	// check vhost, never dup name.
 	for _, v := range c.Vhosts {
 		if _, ok := c.vhosts[v.Name]; ok {
 			return fmt.Errorf("dup vhost name is", v.Name)
 		}
 
 		c.vhosts[v.Name] = v
+	}
+
+	// gc percent 0 to use system default(100).
+	if c.Go.GcPercent == 0 {
+		c.Go.GcPercent = 100
 	}
 
 	return
@@ -369,8 +377,8 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("listen must in (0, 65535], actual is %v", c.Listen)
 	}
 
-	if c.Go.GcInterval <= 0 || c.Go.GcInterval > 24*3600 {
-		return fmt.Errorf("go gc_interval must in (0, 24*3600], actual is %v", c.Go.GcInterval)
+	if c.Go.GcInterval < 0 || c.Go.GcInterval > 24*3600 {
+		return fmt.Errorf("go gc_interval must in [0, 24*3600], actual is %v", c.Go.GcInterval)
 	}
 
 	if c.Log.Level != "info" && c.Log.Level != "trace" && c.Log.Level != "warn" && c.Log.Level != "error" {
@@ -490,6 +498,17 @@ func (pc *Config) Reload(cc *Config) (err error) {
 		Trace.Println("reload apply cpu profile ok")
 	} else {
 		Info.Println("reload ignore cpu profile")
+	}
+
+	if cc.Go.GcPercent != pc.Go.GcPercent {
+		for _, h := range cc.reloadHandlers {
+			if err = h.OnReloadGlobal(ReloadGcPercent, cc, pc); err != nil {
+				return
+			}
+		}
+		Trace.Println("reload apply gc percent ok")
+	} else {
+		Info.Println("reload ignore gc percent")
 	}
 
 	return

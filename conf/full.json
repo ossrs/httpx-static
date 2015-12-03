@@ -12,9 +12,12 @@
   "daemon": true,
   // go runtime section.
   "go": {
-    // the interval for gc, in seconds.
-    // default: 300
-    "gc_interval": 300,
+    // the interval for gc, in seconds. 0 to not set.
+    // default: 0
+    "gc_interval": 0,
+    // the percent for gc. 0 to not set.
+    // default: 0
+    "gc_percent": 0,
     // the cpu profile filename, for example
     //    go tool pprof oryx cpu.prof
     // default or empty string to ignore.

@@ -22,11 +22,44 @@
 package core
 
 import (
+	"bytes"
 	"io/ioutil"
 	"log"
 	"os"
 	"testing"
 )
+
+func TestBytesBuffer(t *testing.T) {
+	b := []byte{3, 5, 6}
+	if cap(b) != 3 {
+		t.Error("invalid")
+	}
+
+	bb := bytes.NewBuffer(b)
+
+	bb.Reset()
+	bb.WriteByte(5)
+	if b[0] != 5 {
+		t.Error("invalid")
+	}
+
+	bb.WriteByte(6)
+	if b[1] != 6 {
+		t.Error("invalid")
+	}
+
+	bb.WriteByte(7)
+	if b[2] != 7 {
+		t.Error("invalid")
+	}
+
+	bb.WriteByte(8)
+	bb.Reset()
+	bb.WriteByte(9)
+	if b[0] != 5 {
+		t.Error("invalid")
+	}
+}
 
 func TestMain(m *testing.M) {
 	Info = log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags)

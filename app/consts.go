@@ -20,10 +20,3 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 package app
-
-const (
-	// set the gc percent, default is 100.
-	// recomment to use larger value, for example, 300.
-	// @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161176660
-	GcPercent = 300
-)
