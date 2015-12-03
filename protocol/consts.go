@@ -44,6 +44,7 @@ const (
 	RtmpOutCache = 32
 
 	// how many messages send in a group.
+	// one message is about 15ms for RTMP audio and video.
 	// @remark 0 to disable group messages to send one by one.
-	RtmpGroupMessageCount = 8
+	RtmpGroupMessageCount = 10
 )
