@@ -37,12 +37,14 @@ func ExampleConfig_Loads() {
 
 	fmt.Println("listen at", c.Listen)
 	fmt.Println("workers is", c.Workers)
-	fmt.Println("go gc every", c.Go.GcInterval, "seconds")
+	if c.Go.GcInterval == 0 {
+		fmt.Println("go gc use default interval.")
+	}
 
 	// Output:
 	// listen at 1935
 	// workers is 0
-	// go gc every 300 seconds
+	// go gc use default interval.
 }
 
 // the goroutine cycle ignore any error.
