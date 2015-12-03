@@ -33,10 +33,34 @@ type WorkerContainer interface {
 	// which can't be recover, notify server to cleanup and quit.
 	// @remark when got quit signal, the goroutine must notify the
 	//      container to Quit(), for which others goroutines wait.
-	// @remark this quit always return a core.Quit error, which can be ignore.
+	// @remark this quit always return a core.QuitError error, which can be ignore.
 	Quit() (err error)
 	// fork a new goroutine with work container.
 	// the param f can be a global func or object method.
 	// the param name is the goroutine name.
 	GFork(name string, f func(WorkerContainer))
+}
+
+// which used for quit.
+// TODO: FIXME: server should use it.
+type Quiter struct {
+	closing chan bool
+}
+
+func NewQuiter() *Quiter {
+	return &Quiter{
+		closing: make(chan bool, 1),
+	}
+}
+
+func (v *Quiter) QC() <-chan bool {
+	return v.closing
+}
+
+func (v *Quiter) Quit() (err error) {
+	select {
+	case v.closing <- true:
+	default:
+	}
+	return QuitError
 }

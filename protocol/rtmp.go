@@ -834,15 +834,22 @@ type RtmpConnection struct {
 	stack *RtmpStack
 	// input channel, receive message from client.
 	in chan *RtmpMessage
-	// output channel, to send to client.
-	out chan *RtmpMessage
 	// whether receiver and sender already quit.
-	quit sync.WaitGroup
-	// when receiver or sender quit, notify main goroutine.
-	closing chan bool
+	workers sync.WaitGroup
+
 	// whether closed.
 	closed bool
-	lock   sync.Mutex
+	// the locker for close
+	closeLock sync.Mutex
+	// when receiver or sender quit, notify main goroutine.
+	closing *core.Quiter
+
+	// the locker for write.
+	writeLock sync.Mutex
+	// use cache queue.
+	out []*RtmpMessage
+	// cache for group messages.
+	groupMessage []*RtmpMessage
 }
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
@@ -855,8 +862,9 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		groupMessages: false,
 		stack:         NewRtmpStack(transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
-		out:           make(chan *RtmpMessage, RtmpOutCache),
-		closing:       make(chan bool, 2),
+		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
+		groupMessage:  make([]*RtmpMessage, RtmpGroupMessageCount),
+		closing:       core.NewQuiter(),
 	}
 
 	// wait for goroutine to run.
@@ -864,40 +872,39 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 
 	// start the receiver and sender.
 	// directly use raw goroutine, for donot cause the container to quit.
-	v.quit.Add(2)
 	go core.Recover("rtmp receiver", func() error {
+		v.workers.Add(1)
+		defer v.workers.Done()
+
 		// noitfy the main goroutine to quit.
 		defer func() {
-			v.closing <- true
+			v.closing.Quit()
 		}()
 
 		// notify the main goroutine the receiver is ok.
 		wait <- true
 
 		if err := v.receiver(); err != nil {
-			if v.stack.closing {
-				return core.QuitError
-			}
 			return err
 		}
 		return nil
 	})
 	go core.Recover("rtmp sender", func() error {
+		v.workers.Add(1)
+		defer v.workers.Done()
+
 		// noitfy the main goroutine to quit.
 		defer func() {
-			v.closing <- true
+			v.closing.Quit()
 		}()
 
 		// notify the main goroutine the sender is ok.
 		wait <- true
 
-		if err := v.sender(); err != nil {
-			if v.stack.closing {
-				return core.QuitError
-			}
-			return err
-		}
-		return nil
+		// when got quit message, close the underlayer transport.
+		<-v.wc.QC()
+		v.wc.Quit()
+		return v.transport.Close()
 	})
 
 	// wait for receiver and sender ok.
@@ -910,37 +917,23 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 // close the connection to client.
 // TODO: FIXME: should be thread safe.
 func (v *RtmpConnection) Close() {
-	v.lock.Lock()
-	defer v.lock.Unlock()
+	v.closeLock.Lock()
+	defer v.closeLock.Unlock()
 
 	if v.closed {
 		return
 	}
+	v.closed = true
 
-	// close the stack.
-	v.stack.Close()
+	// close the underlayer transport.
+	_ = v.transport.Close()
 
-	// close transport,
-	// to notify the wait goroutine to quit.
-	if err := v.transport.Close(); err != nil {
-		core.Warn.Println("ignore transport close err", err)
-	}
-
-	// close the out channel cache,
-	// to notify the wait goroutine to quit.
-	close(v.handshake.out)
-
-	// try to read one to unblock the in channel.
-	select {
-	case <-v.in:
-	default:
-	}
-
-	// close output to unblock the sender.
-	close(v.out)
+	// notify other goroutine to close.
+	v.closing.Quit()
+	core.Info.Println("set closed and wait.")
 
 	// wait for sender and receiver to quit.
-	v.quit.Wait()
+	v.workers.Wait()
 	core.Warn.Println("closed")
 
 	return
@@ -953,12 +946,12 @@ func (v *RtmpConnection) waitC0C1() (err error) {
 	// wait c0c1
 	select {
 	case <-v.handshake.in:
-	// ok.
+		break
 	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
+		core.Error.Println("c0c1 timeout for", timeout)
 		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
+	case <-v.closing.QC():
+		return v.closing.Quit()
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -973,12 +966,12 @@ func (v *RtmpConnection) waitC2() (err error) {
 	// wait c2
 	select {
 	case <-v.handshake.in:
-	// ok.
+		break
 	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
+		core.Error.Println("c2 timeout for", timeout)
 		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
+	case <-v.closing.QC():
+		return v.closing.Quit()
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -1063,6 +1056,11 @@ func (v *RtmpConnection) Handshake() (err error) {
 	if err = v.handshake.outCacheS0S1S2(); err != nil {
 		return
 	}
+	// we must manually send out the s0s1s2,
+	// for the writer is belong to main goroutine.
+	if err = v.handshake.writeS0S1S2(v.transport); err != nil {
+		return
+	}
 
 	// got c2.
 	if err = v.waitC2(); err != nil {
@@ -1103,7 +1101,7 @@ func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
 	p.Ack = RtmpUint32(ack)
 
-	return v.write(AckTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // @type: The sender can mark this message hard (0), soft (1), or dynamic (2)
@@ -1113,7 +1111,7 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	p.Bandwidth = RtmpUint32(bw)
 	p.Type = RtmpUint8(t)
 
-	return v.write(SetPeerBandwidthTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // @param server_ip the ip of server.
@@ -1146,14 +1144,14 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	// for edge to directly get the id of client.
 	// TODO: FIXME: support oryx_server_ip, oryx_pid, oryx_id
 
-	return v.write(ConnectAppTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // response client the onBWDone message.
 func (v *RtmpConnection) OnBwDone() (err error) {
 	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
 
-	return v.write(OnBwDoneTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // recv some message to identify the client.
@@ -1166,12 +1164,15 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 	err = v.identify(func(p RtmpPacket) (loop bool, err error) {
 		switch p := p.(type) {
 		case *RtmpCreateStreamPacket:
+			core.Info.Println("identify createStream")
 			connType, streamName, duration, err = v.identifyCreateStream(nil, p)
 			return
 		case *RtmpFMLEStartPacket:
+			core.Info.Println("identify fmlePublish")
 			connType, streamName, err = v.identifyFmlePublish(p)
 			return
 		case *RtmpPlayPacket:
+			core.Info.Println("identify play")
 			connType, streamName, duration, err = v.identifyPlay(p)
 			return
 		}
@@ -1184,7 +1185,7 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 		if p, ok := p.(*RtmpCallPacket); ok {
 			res := NewRtmpCallResPacket().(*RtmpCallResPacket)
 			res.TransactionId = p.TransactionId
-			if err = v.write(IdentifyTimeout, res, 0); err != nil {
+			if err = v.write(res, 0); err != nil {
 				core.Error.Println("response call failed. err is", err)
 				return
 			}
@@ -1203,7 +1204,7 @@ func (v *RtmpConnection) FlashStartPublish() (err error) {
 	res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 	res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
 	res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-	if err = v.write(FlashPublishTimeout, res, v.sid); err != nil {
+	if err = v.write(res, v.sid); err != nil {
 		return
 	}
 
@@ -1223,7 +1224,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 		case *RtmpFMLEStartPacket:
 			res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
 			res.TransactionId = p.TransactionId
-			if err = v.write(FmlePublishTimeout, res, 0); err != nil {
+			if err = v.write(res, 0); err != nil {
 				return
 			}
 			return true, nil
@@ -1235,7 +1236,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			res.TransactionId = p.TransactionId
 			res.StreamId = Amf0Number(v.sid)
 
-			if err = v.write(FmlePublishTimeout, res, 0); err != nil {
+			if err = v.write(res, 0); err != nil {
 				return
 			}
 			return true, nil
@@ -1244,7 +1245,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			res.Name = Amf0String(Amf0CommandFcPublish)
 			res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 			res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
-			if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+			if err = v.write(res, v.sid); err != nil {
 				return
 			}
 
@@ -1253,7 +1254,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 			res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
 			res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-			if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+			if err = v.write(res, v.sid); err != nil {
 				return
 			}
 
@@ -1272,7 +1273,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 		res.Name = Amf0String(Amf0CommandOnFcUnpublish)
 		res.Data.Set(StatusCode, NewAmf0String(StatusCodeUnpublishSuccess))
 		res.Data.Set(StatusDescription, NewAmf0String("Stop publishing stream."))
-		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+		if err = v.write(res, v.sid); err != nil {
 			return
 		}
 	}
@@ -1280,7 +1281,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 	// FCUnpublish response
 	if res, ok := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket); ok {
 		res.TransactionId = upp.TransactionId
-		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+		if err = v.write(res, v.sid); err != nil {
 			return
 		}
 	}
@@ -1291,7 +1292,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 		res.Data.Set(StatusCode, NewAmf0String(StatusCodeUnpublishSuccess))
 		res.Data.Set(StatusDescription, NewAmf0String("Stream is now unpublished"))
 		res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+		if err = v.write(res, v.sid); err != nil {
 			return
 		}
 	}
@@ -1305,7 +1306,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	if p, ok := NewRtmpUserControlPacket().(*RtmpUserControlPacket); ok {
 		p.EventType = RtmpUint16(RtmpPcucStreamBegin)
 		p.EventData = RtmpUint32(v.sid)
-		if err = v.write(FlashPlayIoTimeout, p, 0); err != nil {
+		if err = v.write(p, 0); err != nil {
 			return
 		}
 	}
@@ -1317,7 +1318,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusDescription, NewAmf0String("Playing and resetting stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
 		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1329,7 +1330,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusDescription, NewAmf0String("Started playing stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
 		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1340,7 +1341,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		// @see: https://github.com/ossrs/srs/issues/49
 		p.VideoSampleAccess = true
 		p.AudioSampleAccess = true
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1348,7 +1349,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	// onStatus(NetStream.Data.Start)
 	if p, ok := NewRtmpOnStatusDataPacket().(*RtmpOnStatusDataPacket); ok {
 		p.Data.Set(StatusCode, NewAmf0String(StatusCodeDataStart))
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1359,18 +1360,51 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	return
 }
 
-// to send message over rtmp.
-func (v *RtmpConnection) SendMessage(timeout time.Duration, m *RtmpMessage) (err error) {
-	select {
-	case v.out <- m:
-		// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
+func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
+	v.writeLock.Lock()
+	defer v.writeLock.Unlock()
+
+	// push to queue.
+	v.out = append(v.out, m)
+	return
+}
+
+// to push message to send queue.
+func (v *RtmpConnection) Flush() (err error) {
+	v.writeLock.Lock()
+	defer v.writeLock.Unlock()
+
+	for {
+		required := 1
+		if v.groupMessages && RtmpGroupMessageCount > 1 {
+			required = RtmpGroupMessageCount
+		}
+
+		// not enough for group messages.
+		if len(v.out) < required {
+			return
+		}
+
+		// send one by one.
+		if required == 1 {
+			for _, m := range v.out {
+				if err = v.stack.SendMessage(m); err != nil {
+					return
+				}
+			}
+			v.out = v.out[0:0]
+			continue
+		}
+
+		// TODO: FIXME: config the msgs group size.
+		for n := 0; n < required; n++ {
+			v.groupMessage[n] = v.out[n]
+		}
+		v.out = v.out[required:]
+
+		if err = v.stack.SendMessage(v.groupMessage...); err != nil {
+			return
+		}
 	}
 
 	return
@@ -1388,26 +1422,10 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 	return v.stack.DecodeMessage(m)
 }
 
-// to send message over rtmp.
-// @remark for performance issue, the send for player never use timer,
-//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
-func (v *RtmpConnection) SendMessageNoTimeout(m *RtmpMessage) (err error) {
-	select {
-	case v.out <- m:
-		// ok
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
-}
-
 // to receive message from rtmp or another oryx channel.
 // @remark for performance issue, the mix recv for player never use timer,
 //		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
-func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
+func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan bool, fn func(*RtmpMessage, bool) error) (err error) {
 	for {
 		select {
 		case m := <-extra:
@@ -1415,11 +1433,11 @@ func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan core.Message, fn func
 				return
 			}
 		case m := <-v.in:
-			if err = fn(m, nil); err != nil {
+			if err = fn(m, false); err != nil {
 				return
 			}
-		case <-v.closing:
-			return core.ClosedError
+		case <-v.closing.QC():
+			return v.closing.Quit()
 		case <-v.wc.QC():
 			return v.wc.Quit()
 		}
@@ -1437,7 +1455,7 @@ func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (c
 
 		csr.TransactionId = current.TransactionId
 		csr.StreamId = Amf0Number(float64(v.sid))
-		if err = v.write(IdentifyTimeout, csr, 0); err != nil {
+		if err = v.write(csr, 0); err != nil {
 			core.Error.Println("response createStream failed. err is", err)
 			return
 		}
@@ -1479,7 +1497,7 @@ func (v *RtmpConnection) identifyFmlePublish(p *RtmpFMLEStartPacket) (connType R
 	res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
 	res.TransactionId = p.TransactionId
 
-	if err = v.write(IdentifyTimeout, res, 0); err != nil {
+	if err = v.write(res, 0); err != nil {
 		core.Error.Println("response identify fmle failed. err is", err)
 		return
 	}
@@ -1567,8 +1585,8 @@ func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err er
 		case <-time.After(timeout):
 			core.Error.Println("timeout for", timeout)
 			return core.TimeoutError
-		case <-v.closing:
-			return core.ClosedError
+		case <-v.closing.QC():
+			return v.closing.Quit()
 		case <-v.wc.QC():
 			return v.wc.Quit()
 		}
@@ -1578,19 +1596,21 @@ func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err er
 }
 
 // write to the cache.
-func (v *RtmpConnection) write(timeout time.Duration, p RtmpPacket, sid uint32) (err error) {
+func (v *RtmpConnection) write(p RtmpPacket, sid uint32) (err error) {
 	var m *RtmpMessage
 	if m, err = v.packet2Message(p, sid); err != nil {
 		return
 	}
 
-	return v.SendMessage(timeout, m)
+	if err = v.CacheMessage(m); err != nil {
+		return
+	}
+
+	return v.Flush()
 }
 
 // receiver goroutine.
 func (v *RtmpConnection) receiver() (err error) {
-	defer v.quit.Done()
-
 	// read c0c2
 	if err = v.handshake.readC0C1(v.transport); err != nil {
 		return
@@ -1617,69 +1637,15 @@ func (v *RtmpConnection) receiver() (err error) {
 			return
 		}
 
-		// check state.
-		if func() bool {
-			v.lock.Lock()
-			defer v.lock.Unlock()
-
-			return v.closed
-		}() {
-			break
-		}
-
+		// push message to queue.
 		// cache the message when got non empty one.
-		if m != nil && len(m.Payload) > 0 {
-			v.in <- m
+		select {
+		case v.in <- m:
+		case <-v.closing.QC():
+			return v.closing.Quit()
 		}
 	}
 	core.Warn.Println("receiver ok.")
-
-	return
-}
-
-// sender goroutine.
-func (v *RtmpConnection) sender() (err error) {
-	defer v.quit.Done()
-
-	// write s0s1s2 to client.
-	<-v.handshake.out
-	if err = v.handshake.writeS0S1S2(v.transport); err != nil {
-		return
-	}
-
-	// msgs cache.
-	msgs := make([]*RtmpMessage, RtmpGroupMessageCount)
-
-	// send out all messages in cache
-	// TODO: FIXME: refine for the realtime streaming.
-	for m := range v.out {
-		// when group messages,
-		// we wait util we got the expect messages.
-		if v.groupMessages && RtmpGroupMessageCount > 1 {
-			// put first msg.
-			msgs[0] = m
-
-			// TODO: FIXME: config the msgs to group.
-			for n := 1; n < RtmpGroupMessageCount; n++ {
-				if m, ok := <-v.out; ok {
-					msgs[n] = m
-				} else {
-					// closed?
-					return
-				}
-			}
-
-			if err = v.stack.SendMessage(msgs...); err != nil {
-				return
-			}
-			continue
-		}
-
-		// when not group message, send message one by one.
-		if err = v.stack.SendMessage(m); err != nil {
-			return
-		}
-	}
 
 	return
 }
@@ -2201,7 +2167,7 @@ func NewRtmpMessage() *RtmpMessage {
 }
 
 func (v *RtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.MessageType, len(v.Payload))
+	return fmt.Sprintf("%v %vB %v", v.MessageType, len(v.Payload), v.Timestamp)
 }
 
 // convert the rtmp message to oryx message.
@@ -3273,8 +3239,6 @@ type RtmpStack struct {
 	inChunkSize uint32
 	// output chunk size, default to 128, set by peer packet.
 	outChunkSize uint32
-	// whether the stack is closing.
-	closing bool
 
 	// the protocol caches, for gc efficiency.
 	// the chunk header c0, c3 and extended-timestamp caches.
@@ -3297,10 +3261,6 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	v.c0c3Cache = make(chan []byte, RtmpGroupMessageCount*10*3)
 
 	return v
-}
-
-func (v *RtmpStack) Close() {
-	v.closing = true
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
@@ -3371,9 +3331,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		var fmt uint8
 		var cid uint32
 		if fmt, cid, err = RtmpReadBasicHeader(v.in, &v.inb); err != nil {
-			if !v.closing {
-				core.Warn.Println("read basic header failed. err is", err)
-			}
+			core.Warn.Println("read basic header failed. err is", err)
 			return
 		}
 

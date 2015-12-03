@@ -36,9 +36,6 @@ var OverflowError error = errors.New("system overflow")
 // when io timeout to wait.
 var TimeoutError error = errors.New("io timeout")
 
-// when sender or receiver closed.
-var ClosedError error = errors.New("io already closed")
-
 // when the rtmp vhost not found.
 var VhostNotFoundError error = errors.New("vhost not found")
 
@@ -51,7 +48,7 @@ func IsNormalQuit(err interface{}) bool {
 
 	if err, ok := err.(error); ok {
 		// manual quit or read timeout.
-		if err == QuitError || err == TimeoutError || err == ClosedError {
+		if err == QuitError || err == TimeoutError {
 			return true
 		}
 

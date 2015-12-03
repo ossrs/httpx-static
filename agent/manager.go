@@ -63,9 +63,14 @@ func (v *AgentManager) NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.W
 	// create the publish agent
 	play = NewRtmpPlayAgent(conn, wc)
 
+	if err = play.Open(); err != nil {
+		core.Warn.Println("open play failed. err is", err)
+		return
+	}
+
 	// tie the play agent to dup sink.
 	if err = play.Tie(dup); err != nil {
-		core.Error.Println("tie agent failed. err is", err)
+		core.Error.Println("tie play failed. err is", err)
 		return
 	}
 
@@ -95,9 +100,14 @@ func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc cor
 		wc:   wc,
 	}
 
+	if err = pub.Open(); err != nil {
+		core.Warn.Println("open publish failed. err is", err)
+		return
+	}
+
 	// tie the publish agent to dup source.
 	if err = dup.Tie(pub); err != nil {
-		core.Error.Println("tie agent failed. err is", err)
+		core.Error.Println("tie publish failed. err is", err)
 		return
 	}
 
