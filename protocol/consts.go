@@ -23,18 +23,19 @@ package protocol
 
 import "time"
 
-// timeout for rtmp.
 const (
-	HandshakeTimeout        = 2100 * time.Millisecond
-	ConnectAppTimeout       = 5000 * time.Millisecond
-	AckTimeout              = ConnectAppTimeout
-	SetPeerBandwidthTimeout = AckTimeout
-	OnBwDoneTimeout         = SetPeerBandwidthTimeout
-	IdentifyTimeout         = OnBwDoneTimeout
-	FmlePublishTimeout      = IdentifyTimeout
-	FlashPublishTimeout     = FmlePublishTimeout
-	PublishRecvTimeout      = FlashPublishTimeout
+	// timeout for rtmp.
+	HandshakeTimeout   = 2100 * time.Millisecond
+	ConnectAppTimeout  = 5000 * time.Millisecond
+	IdentifyTimeout    = ConnectAppTimeout
+	FmlePublishTimeout = IdentifyTimeout
+	PublishRecvTimeout = FmlePublishTimeout
 
-	FlashPlayWaitTimeout = 300 * time.Second
-	FlashPlayIoTimeout   = ConnectAppTimeout
+	// the input cache, to read from network and put in it.
+	RtmpInCache = 16
+
+	// how many messages send in a group.
+	// one message is about 15ms for RTMP audio and video.
+	// @remark 0 to disable group messages to send one by one.
+	RtmpGroupMessageCount = 10
 )

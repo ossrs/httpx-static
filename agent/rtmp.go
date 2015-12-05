@@ -120,7 +120,22 @@ func (v *Rtmp) serve(c net.Conn) {
 				core.Error.Println(string(debug.Stack()))
 			}
 		}()
+		defer func() {
+			if err := c.Close(); err != nil {
+				core.Info.Println("ignore close failed. err is", err)
+			}
+		}()
 
+		// for tcp connections.
+		if c, ok := c.(*net.TCPConn); ok {
+			// set TCP_NODELAY to false for performance issue.
+			// TODO: FIXME: config it.
+			// TODO: FIXME: refine for the realtime streaming.
+			if err := c.SetNoDelay(false); err != nil {
+				core.Error.Println("set TCP_NODELAY failed. err is", err)
+				return
+			}
+		}
 		core.Trace.Println("rtmp accept", c.RemoteAddr())
 
 		conn := protocol.NewRtmpConnection(c, v.wc)
@@ -163,6 +178,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		}
 		return
 	}
+	core.Info.Println("set window ack ok.")
 
 	if err = conn.SetPeerBandwidth(uint32(2.5*1000*1000), uint8(2)); err != nil {
 		if !core.IsNormalQuit(err) {
@@ -170,6 +186,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		}
 		return
 	}
+	core.Info.Println("set peer bandwidth ok.")
 
 	// do bandwidth test if connect to the vhost which is for bandwidth check.
 	// TODO: FIXME: support bandwidth check.
@@ -190,12 +207,14 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		}
 		return
 	}
+	core.Info.Println("response connect app ok.")
 	if err = conn.OnBwDone(); err != nil {
 		if !core.IsNormalQuit(err) {
 			core.Error.Println("response onBWDone failed. err is", err)
 		}
 		return
 	}
+	core.Info.Println("onBWDone ok.")
 
 	// identify the client, publish or play.
 	if r.Type, r.Stream, r.Duration, err = conn.Identify(); err != nil {
@@ -260,13 +279,10 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		}
 	}()
 
-	if err = agent.Open(); err != nil {
-		core.Warn.Println("ignore rtmp agent open failed. err is", err)
-		return
-	}
-
 	if err = agent.Pump(); err != nil {
-		core.Warn.Println("ignore rtmp agent work failed. err is", err)
+		if !core.IsNormalQuit(err) {
+			core.Warn.Println("ignore rtmp agent work failed. err is", err)
+		}
 		return
 	}
 
@@ -292,21 +308,19 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 
 // rtmp play agent, to serve the player or edge.
 type RtmpPlayAgent struct {
-	conn     *protocol.RtmpConnection
-	wc       core.WorkerContainer
-	upstream core.Agent
-	msgs     chan core.Message
-	jitter   *Jitter
+	conn      *protocol.RtmpConnection
+	wc        core.WorkerContainer
+	upstream  core.Agent
+	cond      chan bool
+	jitter    *Jitter
+	nbDropped uint32
 }
-
-// audio+videos, about 10ms per packet.
-const RtmpPlayMsgs = 300
 
 func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
 	return &RtmpPlayAgent{
 		conn:   conn,
 		wc:     wc,
-		msgs:   make(chan core.Message, RtmpPlayMsgs),
+		cond:   make(chan bool, 1),
 		jitter: NewJitter(),
 	}
 }
@@ -328,21 +342,11 @@ func (v *RtmpPlayAgent) Close() (err error) {
 }
 
 func (v *RtmpPlayAgent) Pump() (err error) {
-	return v.conn.MixRecvMessage(protocol.FlashPlayWaitTimeout, v.msgs,
-		func(m0 *protocol.RtmpMessage, m1 core.Message) (err error) {
+	return v.conn.RecvMessageNoTimeout(v.cond,
+		func(m0 *protocol.RtmpMessage, m1 bool) (err error) {
 			// message from publisher to send to player.
-			if m1 != nil {
-				switch m1.Muxer() {
-				case core.MuxerRtmp:
-					if m, ok := m1.(*protocol.OryxRtmpMessage); ok {
-						return v.conn.SendMessage(protocol.FlashPlayIoTimeout, m.Payload())
-					}
-					core.Warn.Println("ignore not rtmp message to play agent.")
-					return
-				default:
-					core.Warn.Println("ignore message to play agent.")
-					return
-				}
+			if m1 {
+				return v.conn.Flush()
 			}
 
 			// message from player.
@@ -369,12 +373,17 @@ func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
 	// correct message timestamp.
 	om.SetTimestamp(v.jitter.Correct(om.Timestamp(), ag))
 
-	// drop when overflow.
-	// TODO: FIXME: improve it.
-	select {
-	case v.msgs <- m:
-	default:
-		core.Warn.Println("play drop msg", m)
+	// cache message.
+	if err = v.conn.CacheMessage(om.Payload()); err != nil {
+		return
+	}
+
+	// unblock the sender when got enough messages.
+	if v.conn.NeedNotify() {
+		select {
+		case v.cond <- true:
+		default:
+		}
 	}
 
 	return

@@ -32,7 +32,6 @@ import (
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
 	"io"
-	"math"
 	"net"
 	"net/url"
 	"reflect"
@@ -827,32 +826,45 @@ type RtmpConnection struct {
 	handshake *hsBytes
 	// the underlayer transport.
 	transport io.ReadWriteCloser
+	// when handshake and negotiate,
+	// the connection must send message one when got it,
+	// while we can group messages when send audio/video stream.
+	groupMessages bool
 	// the RTMP protocol stack.
 	stack *RtmpStack
 	// input channel, receive message from client.
 	in chan *RtmpMessage
-	// output channel, to send to client.
-	out chan *RtmpMessage
 	// whether receiver and sender already quit.
-	quit sync.WaitGroup
-	// when receiver or sender quit, notify main goroutine.
-	closing chan bool
+	workers sync.WaitGroup
+
 	// whether closed.
 	closed bool
-	lock   sync.Mutex
+	// the locker for close
+	closeLock sync.Mutex
+	// when receiver or sender quit, notify main goroutine.
+	closing *core.Quiter
+
+	// the locker for write.
+	writeLock sync.Mutex
+	// use cache queue.
+	out []*RtmpMessage
+	// cache for group messages.
+	groupMessage []*RtmpMessage
 }
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
-		sid:       0,
-		Req:       NewRtmpRequest(),
-		wc:        wc,
-		handshake: NewHsBytes(),
-		transport: transport,
-		stack:     NewRtmpStack(transport, transport),
-		in:        make(chan *RtmpMessage, 1),
-		out:       make(chan *RtmpMessage, 1),
-		closing:   make(chan bool, 2),
+		sid:           0,
+		Req:           NewRtmpRequest(),
+		wc:            wc,
+		handshake:     NewHsBytes(),
+		transport:     transport,
+		groupMessages: false,
+		stack:         NewRtmpStack(transport, transport),
+		in:            make(chan *RtmpMessage, RtmpInCache),
+		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
+		groupMessage:  make([]*RtmpMessage, RtmpGroupMessageCount),
+		closing:       core.NewQuiter(),
 	}
 
 	// wait for goroutine to run.
@@ -860,40 +872,39 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 
 	// start the receiver and sender.
 	// directly use raw goroutine, for donot cause the container to quit.
-	v.quit.Add(2)
 	go core.Recover("rtmp receiver", func() error {
+		v.workers.Add(1)
+		defer v.workers.Done()
+
 		// noitfy the main goroutine to quit.
 		defer func() {
-			v.closing <- true
+			v.closing.Quit()
 		}()
 
 		// notify the main goroutine the receiver is ok.
 		wait <- true
 
 		if err := v.receiver(); err != nil {
-			if v.stack.closing {
-				return core.QuitError
-			}
 			return err
 		}
 		return nil
 	})
 	go core.Recover("rtmp sender", func() error {
+		v.workers.Add(1)
+		defer v.workers.Done()
+
 		// noitfy the main goroutine to quit.
 		defer func() {
-			v.closing <- true
+			v.closing.Quit()
 		}()
 
 		// notify the main goroutine the sender is ok.
 		wait <- true
 
-		if err := v.sender(); err != nil {
-			if v.stack.closing {
-				return core.QuitError
-			}
-			return err
-		}
-		return nil
+		// when got quit message, close the underlayer transport.
+		<-v.wc.QC()
+		v.wc.Quit()
+		return v.transport.Close()
 	})
 
 	// wait for receiver and sender ok.
@@ -906,37 +917,23 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 // close the connection to client.
 // TODO: FIXME: should be thread safe.
 func (v *RtmpConnection) Close() {
-	v.lock.Lock()
-	defer v.lock.Unlock()
+	v.closeLock.Lock()
+	defer v.closeLock.Unlock()
 
 	if v.closed {
 		return
 	}
+	v.closed = true
 
-	// close the stack.
-	v.stack.Close()
+	// close the underlayer transport.
+	_ = v.transport.Close()
 
-	// close transport,
-	// to notify the wait goroutine to quit.
-	if err := v.transport.Close(); err != nil {
-		core.Warn.Println("ignore transport close err", err)
-	}
-
-	// close the out channel cache,
-	// to notify the wait goroutine to quit.
-	close(v.handshake.out)
-
-	// try to read one to unblock the in channel.
-	select {
-	case <-v.in:
-	default:
-	}
-
-	// close output to unblock the sender.
-	close(v.out)
+	// notify other goroutine to close.
+	v.closing.Quit()
+	core.Info.Println("set closed and wait.")
 
 	// wait for sender and receiver to quit.
-	v.quit.Wait()
+	v.workers.Wait()
 	core.Warn.Println("closed")
 
 	return
@@ -949,12 +946,12 @@ func (v *RtmpConnection) waitC0C1() (err error) {
 	// wait c0c1
 	select {
 	case <-v.handshake.in:
-	// ok.
+		break
 	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
+		core.Error.Println("c0c1 timeout for", timeout)
 		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
+	case <-v.closing.QC():
+		return v.closing.Quit()
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -969,12 +966,12 @@ func (v *RtmpConnection) waitC2() (err error) {
 	// wait c2
 	select {
 	case <-v.handshake.in:
-	// ok.
+		break
 	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
+		core.Error.Println("c2 timeout for", timeout)
 		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
+	case <-v.closing.QC():
+		return v.closing.Quit()
 	case <-v.wc.QC():
 		return v.wc.Quit()
 	}
@@ -1059,6 +1056,11 @@ func (v *RtmpConnection) Handshake() (err error) {
 	if err = v.handshake.outCacheS0S1S2(); err != nil {
 		return
 	}
+	// we must manually send out the s0s1s2,
+	// for the writer is belong to main goroutine.
+	if err = v.handshake.writeS0S1S2(v.transport); err != nil {
+		return
+	}
 
 	// got c2.
 	if err = v.waitC2(); err != nil {
@@ -1099,7 +1101,7 @@ func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
 	p.Ack = RtmpUint32(ack)
 
-	return v.write(AckTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // @type: The sender can mark this message hard (0), soft (1), or dynamic (2)
@@ -1109,7 +1111,7 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	p.Bandwidth = RtmpUint32(bw)
 	p.Type = RtmpUint8(t)
 
-	return v.write(SetPeerBandwidthTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // @param server_ip the ip of server.
@@ -1142,14 +1144,14 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	// for edge to directly get the id of client.
 	// TODO: FIXME: support oryx_server_ip, oryx_pid, oryx_id
 
-	return v.write(ConnectAppTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // response client the onBWDone message.
 func (v *RtmpConnection) OnBwDone() (err error) {
 	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
 
-	return v.write(OnBwDoneTimeout, p, 0)
+	return v.write(p, 0)
 }
 
 // recv some message to identify the client.
@@ -1162,12 +1164,15 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 	err = v.identify(func(p RtmpPacket) (loop bool, err error) {
 		switch p := p.(type) {
 		case *RtmpCreateStreamPacket:
+			core.Info.Println("identify createStream")
 			connType, streamName, duration, err = v.identifyCreateStream(nil, p)
 			return
 		case *RtmpFMLEStartPacket:
+			core.Info.Println("identify fmlePublish")
 			connType, streamName, err = v.identifyFmlePublish(p)
 			return
 		case *RtmpPlayPacket:
+			core.Info.Println("identify play")
 			connType, streamName, duration, err = v.identifyPlay(p)
 			return
 		}
@@ -1180,7 +1185,7 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 		if p, ok := p.(*RtmpCallPacket); ok {
 			res := NewRtmpCallResPacket().(*RtmpCallResPacket)
 			res.TransactionId = p.TransactionId
-			if err = v.write(IdentifyTimeout, res, 0); err != nil {
+			if err = v.write(res, 0); err != nil {
 				core.Error.Println("response call failed. err is", err)
 				return
 			}
@@ -1199,7 +1204,7 @@ func (v *RtmpConnection) FlashStartPublish() (err error) {
 	res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 	res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
 	res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-	if err = v.write(FlashPublishTimeout, res, v.sid); err != nil {
+	if err = v.write(res, v.sid); err != nil {
 		return
 	}
 
@@ -1219,7 +1224,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 		case *RtmpFMLEStartPacket:
 			res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
 			res.TransactionId = p.TransactionId
-			if err = v.write(FmlePublishTimeout, res, 0); err != nil {
+			if err = v.write(res, 0); err != nil {
 				return
 			}
 			return true, nil
@@ -1231,7 +1236,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			res.TransactionId = p.TransactionId
 			res.StreamId = Amf0Number(v.sid)
 
-			if err = v.write(FmlePublishTimeout, res, 0); err != nil {
+			if err = v.write(res, 0); err != nil {
 				return
 			}
 			return true, nil
@@ -1240,7 +1245,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			res.Name = Amf0String(Amf0CommandFcPublish)
 			res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 			res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
-			if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+			if err = v.write(res, v.sid); err != nil {
 				return
 			}
 
@@ -1249,7 +1254,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 			res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
 			res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-			if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+			if err = v.write(res, v.sid); err != nil {
 				return
 			}
 
@@ -1268,7 +1273,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 		res.Name = Amf0String(Amf0CommandOnFcUnpublish)
 		res.Data.Set(StatusCode, NewAmf0String(StatusCodeUnpublishSuccess))
 		res.Data.Set(StatusDescription, NewAmf0String("Stop publishing stream."))
-		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+		if err = v.write(res, v.sid); err != nil {
 			return
 		}
 	}
@@ -1276,7 +1281,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 	// FCUnpublish response
 	if res, ok := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket); ok {
 		res.TransactionId = upp.TransactionId
-		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+		if err = v.write(res, v.sid); err != nil {
 			return
 		}
 	}
@@ -1287,7 +1292,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 		res.Data.Set(StatusCode, NewAmf0String(StatusCodeUnpublishSuccess))
 		res.Data.Set(StatusDescription, NewAmf0String("Stream is now unpublished"))
 		res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FmlePublishTimeout, res, v.sid); err != nil {
+		if err = v.write(res, v.sid); err != nil {
 			return
 		}
 	}
@@ -1301,7 +1306,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	if p, ok := NewRtmpUserControlPacket().(*RtmpUserControlPacket); ok {
 		p.EventType = RtmpUint16(RtmpPcucStreamBegin)
 		p.EventData = RtmpUint32(v.sid)
-		if err = v.write(FlashPlayIoTimeout, p, 0); err != nil {
+		if err = v.write(p, 0); err != nil {
 			return
 		}
 	}
@@ -1313,7 +1318,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusDescription, NewAmf0String("Playing and resetting stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
 		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1325,7 +1330,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusDescription, NewAmf0String("Started playing stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
 		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1336,7 +1341,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		// @see: https://github.com/ossrs/srs/issues/49
 		p.VideoSampleAccess = true
 		p.AudioSampleAccess = true
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
@@ -1344,26 +1349,66 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	// onStatus(NetStream.Data.Start)
 	if p, ok := NewRtmpOnStatusDataPacket().(*RtmpOnStatusDataPacket); ok {
 		p.Data.Set(StatusCode, NewAmf0String(StatusCodeDataStart))
-		if err = v.write(FlashPlayIoTimeout, p, v.sid); err != nil {
+		if err = v.write(p, v.sid); err != nil {
 			return
 		}
 	}
 
+	// ok, we enter group message mode.
+	v.groupMessages = true
+
 	return
 }
 
-// to send message over rtmp.
-func (v *RtmpConnection) SendMessage(timeout time.Duration, m *RtmpMessage) (err error) {
-	select {
-	case v.out <- m:
-		// ok
-	case <-time.After(timeout):
-		core.Error.Println("timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing:
-		return core.ClosedError
-	case <-v.wc.QC():
-		return v.wc.Quit()
+func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
+	v.writeLock.Lock()
+	defer v.writeLock.Unlock()
+
+	// push to queue.
+	v.out = append(v.out, m)
+	return
+}
+
+func (v *RtmpConnection) NeedNotify() bool {
+	return len(v.out) > RtmpGroupMessageCount
+}
+
+// to push message to send queue.
+func (v *RtmpConnection) Flush() (err error) {
+	v.writeLock.Lock()
+	defer v.writeLock.Unlock()
+
+	for {
+		required := 1
+		if v.groupMessages && RtmpGroupMessageCount > 1 {
+			required = RtmpGroupMessageCount
+		}
+
+		// not enough for group messages.
+		if len(v.out) < required {
+			return
+		}
+
+		// send one by one.
+		if required == 1 {
+			for _, m := range v.out {
+				if err = v.stack.SendMessage(m); err != nil {
+					return
+				}
+			}
+			v.out = v.out[0:0]
+			continue
+		}
+
+		// TODO: FIXME: config the msgs group size.
+		for n := 0; n < required; n++ {
+			v.groupMessage[n] = v.out[n]
+		}
+		v.out = v.out[required:]
+
+		if err = v.stack.SendMessage(v.groupMessage...); err != nil {
+			return
+		}
 	}
 
 	return
@@ -1382,7 +1427,9 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 }
 
 // to receive message from rtmp or another oryx channel.
-func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core.Message, fn func(*RtmpMessage, core.Message) error) (err error) {
+// @remark for performance issue, the mix recv for player never use timer,
+//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
+func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan bool, fn func(*RtmpMessage, bool) error) (err error) {
 	for {
 		select {
 		case m := <-extra:
@@ -1390,14 +1437,11 @@ func (v *RtmpConnection) MixRecvMessage(timeout time.Duration, extra <-chan core
 				return
 			}
 		case m := <-v.in:
-			if err = fn(m, nil); err != nil {
+			if err = fn(m, false); err != nil {
 				return
 			}
-		case <-time.After(timeout):
-			core.Error.Println("timeout for", timeout)
-			return core.TimeoutError
-		case <-v.closing:
-			return core.ClosedError
+		case <-v.closing.QC():
+			return v.closing.Quit()
 		case <-v.wc.QC():
 			return v.wc.Quit()
 		}
@@ -1415,7 +1459,7 @@ func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (c
 
 		csr.TransactionId = current.TransactionId
 		csr.StreamId = Amf0Number(float64(v.sid))
-		if err = v.write(IdentifyTimeout, csr, 0); err != nil {
+		if err = v.write(csr, 0); err != nil {
 			core.Error.Println("response createStream failed. err is", err)
 			return
 		}
@@ -1457,7 +1501,7 @@ func (v *RtmpConnection) identifyFmlePublish(p *RtmpFMLEStartPacket) (connType R
 	res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
 	res.TransactionId = p.TransactionId
 
-	if err = v.write(IdentifyTimeout, res, 0); err != nil {
+	if err = v.write(res, 0); err != nil {
 		core.Error.Println("response identify fmle failed. err is", err)
 		return
 	}
@@ -1516,13 +1560,15 @@ func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessage, err error) {
 	m = NewRtmpMessage()
 
+	var b bytes.Buffer
+	if err = core.Marshal(p, &b); err != nil {
+		return nil, err
+	}
+
 	m.MessageType = p.MessageType()
 	m.PreferCid = p.PreferCid()
 	m.StreamId = sid
-
-	if err = core.Marshal(p, &m.Payload); err != nil {
-		return nil, err
-	}
+	m.Payload = b.Bytes()
 
 	return m, nil
 }
@@ -1543,8 +1589,8 @@ func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err er
 		case <-time.After(timeout):
 			core.Error.Println("timeout for", timeout)
 			return core.TimeoutError
-		case <-v.closing:
-			return core.ClosedError
+		case <-v.closing.QC():
+			return v.closing.Quit()
 		case <-v.wc.QC():
 			return v.wc.Quit()
 		}
@@ -1554,19 +1600,21 @@ func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err er
 }
 
 // write to the cache.
-func (v *RtmpConnection) write(timeout time.Duration, p RtmpPacket, sid uint32) (err error) {
+func (v *RtmpConnection) write(p RtmpPacket, sid uint32) (err error) {
 	var m *RtmpMessage
 	if m, err = v.packet2Message(p, sid); err != nil {
 		return
 	}
 
-	return v.SendMessage(timeout, m)
+	if err = v.CacheMessage(m); err != nil {
+		return
+	}
+
+	return v.Flush()
 }
 
 // receiver goroutine.
 func (v *RtmpConnection) receiver() (err error) {
-	defer v.quit.Done()
-
 	// read c0c2
 	if err = v.handshake.readC0C1(v.transport); err != nil {
 		return
@@ -1593,42 +1641,15 @@ func (v *RtmpConnection) receiver() (err error) {
 			return
 		}
 
-		// check state.
-		if func() bool {
-			v.lock.Lock()
-			defer v.lock.Unlock()
-
-			return v.closed
-		}() {
-			break
-		}
-
+		// push message to queue.
 		// cache the message when got non empty one.
-		if m != nil && m.Payload.Len() > 0 {
-			v.in <- m
+		select {
+		case v.in <- m:
+		case <-v.closing.QC():
+			return v.closing.Quit()
 		}
 	}
 	core.Warn.Println("receiver ok.")
-
-	return
-}
-
-// sender goroutine.
-func (v *RtmpConnection) sender() (err error) {
-	defer v.quit.Done()
-
-	// write s0s1s2 to client.
-	<-v.handshake.out
-	if err = v.handshake.writeS0S1S2(v.transport); err != nil {
-		return
-	}
-
-	// send out all messages in cache
-	for m := range v.out {
-		if err = v.stack.SendMessage(m); err != nil {
-			return
-		}
-	}
 
 	return
 }
@@ -2142,7 +2163,7 @@ type RtmpMessage struct {
 	// user must use SrsProtocol.decode_message to get concrete packet.
 	// @remark, not all message payload can be decoded to packet. for example,
 	//       video/audio packet use raw bytes, no video/audio packet.
-	Payload bytes.Buffer
+	Payload []byte
 }
 
 func NewRtmpMessage() *RtmpMessage {
@@ -2150,7 +2171,7 @@ func NewRtmpMessage() *RtmpMessage {
 }
 
 func (v *RtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.MessageType, v.Payload.Len())
+	return fmt.Sprintf("%v %vB %v", v.MessageType, len(v.Payload), v.Timestamp)
 }
 
 // convert the rtmp message to oryx message.
@@ -2190,11 +2211,11 @@ func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 
 func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.rtmp.Payload.Len() < 2 {
+	if len(v.rtmp.Payload) < 2 {
 		return false
 	}
 
-	b := v.rtmp.Payload.Bytes()
+	b := v.rtmp.Payload
 
 	// sequence header only for h264
 	codec := RtmpCodecVideo(b[0] & 0x0f)
@@ -2209,11 +2230,11 @@ func (v *OryxRtmpMessage) isVideoSequenceHeader() bool {
 
 func (v *OryxRtmpMessage) isAudioSequenceHeader() bool {
 	// TODO: FIXME: support other codecs.
-	if v.rtmp.Payload.Len() < 2 {
+	if len(v.rtmp.Payload) < 2 {
 		return false
 	}
 
-	b := v.rtmp.Payload.Bytes()
+	b := v.rtmp.Payload
 
 	soundFormat := RtmpCodecAudio((b[0] >> 4) & 0x0f)
 	if soundFormat != RtmpAAC {
@@ -2246,7 +2267,7 @@ func (v *OryxRtmpMessage) Payload() *RtmpMessage {
 }
 
 func (v *OryxRtmpMessage) String() string {
-	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, v.rtmp.Payload.Len())
+	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, len(v.rtmp.Payload))
 }
 
 func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {
@@ -3178,6 +3199,8 @@ type RtmpChunk struct {
 	isFresh bool
 	// the partial message which not completed.
 	partialMessage *RtmpMessage
+	// the number of already received payload size.
+	nbPayload uint32
 
 	// 4.1. Message Header
 	// 3bytes.
@@ -3211,6 +3234,7 @@ type RtmpStack struct {
 	in  io.Reader
 	out io.Writer
 	// use bytes.Buffer to parse RTMP.
+	// TODO: FIXME: use bufio.Reader instead.
 	inb bytes.Buffer
 	// the chunks for RTMP,
 	// key is the cid from basic header.
@@ -3219,26 +3243,32 @@ type RtmpStack struct {
 	inChunkSize uint32
 	// output chunk size, default to 128, set by peer packet.
 	outChunkSize uint32
-	// whether the stack is closing.
-	closing bool
+
+	// the protocol caches, for gc efficiency.
+	// the chunk header c0, c3 and extended-timestamp caches.
+	c0c3Cache chan []byte
+	// the large buffer cache, for slow send used to concat iovs.
+	slowSendBuffer []byte
 }
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
-	return &RtmpStack{
+	v := &RtmpStack{
 		in:           r,
 		out:          w,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
 	}
-}
 
-func (v *RtmpStack) Close() {
-	v.closing = true
+	// assume each message contains 10 chunks,
+	// and each chunk need 3 header(c0, c3, extended-timestamp).
+	v.c0c3Cache = make(chan []byte, RtmpGroupMessageCount*10*3)
+
+	return v
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
-	b := bytes.NewBuffer(m.Payload.Bytes())
+	b := bytes.NewBuffer(m.Payload)
 
 	// decode specified packet type
 	if m.MessageType.isAmf0() || m.MessageType.isAmf3() {
@@ -3305,9 +3335,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		var fmt uint8
 		var cid uint32
 		if fmt, cid, err = RtmpReadBasicHeader(v.in, &v.inb); err != nil {
-			if !v.closing {
-				core.Warn.Println("read basic header failed. err is", err)
-			}
+			core.Warn.Println("read basic header failed. err is", err)
 			return
 		}
 
@@ -3375,99 +3403,164 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 	return
 }
 
-func (v *RtmpStack) SendMessage(m *RtmpMessage) (err error) {
-	// we directly send out the packet,
-	// use very simple algorithm, not very fast,
-	// but it's ok.
-	b := bytes.NewBuffer(m.Payload.Bytes())
+func (v *RtmpStack) getC0c3Cache() []byte {
+	select {
+	case c := <-v.c0c3Cache:
+		return c
+	default:
+		return make([]byte, 12)
+	}
+}
 
-	for b.Len() > 0 {
-		// first chunk, c0.
-		var vb bytes.Buffer
+func (v *RtmpStack) putC0c3Cache(c []byte) {
+	select {
+	case v.c0c3Cache <- c:
+	default:
+	}
+}
 
-		// for chunk header without extended timestamp.
-		if firstChunk := bool(b.Len() == m.Payload.Len()); firstChunk {
-			// write new chunk stream header, fmt is 0
-			if err = vb.WriteByte(byte(0x00 | (byte(m.PreferCid) & 0x3f))); err != nil {
-				return
+// to sendout multiple messages.
+func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
+	// cache the messages to send to descrease the syscall.
+	iovs := make([][]byte, 0)
+
+	for _, m := range msgs {
+		// we directly send out the packet,
+		// use very simple algorithm, not very fast,
+		// but it's ok.
+		for written := uint32(0); written < uint32(len(m.Payload)); {
+			// for chunk header without extended timestamp.
+			if firstChunk := bool(written == 0); firstChunk {
+				// the fmt0 is 12bytes header.
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:12])
+
+				// write new chunk stream header, fmt is 0
+				iov[0] = byte(0x00 | (byte(m.PreferCid) & 0x3f))
+
+				// chunk message header, 11 bytes
+				// timestamp, 3bytes, big-endian
+				if m.Timestamp < RtmpExtendedTimestamp {
+					iov[1] = byte(m.Timestamp >> 16)
+					iov[2] = byte(m.Timestamp >> 8)
+					iov[3] = byte(m.Timestamp)
+				} else {
+					iov[1] = 0xff
+					iov[2] = 0xff
+					iov[3] = 0xff
+				}
+
+				// message_length, 3bytes, big-endian
+				iov[4] = byte(len(m.Payload) >> 16)
+				iov[5] = byte(len(m.Payload) >> 8)
+				iov[6] = byte(len(m.Payload))
+
+				// message_type, 1bytes
+				iov[7] = byte(m.MessageType)
+
+				// stream_id, 4bytes, little-endian
+				iov[8] = byte(m.StreamId)
+				iov[9] = byte(m.StreamId >> 8)
+				iov[10] = byte(m.StreamId >> 16)
+				iov[11] = byte(m.StreamId >> 24)
+			} else {
+				// the fmt3 is 1bytes header.
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:1])
+
+				// write no message header chunk stream, fmt is 3
+				// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
+				// SRS will rollback to 1B chunk header.
+				iov[0] = byte(0xC0 | (byte(m.PreferCid) & 0x3f))
 			}
 
-			// chunk message header, 11 bytes
-			// timestamp, 3bytes, big-endian
-			ts := []byte{0xff, 0xff, 0xff}
-			if m.Timestamp < RtmpExtendedTimestamp {
-				ts[0] = byte(m.Timestamp >> 16)
-				ts[1] = byte(m.Timestamp >> 8)
-				ts[2] = byte(m.Timestamp)
-			}
-			if _, err = vb.Write(ts); err != nil {
-				return
+			// for chunk extended timestamp.
+			//
+			// for c0
+			// chunk extended timestamp header, 0 or 4 bytes, big-endian
+			//
+			// for c3:
+			// chunk extended timestamp header, 0 or 4 bytes, big-endian
+			// 6.1.3. Extended Timestamp
+			// This field is transmitted only when the normal time stamp in the
+			// chunk message header is set to 0x00ffffff. If normal time stamp is
+			// set to any value less than 0x00ffffff, this field MUST NOT be
+			// present. This field MUST NOT be present if the timestamp field is not
+			// present. Type 3 chunks MUST NOT have this field.
+			// adobe changed for Type3 chunk:
+			//        FMLE always sendout the extended-timestamp,
+			//        must send the extended-timestamp to FMS,
+			//        must send the extended-timestamp to flash-player.
+			// @see: ngx_rtmp_prepare_message
+			// @see: http://blog.csdn.net/win_lin/article/details/13363699
+			if m.Timestamp >= RtmpExtendedTimestamp {
+				// the extended-timestamp is 4bytes.
+				iov := v.getC0c3Cache()
+				defer v.putC0c3Cache(iov)
+				iovs = append(iovs, iov[0:4])
+
+				// big-endian.
+				iov[0] = byte(len(m.Payload) >> 24)
+				iov[1] = byte(len(m.Payload) >> 16)
+				iov[2] = byte(len(m.Payload) >> 8)
+				iov[3] = byte(len(m.Payload))
 			}
 
-			// message_length, 3bytes, big-endian
-			ts[0] = byte(m.Payload.Len() >> 16)
-			ts[1] = byte(m.Payload.Len() >> 8)
-			ts[2] = byte(m.Payload.Len())
-			if _, err = vb.Write(ts); err != nil {
-				return
+			// write chunk payload
+			var size uint32
+			if size = uint32(len(m.Payload)) - written; size > v.outChunkSize {
+				size = v.outChunkSize
 			}
+			iovs = append(iovs, m.Payload[written:written+size])
 
-			// message_type, 1bytes
-			if err = vb.WriteByte(byte(m.MessageType)); err != nil {
-				return
-			}
-
-			// stream_id, 4bytes, little-endian
-			if err = binary.Write(&vb, binary.LittleEndian, m.StreamId); err != nil {
-				return
-			}
-		} else {
-			// write no message header chunk stream, fmt is 3
-			// @remark, if perfer_cid > 0x3F, that is, use 2B/3B chunk header,
-			// SRS will rollback to 1B chunk header.
-			if err = vb.WriteByte(byte(0xC0 | (byte(m.PreferCid) & 0x3f))); err != nil {
-				return
-			}
+			written += size
 		}
+	}
 
-		// for chunk extended timestamp.
-		//
-		// for c0
-		// chunk extended timestamp header, 0 or 4 bytes, big-endian
-		//
-		// for c3:
-		// chunk extended timestamp header, 0 or 4 bytes, big-endian
-		// 6.1.3. Extended Timestamp
-		// This field is transmitted only when the normal time stamp in the
-		// chunk message header is set to 0x00ffffff. If normal time stamp is
-		// set to any value less than 0x00ffffff, this field MUST NOT be
-		// present. This field MUST NOT be present if the timestamp field is not
-		// present. Type 3 chunks MUST NOT have this field.
-		// adobe changed for Type3 chunk:
-		//        FMLE always sendout the extended-timestamp,
-		//        must send the extended-timestamp to FMS,
-		//        must send the extended-timestamp to flash-player.
-		// @see: ngx_rtmp_prepare_message
-		// @see: http://blog.csdn.net/win_lin/article/details/13363699
-		if m.Timestamp >= RtmpExtendedTimestamp {
-			if err = binary.Write(&vb, binary.LittleEndian, uint32(m.Timestamp)); err != nil {
-				return
-			}
-		}
+	return v.fastSendMessages(iovs...)
+}
 
-		// write chunk header.
-		nvb := int64(vb.Len())
-		if _, err = io.CopyN(v.out, &vb, nvb); err != nil {
-			return
-		}
+// group all messages to a big buffer and send it,
+// for the os which not support writev.
+// @remark this method will be invoked by platform depends fastSendMessages.
+func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
+	// delay init buffer.
+	if v.slowSendBuffer == nil {
+		// assume each message about 16kB
+		v.slowSendBuffer = make([]byte, RtmpGroupMessageCount*16*1024)
+	}
 
-		// write chunk payload
-		size := int64(math.Min(float64(v.outChunkSize), float64(b.Len())))
-		if _, err = io.CopyN(v.out, b, size); err != nil {
+	// calculate the total size of bytes to send.
+	var total int
+	for _, iov := range iovs {
+		total += len(iov)
+	}
+
+	// ensure the buffer is ok.
+	if total > len(v.slowSendBuffer) {
+		v.slowSendBuffer = make([]byte, 2*total)
+	}
+	b := v.slowSendBuffer[0:total]
+
+	// write all pieces of iovs to buffer.
+	w := NewBytesWriter(b)
+	for _, iov := range iovs {
+		if _, err = w.Write(iov); err != nil {
 			return
 		}
 	}
 
+	// send the buffer out.
+	var n int
+	if n, err = v.out.Write(b); err != nil {
+		return
+	}
+
+	if n != len(b) {
+		panic(fmt.Sprintf("netFD.Write EAGAIN, n=%v, nb=%v", n, len(b)))
+	}
 	return
 }
 
@@ -3483,7 +3576,7 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	r := NewMixReader(inb, in)
 
 	// the preload body must be consumed in a time.
-	left := (int)(chunk.payloadLength - uint32(m.Payload.Len()))
+	left := (int)(chunk.payloadLength - chunk.nbPayload)
 	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
@@ -3496,14 +3589,17 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	}
 
 	// read payload to buffer
-	if _, err = io.CopyN(&m.Payload, r, int64(left)); err != nil {
+	w := NewBytesWriter(m.Payload[chunk.nbPayload : int(chunk.nbPayload)+left])
+	if _, err = io.CopyN(w, r, int64(left)); err != nil {
 		core.Error.Println("read body failed. err is", err)
 		return
 	}
+	chunk.nbPayload += uint32(left)
 
 	// got entire RTMP message?
-	if chunk.payloadLength == uint32(m.Payload.Len()) {
+	if chunk.payloadLength == chunk.nbPayload {
 		chunk.partialMessage = nil
+		chunk.nbPayload = 0
 		return
 	}
 
@@ -3752,6 +3848,9 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	chunk.partialMessage.Timestamp = chunk.timestamp
 	chunk.partialMessage.PreferCid = chunk.cid
 	chunk.partialMessage.StreamId = chunk.streamId
+	if chunk.partialMessage.Payload == nil {
+		chunk.partialMessage.Payload = make([]byte, chunk.payloadLength)
+	}
 
 	// update chunk information.
 	chunk.fmt = fmt

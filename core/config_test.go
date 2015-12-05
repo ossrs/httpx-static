@@ -39,7 +39,7 @@ func TestConfigBasic(t *testing.T) {
 		t.Error("listen failed.")
 	}
 
-	if c.Go.GcInterval != 300 {
+	if c.Go.GcInterval != 0 {
 		t.Error("go gc interval failed.")
 	}
 

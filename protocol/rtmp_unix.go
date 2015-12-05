@@ -19,44 +19,12 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-package core
+// +build darwin dragonfly freebsd nacl netbsd openbsd solaris linux
 
-import (
-	"errors"
-	"net"
-)
+package protocol
 
-// the quit error, used for goroutine to return.
-var QuitError error = errors.New("system quit")
-
-// when channel overflow, for example, the c0c1 never overflow
-// when channel buffer size set to 2.
-var OverflowError error = errors.New("system overflow")
-
-// when io timeout to wait.
-var TimeoutError error = errors.New("io timeout")
-
-// when the rtmp vhost not found.
-var VhostNotFoundError error = errors.New("vhost not found")
-
-// whether the object in recover or returned error can ignore,
-// for instance, the error is a Quit error.
-func IsNormalQuit(err interface{}) bool {
-	if err == nil {
-		return true
-	}
-
-	if err, ok := err.(error); ok {
-		// manual quit or read timeout.
-		if err == QuitError || err == TimeoutError {
-			return true
-		}
-
-		// network timeout.
-		if err, ok := err.(net.Error); ok && err.Timeout() {
-			return true
-		}
-	}
-
-	return false
+func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
+	// wait for golang to implements the writev.
+	// @see https://github.com/golang/go/issues/13451
+	return v.slowSendMessages(iovs...)
 }

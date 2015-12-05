@@ -14,7 +14,7 @@ For linux/unix-like os:
 ```
 go get github.com/ossrs/go-oryx &&
 cd $GOPATH/src/github.com/ossrs/go-oryx &&
-$GOPATH/bin/go-oryx -c conf/srs.json
+$GOPATH/bin/go-oryx -c conf/oryx.json
 ```
 
 Or, for windows:
@@ -22,14 +22,14 @@ Or, for windows:
 ```
 go get github.com/ossrs/go-oryx &&
 cd %GOPATH%\src\github.com\ossrs\go-oryx &&
-%GOPATH%\bin\go-oryx.exe -c conf\srs.json
+%GOPATH%\bin\go-oryx.exe -c conf\oryx.json
 ```
 
 About how to build and run at current directory:
 
 ```
 cd $GOPATH/src/github.com/ossrs/go-oryx &&
-go build . && ./go-oryx -c conf/srs.json
+go build . && ./go-oryx -c conf/oryx.json
 ```
 
 About how to set $GOPATH, read [prepare go][go-prepare].
@@ -55,7 +55,7 @@ IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plug
 1. v0.1.7 Use agent(source+channel+sink) to build complex stream river.
 1. v0.1.8 Supports Publish and Play VP6 RTMP stream.
 1. v0.1.9 Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
-1. [dev] Supports 10k play clients over RTMP.
+1. v0.1.10 Supports 10k(8CPUs) play clients over RTMP.
 1. [dev] Supports gop-cache and drop frame strategy.
 1. [dev] Supports Connection Oriented Traceable log.
 
