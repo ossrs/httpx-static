@@ -24,7 +24,6 @@ package core
 import (
 	"bytes"
 	"encoding"
-	"io"
 	"math/rand"
 	"reflect"
 	"runtime"
@@ -81,19 +80,6 @@ func Recover(name string, f func() error) {
 			Warn.Println("terminated abort with", err)
 		}
 	}
-}
-
-// grow the bytes buffer from reader.
-func Grow(in io.Reader, inb *bytes.Buffer, size int) (err error) {
-	if inb.Len() >= size {
-		return
-	}
-
-	if _, err = io.CopyN(inb, in, int64(size)); err != nil {
-		return
-	}
-
-	return
 }
 
 // unmarshaler

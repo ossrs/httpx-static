@@ -22,10 +22,9 @@
 package protocol
 
 import (
+	"bufio"
 	"bytes"
 	"github.com/ossrs/go-oryx/core"
-	"io"
-	"io/ioutil"
 	"testing"
 )
 
@@ -139,8 +138,8 @@ func TestRtmpStack(t *testing.T) {
 
 func TestRtmpStack_RtmpReadBasicHeader(t *testing.T) {
 	fn := func(b []byte, fmt uint8, cid uint32, ef func(error)) {
-		r := bytes.NewReader(b)
-		if f, c, err := RtmpReadBasicHeader(r, &bytes.Buffer{}); err != nil || f != fmt || c != cid {
+		r := bufio.NewReader(bytes.NewReader(b))
+		if f, c, err := rtmpReadBasicHeader(r); err != nil || f != fmt || c != cid {
 			t.Error("invalid chunk,", b, "fmt", fmt, "!=", f, "and cid", cid, "!=", c)
 			ef(err)
 		}
@@ -164,32 +163,31 @@ func TestRtmpStack_RtmpReadBasicHeader(t *testing.T) {
 
 func TestRtmpStack_RtmpReadMessageHeader_extendedTimestamp(t *testing.T) {
 	c := NewRtmpChunk(2)
-	b := &bytes.Buffer{}
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0xff, 0xff, 0xff,
 		0x00, 0x00, 0x0e,
 		0x0d,
 		0x0c, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x0f,
-	}), b, 0, c); err != nil || b.Len() != 0 {
+	})), 0, c); err != nil {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
 		t.Error("invalid timestamp", c.timestamp)
 	}
 
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x00, 0x0f,
-	}), b, 3, c); err != nil || b.Len() != 0 {
+	})), 3, c); err != nil {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
 		t.Error("invalid timestamp", c.timestamp)
 	}
 
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x00, 0x0e,
-	}), b, 3, c); err != nil || b.Len() != 4 {
+	})), 3, c); err != nil {
 		t.Error("invalid message")
 	}
 	if !c.hasExtendedTimestamp || c.timestamp != 0x0f {
@@ -202,70 +200,69 @@ func TestRtmpStack_RtmpReadMessageHeader_extendedTimestamp(t *testing.T) {
 func TestRtmpStack_RtmpReadMessageHeader_exceptions(t *testing.T) {
 	// fmt is 1, cid 2
 	f1 := NewRtmpChunk(2)
-	b := &bytes.Buffer{}
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0e,
 		0x0d,
-	}), b, 1, f1); err != nil {
+	})), 1, f1); err != nil {
 		t.Error("fresh chunk should ok for fmt=1 and cid=2")
 	}
 
 	// fmt is 1, cid not 2
 	f1 = NewRtmpChunk(3)
-	if err := RtmpReadMessageHeader(nil, b, 1, f1); err == nil {
+	if err := rtmpReadMessageHeader(nil, 1, f1); err == nil {
 		t.Error("fresh chunk should error for fmt=1 and cid!=2")
 	}
 
 	// fmt is 2
 	f2 := NewRtmpChunk(2)
-	if err := RtmpReadMessageHeader(nil, b, 3, f2); err == nil {
+	if err := rtmpReadMessageHeader(nil, 3, f2); err == nil {
 		t.Error("fresh chunk should error for fmt=2")
 	}
 
 	// fmt is 3
 	f3 := NewRtmpChunk(2)
-	if err := RtmpReadMessageHeader(nil, b, 3, f3); err == nil {
+	if err := rtmpReadMessageHeader(nil, 3, f3); err == nil {
 		t.Error("fresh chunk should error for fmt=3")
 	}
 
 	// fmt0=>fmt1, change payload length
 	c := NewRtmpChunk(2)
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0e,
 		0x0d,
 		0x0c, 0x00, 0x00, 0x00,
-	}), b, 0, c); err != nil {
+	})), 0, c); err != nil {
 		t.Error("invalid chunk.")
 	}
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0e,
 		0x00, 0x00, 0x0e,
 		0x0d,
-	}), b, 1, c); err == nil {
+	})), 1, c); err == nil {
 		t.Error("fmt1 should never change timestamp delta")
 	}
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0f,
 		0x0d,
-	}), b, 1, c); err == nil {
+	})), 1, c); err == nil {
 		t.Error("fmt1 should never change payload length")
 	}
-	if err := RtmpReadMessageHeader(bytes.NewReader([]byte{
+	if err := rtmpReadMessageHeader(bufio.NewReader(bytes.NewReader([]byte{
 		0x00, 0x00, 0x0f,
 		0x00, 0x00, 0x0e,
 		0x0e,
-	}), b, 1, c); err == nil {
+	})), 1, c); err == nil {
 		t.Error("fmt1 should never change message type")
 	}
 }
 
 func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 	fn := func(b []byte, fmt uint8, c *RtmpChunk, f func([]byte, *RtmpChunk), ef func(error)) {
-		r := bytes.NewReader(b)
-		if err := RtmpReadMessageHeader(r, &bytes.Buffer{}, fmt, c); err != nil {
+		r := bufio.NewReader(bytes.NewReader(b))
+		if err := rtmpReadMessageHeader(r, fmt, c); err != nil {
 			t.Error("error for fmt", fmt, "and cid", c.cid)
 			ef(err)
 		} else {
@@ -373,95 +370,41 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 	c := NewRtmpChunk(2)
 
 	c.partialMessage = NewRtmpMessage()
-	if m, err := RtmpReadMessagePayload(0, nil, nil, c); err != nil || m != nil {
+	if m, err := rtmpReadMessagePayload(0, nil, c); err != nil || m != nil {
 		t.Error("should be empty")
 	}
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 2
-	c.partialMessage.Payload = make([]byte, c.payloadLength)
-	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
+	if m, err := rtmpReadMessagePayload(2, bufio.NewReader(bytes.NewReader([]byte{
 		0x01, 0x02, 0x03, 0x04, 0x05,
-	}), &bytes.Buffer{}, c); err != nil || m == nil {
+	})), c); err != nil || m == nil {
 		t.Error("invalid msg")
 	}
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 2
-	c.partialMessage.Payload = make([]byte, c.payloadLength)
-	if m, err := RtmpReadMessagePayload(2, nil, bytes.NewBuffer([]byte{
+	if m, err := rtmpReadMessagePayload(2, bufio.NewReader(bytes.NewBuffer([]byte{
 		0x01, 0x02,
-	}), c); err != nil || m == nil {
+	})), c); err != nil || m == nil {
 		t.Error("invalid msg")
 	}
 
 	c.partialMessage = NewRtmpMessage()
 	c.payloadLength = 5
-	c.partialMessage.Payload = make([]byte, c.payloadLength)
-	if m, err := RtmpReadMessagePayload(5, bytes.NewReader([]byte{
+	if m, err := rtmpReadMessagePayload(5, bufio.NewReader(bytes.NewReader([]byte{
 		0x01, 0x02,
-	}), bytes.NewBuffer([]byte{
 		0x03, 0x04, 0x05,
-	}), c); err != nil || m == nil {
+	})), c); err != nil || m == nil {
 		t.Error("invalid msg")
 	}
 
 	c.partialMessage = NewRtmpMessage()
-	c.payloadLength = 5
-	c.partialMessage.Payload = make([]byte, c.payloadLength)
-	if m, err := RtmpReadMessagePayload(6, bytes.NewReader([]byte{
-		0x01, 0x02,
-	}), bytes.NewBuffer([]byte{
-		0x03, 0x04, 0x05,
-	}), c); err != nil || m == nil {
-		t.Error("invalid msg")
-	}
-
-	c.partialMessage = NewRtmpMessage()
-	c.payloadLength = 5
-	c.partialMessage.Payload = make([]byte, c.payloadLength)
-	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
+	c.payloadLength = 2
+	if m, err := rtmpReadMessagePayload(2, bufio.NewReader(bytes.NewReader([]byte{
 		0x01, 0x02, 0x05,
-	}), bytes.NewBuffer([]byte{
-		0x03, 0x04,
-	}), c); err != nil || m != nil {
+	})), c); err != nil || m == nil {
 		t.Error("invalid msg")
-	}
-	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
-		0x01, 0x02, 0x05,
-	}), &bytes.Buffer{}, c); err != nil || m != nil {
-		t.Error("invalid msg")
-	}
-	if m, err := RtmpReadMessagePayload(2, bytes.NewReader([]byte{
-		0x01, 0x02, 0x05,
-	}), &bytes.Buffer{}, c); err != nil || m == nil {
-		t.Error("invalid msg")
-	}
-}
-
-func TestMixReader(t *testing.T) {
-	r := NewMixReader(nil, nil)
-	if _, err := r.Read(make([]byte, 1)); err == nil {
-		t.Error("nil source should failed.")
-	}
-
-	r = NewMixReader(bytes.NewBuffer([]byte{0x00}), bytes.NewReader([]byte{0x00}))
-	if _, err := io.CopyN(ioutil.Discard, r, 2); err != nil {
-		t.Error("should not be nil")
-	}
-	if _, err := r.Read(make([]byte, 1)); err == nil {
-		t.Error("should dry")
-	}
-
-	r = NewMixReader(bytes.NewBuffer([]byte{0x00}), bytes.NewReader([]byte{0x00}))
-	if _, err := io.CopyN(ioutil.Discard, r, 1); err != nil {
-		t.Error("should not be nil")
-	}
-	if _, err := io.CopyN(ioutil.Discard, r, 1); err != nil {
-		t.Error("should not be nil")
-	}
-	if _, err := r.Read(make([]byte, 1)); err == nil {
-		t.Error("should dry")
 	}
 }
 
