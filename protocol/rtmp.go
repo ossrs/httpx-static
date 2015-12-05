@@ -944,46 +944,6 @@ func (v *RtmpConnection) Close() {
 	return
 }
 
-func (v *RtmpConnection) waitC0C1() (err error) {
-	// use short handshake timeout.
-	timeout := HandshakeTimeout
-
-	// wait c0c1
-	select {
-	case <-v.handshake.in:
-		break
-	case <-time.After(timeout):
-		core.Error.Println("c0c1 timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing.QC():
-		return v.closing.Quit()
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
-}
-
-func (v *RtmpConnection) waitC2() (err error) {
-	// use short handshake timeout.
-	timeout := HandshakeTimeout
-
-	// wait c2
-	select {
-	case <-v.handshake.in:
-		break
-	case <-time.After(timeout):
-		core.Error.Println("c2 timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing.QC():
-		return v.closing.Quit()
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
-	return
-}
-
 // handshake with client, try complex then simple.
 func (v *RtmpConnection) Handshake() (err error) {
 	// got c0c1.
@@ -1070,6 +1030,46 @@ func (v *RtmpConnection) Handshake() (err error) {
 	// got c2.
 	if err = v.waitC2(); err != nil {
 		return
+	}
+
+	return
+}
+
+func (v *RtmpConnection) waitC0C1() (err error) {
+	// use short handshake timeout.
+	timeout := HandshakeTimeout
+
+	// wait c0c1
+	select {
+	case <-v.handshake.in:
+		break
+	case <-time.After(timeout):
+		core.Error.Println("c0c1 timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing.QC():
+		return v.closing.Quit()
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+func (v *RtmpConnection) waitC2() (err error) {
+	// use short handshake timeout.
+	timeout := HandshakeTimeout
+
+	// wait c2
+	select {
+	case <-v.handshake.in:
+		break
+	case <-time.After(timeout):
+		core.Error.Println("c2 timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing.QC():
+		return v.closing.Quit()
+	case <-v.wc.QC():
+		return v.wc.Quit()
 	}
 
 	return
@@ -1391,6 +1391,28 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	return
 }
 
+// cycle to flush messages, and callback the fn when got message from peer.
+func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
+	for {
+		select {
+		case <-v.shouldFlush:
+			if err = v.flush(); err != nil {
+				return
+			}
+		case m := <-v.in:
+			if err = fn(m); err != nil {
+				return
+			}
+		case <-v.closing.QC():
+			return v.closing.Quit()
+		case <-v.wc.QC():
+			return v.wc.Quit()
+		}
+	}
+
+	return
+}
+
 func (v *RtmpConnection) requiredMessages() int {
 	if v.groupMessages {
 		return RtmpGroupMessageCount
@@ -1474,28 +1496,6 @@ func (v *RtmpConnection) RecvMessage(timeout time.Duration, fn func(*RtmpMessage
 // to decode the message to packet.
 func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 	return v.stack.DecodeMessage(m)
-}
-
-// cycle to flush messages, and callback the fn when got message from peer.
-func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
-	for {
-		select {
-		case <-v.shouldFlush:
-			if err = v.flush(); err != nil {
-				return
-			}
-		case m := <-v.in:
-			if err = fn(m); err != nil {
-				return
-			}
-		case <-v.closing.QC():
-			return v.closing.Quit()
-		case <-v.wc.QC():
-			return v.wc.Quit()
-		}
-	}
-
-	return
 }
 
 func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
