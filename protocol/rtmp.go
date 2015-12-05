@@ -850,11 +850,11 @@ type RtmpConnection struct {
 	out []*RtmpMessage
 
 	// whether stack should flush all messages.
-	cond chan bool
+	shouldFlush chan bool
 	// whether the sender need to be notified.
-	needNotify bool
+	needNotifyFlusher bool
 	// whether the sender is working.
-	isWorking bool
+	isFlusherWorking bool
 }
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
@@ -869,7 +869,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		in:            make(chan *RtmpMessage, RtmpInCache),
 		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
 		closing:       core.NewQuiter(),
-		cond:          make(chan bool, 1),
+		shouldFlush:   make(chan bool, 1),
 	}
 
 	// wait for goroutine to run.
@@ -1376,14 +1376,14 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	v.out = append(v.out, m)
 
 	// notify when messages is enough and sender is not working.
-	if len(v.out) >= v.requiredMessages() && !v.isWorking {
-		v.needNotify = true
+	if len(v.out) >= v.requiredMessages() && !v.isFlusherWorking {
+		v.needNotifyFlusher = true
 	}
 
 	// unblock the sender when got enough messages.
 	if v.toggleNotify() {
 		select {
-		case v.cond <- true:
+		case v.shouldFlush <- true:
 		default:
 		}
 	}
@@ -1399,16 +1399,16 @@ func (v *RtmpConnection) requiredMessages() int {
 }
 
 func (v *RtmpConnection) toggleNotify() bool {
-	nn := v.needNotify
-	v.needNotify = false
+	nn := v.needNotifyFlusher
+	v.needNotifyFlusher = false
 	return nn
 }
 
 // to push message to send queue.
 func (v *RtmpConnection) flush() (err error) {
-	v.isWorking = true
+	v.isFlusherWorking = true
 	defer func() {
-		v.isWorking = false
+		v.isFlusherWorking = false
 	}()
 
 	for {
@@ -1480,7 +1480,7 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
 	for {
 		select {
-		case <-v.cond:
+		case <-v.shouldFlush:
 			if err = v.flush(); err != nil {
 				return
 			}
