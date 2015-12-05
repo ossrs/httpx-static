@@ -1412,8 +1412,19 @@ func (v *RtmpConnection) Flush() (err error) {
 				return
 			}
 
+			// send one by one.
+			if required <= 1 {
+				for _, m := range out {
+					if err = v.stack.SendMessage(m); err != nil {
+						return
+					}
+				}
+				break
+			}
+
 			// sendout large blocks.
-			if required > 1 && len(out) > required {
+			// more than 2 group messages.
+			if len(out) > required*2 {
 				// TODO: FIXME: config the msgs group size.
 				for n := 0; n < required; n++ {
 					v.groupMessage[n] = out[n]
@@ -1423,15 +1434,12 @@ func (v *RtmpConnection) Flush() (err error) {
 				if err = v.stack.SendMessage(v.groupMessage...); err != nil {
 					return
 				}
-
 				continue
 			}
 
-			// send one by one.
-			for _, m := range out {
-				if err = v.stack.SendMessage(m); err != nil {
-					return
-				}
+			// last group and left messages.
+			if err = v.stack.SendMessage(out...); err != nil {
+				return
 			}
 			break
 		}
