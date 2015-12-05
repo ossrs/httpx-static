@@ -311,7 +311,6 @@ type RtmpPlayAgent struct {
 	conn      *protocol.RtmpConnection
 	wc        core.WorkerContainer
 	upstream  core.Agent
-	cond      chan bool
 	jitter    *Jitter
 	nbDropped uint32
 }
@@ -320,7 +319,6 @@ func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *R
 	return &RtmpPlayAgent{
 		conn:   conn,
 		wc:     wc,
-		cond:   make(chan bool, 1),
 		jitter: NewJitter(),
 	}
 }
@@ -342,21 +340,14 @@ func (v *RtmpPlayAgent) Close() (err error) {
 }
 
 func (v *RtmpPlayAgent) Pump() (err error) {
-	return v.conn.RecvMessageNoTimeout(v.cond,
-		func(m0 *protocol.RtmpMessage, m1 bool) (err error) {
-			// message from publisher to send to player.
-			if m1 {
-				return v.conn.Flush()
-			}
-
-			// message from player.
-			if m0 != nil {
-				// TODO: FIXME: implements it.
-				return
-			}
+	return v.conn.Cycle(func(m *protocol.RtmpMessage) (err error) {
+		// message from player.
+		if m != nil {
+			// TODO: FIXME: implements it.
 			return
-		},
-	)
+		}
+		return
+	})
 }
 
 func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
@@ -376,14 +367,6 @@ func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
 	// cache message.
 	if err = v.conn.CacheMessage(om.Payload()); err != nil {
 		return
-	}
-
-	// unblock the sender when got enough messages.
-	if v.conn.ToggleNotify() {
-		select {
-		case v.cond <- true:
-		default:
-		}
 	}
 
 	return

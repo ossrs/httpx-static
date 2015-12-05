@@ -848,6 +848,9 @@ type RtmpConnection struct {
 	writeLock sync.Mutex
 	// use cache queue.
 	out []*RtmpMessage
+
+	// whether stack should flush all messages.
+	cond chan bool
 	// whether the sender need to be notified.
 	needNotify bool
 	// whether the sender is working.
@@ -866,6 +869,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		in:            make(chan *RtmpMessage, RtmpInCache),
 		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
 		closing:       core.NewQuiter(),
+		cond:          make(chan bool, 1),
 	}
 
 	// wait for goroutine to run.
@@ -1361,6 +1365,9 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	return
 }
 
+// the rtmp connection never provides send message,
+// but we use cache message and the main goroutine of connection
+// will use Cycle to flush messages.
 func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	v.writeLock.Lock()
 	defer v.writeLock.Unlock()
@@ -1373,6 +1380,14 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 		v.needNotify = true
 	}
 
+	// unblock the sender when got enough messages.
+	if v.toggleNotify() {
+		select {
+		case v.cond <- true:
+		default:
+		}
+	}
+
 	return
 }
 
@@ -1383,14 +1398,14 @@ func (v *RtmpConnection) requiredMessages() int {
 	return 1
 }
 
-func (v *RtmpConnection) ToggleNotify() bool {
+func (v *RtmpConnection) toggleNotify() bool {
 	nn := v.needNotify
 	v.needNotify = false
 	return nn
 }
 
 // to push message to send queue.
-func (v *RtmpConnection) Flush() (err error) {
+func (v *RtmpConnection) flush() (err error) {
 	v.isWorking = true
 	defer func() {
 		v.isWorking = false
@@ -1461,18 +1476,16 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 	return v.stack.DecodeMessage(m)
 }
 
-// to receive message from rtmp or another oryx channel.
-// @remark for performance issue, the mix recv for player never use timer,
-//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
-func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan bool, fn func(*RtmpMessage, bool) error) (err error) {
+// cycle to flush messages, and callback the fn when got message from peer.
+func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
 	for {
 		select {
-		case m := <-extra:
-			if err = fn(nil, m); err != nil {
+		case <-v.cond:
+			if err = v.flush(); err != nil {
 				return
 			}
 		case m := <-v.in:
-			if err = fn(m, false); err != nil {
+			if err = fn(m); err != nil {
 				return
 			}
 		case <-v.closing.QC():
@@ -1645,7 +1658,7 @@ func (v *RtmpConnection) write(p RtmpPacket, sid uint32) (err error) {
 		return
 	}
 
-	return v.Flush()
+	return v.flush()
 }
 
 // receiver goroutine.
