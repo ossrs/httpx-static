@@ -850,6 +850,8 @@ type RtmpConnection struct {
 	out []*RtmpMessage
 	// whether the sender need to be notified.
 	needNotify bool
+	// whether the sender is working.
+	isWorking bool
 
 	// cache for group messages.
 	groupMessage []*RtmpMessage
@@ -1370,9 +1372,11 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	// push to queue.
 	v.out = append(v.out, m)
 
-	if len(v.out) >= v.requiredMessages() {
+	// notify when messages is enough and sender is not working.
+	if len(v.out) >= v.requiredMessages() && !v.isWorking {
 		v.needNotify = true
 	}
+
 	return
 }
 
@@ -1391,6 +1395,11 @@ func (v *RtmpConnection) NeedNotify() bool {
 
 // to push message to send queue.
 func (v *RtmpConnection) Flush() (err error) {
+	v.isWorking = true
+	defer func() {
+		v.isWorking = false
+	}()
+
 	for {
 		// cache the required messages.
 		required := v.requiredMessages()
