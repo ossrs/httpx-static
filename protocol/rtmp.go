@@ -3288,6 +3288,9 @@ type RtmpStack struct {
 	slowSendBuffer []byte
 }
 
+// max chunk header is fmt0.
+const RtmpMaxChunkHeader = 12
+
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
 		in:           r,
@@ -3299,7 +3302,10 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 
 	// assume each message contains 10 chunks,
 	// and each chunk need 3 header(c0, c3, extended-timestamp).
-	v.c0c3Cache = make([][]byte, 0, RtmpGroupMessageCount*10*3)
+	v.c0c3Cache = make([][]byte, RtmpGroupMessageCount*10*3)
+	for i := 0; i < len(v.c0c3Cache); i++ {
+		v.c0c3Cache[i] = make([]byte, RtmpMaxChunkHeader)
+	}
 	// iovs cache contains the body cache.
 	v.iovsCache = make([][]byte, 0, RtmpGroupMessageCount*10*4)
 
@@ -3442,10 +3448,10 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 	return
 }
 
-func (v *RtmpStack) getC0c3Cache(index int) (nextIndex int, iov []byte) {
+func (v *RtmpStack) fetchC0c3Cache(index int) (nextIndex int, iov []byte) {
 	// exceed the index, create the cache.
 	if index >= len(v.c0c3Cache) {
-		iov = make([]byte, 12)
+		iov = make([]byte, RtmpMaxChunkHeader)
 		v.c0c3Cache = append(v.c0c3Cache, iov)
 	}
 
@@ -3468,7 +3474,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 			// for chunk header without extended timestamp.
 			if firstChunk := bool(written == 0); firstChunk {
 				// the fmt0 is 12bytes header.
-				iovIndex, iov = v.getC0c3Cache(iovIndex)
+				iovIndex, iov = v.fetchC0c3Cache(iovIndex)
 				iovs = append(iovs, iov[0:12])
 
 				// write new chunk stream header, fmt is 0
@@ -3501,7 +3507,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 				iov[11] = byte(m.StreamId >> 24)
 			} else {
 				// the fmt3 is 1bytes header.
-				iovIndex, iov = v.getC0c3Cache(iovIndex)
+				iovIndex, iov = v.fetchC0c3Cache(iovIndex)
 				iovs = append(iovs, iov[0:1])
 
 				// write no message header chunk stream, fmt is 3
@@ -3531,7 +3537,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 			// @see: http://blog.csdn.net/win_lin/article/details/13363699
 			if m.Timestamp >= RtmpExtendedTimestamp {
 				// the extended-timestamp is 4bytes.
-				iovIndex, iov = v.getC0c3Cache(iovIndex)
+				iovIndex, iov = v.fetchC0c3Cache(iovIndex)
 				iovs = append(iovs, iov[0:4])
 
 				// big-endian.
@@ -3561,8 +3567,8 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 	// delay init buffer.
 	if v.slowSendBuffer == nil {
-		// assume each message about 16kB
-		v.slowSendBuffer = make([]byte, RtmpGroupMessageCount*16*1024)
+		// assume each message about 32kB
+		v.slowSendBuffer = make([]byte, 0, RtmpGroupMessageCount*32*1024)
 	}
 
 	// calculate the total size of bytes to send.
@@ -3570,19 +3576,16 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 	for _, iov := range iovs {
 		total += len(iov)
 	}
-
-	// ensure the buffer is ok.
 	if total > len(v.slowSendBuffer) {
 		v.slowSendBuffer = make([]byte, 2*total)
 	}
-	b := v.slowSendBuffer[0:total]
 
 	// write all pieces of iovs to buffer.
-	w := NewBytesWriter(b)
+	var nn int
+	b := v.slowSendBuffer[0:total]
 	for _, iov := range iovs {
-		if _, err = w.Write(iov); err != nil {
-			return
-		}
+		copy(b[nn:], iov)
+		nn += len(iov)
 	}
 
 	// send the buffer out.
