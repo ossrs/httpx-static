@@ -848,6 +848,9 @@ type RtmpConnection struct {
 	writeLock sync.Mutex
 	// use cache queue.
 	out []*RtmpMessage
+	// whether the sender need to be notified.
+	needNotify bool
+
 	// cache for group messages.
 	groupMessage []*RtmpMessage
 }
@@ -1366,48 +1369,71 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 
 	// push to queue.
 	v.out = append(v.out, m)
+
+	if len(v.out) >= v.requiredMessages() {
+		v.needNotify = true
+	}
 	return
 }
 
+func (v *RtmpConnection) requiredMessages() int {
+	if v.groupMessages {
+		return RtmpGroupMessageCount
+	}
+	return 1
+}
+
 func (v *RtmpConnection) NeedNotify() bool {
-	return len(v.out) > RtmpGroupMessageCount
+	nn := v.needNotify
+	v.needNotify = false
+	return nn
 }
 
 // to push message to send queue.
 func (v *RtmpConnection) Flush() (err error) {
-	v.writeLock.Lock()
-	defer v.writeLock.Unlock()
-
 	for {
-		required := 1
-		if v.groupMessages && RtmpGroupMessageCount > 1 {
-			required = RtmpGroupMessageCount
-		}
+		// cache the required messages.
+		required := v.requiredMessages()
 
-		// not enough for group messages.
-		if len(v.out) < required {
-			return
-		}
+		// copy messages to send.
+		var out []*RtmpMessage
+		func() {
+			v.writeLock.Lock()
+			defer v.writeLock.Unlock()
 
-		// send one by one.
-		if required == 1 {
-			for _, m := range v.out {
+			out = v.out[:]
+			v.out = v.out[0:0]
+		}()
+
+		// sendout all messages.
+		for {
+			// nothing, ingore.
+			if len(out) == 0 {
+				return
+			}
+
+			// sendout large blocks.
+			if required > 1 && len(out) > required {
+				// TODO: FIXME: config the msgs group size.
+				for n := 0; n < required; n++ {
+					v.groupMessage[n] = out[n]
+				}
+				out = out[required:]
+
+				if err = v.stack.SendMessage(v.groupMessage...); err != nil {
+					return
+				}
+
+				continue
+			}
+
+			// send one by one.
+			for _, m := range out {
 				if err = v.stack.SendMessage(m); err != nil {
 					return
 				}
 			}
-			v.out = v.out[0:0]
-			continue
-		}
-
-		// TODO: FIXME: config the msgs group size.
-		for n := 0; n < required; n++ {
-			v.groupMessage[n] = v.out[n]
-		}
-		v.out = v.out[required:]
-
-		if err = v.stack.SendMessage(v.groupMessage...); err != nil {
-			return
+			break
 		}
 	}
 
