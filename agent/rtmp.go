@@ -379,7 +379,7 @@ func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
 	}
 
 	// unblock the sender when got enough messages.
-	if v.conn.NeedNotify() {
+	if v.conn.ToggleNotify() {
 		select {
 		case v.cond <- true:
 		default:

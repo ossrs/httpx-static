@@ -852,9 +852,6 @@ type RtmpConnection struct {
 	needNotify bool
 	// whether the sender is working.
 	isWorking bool
-
-	// cache for group messages.
-	groupMessage []*RtmpMessage
 }
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
@@ -868,7 +865,6 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		stack:         NewRtmpStack(transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
 		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
-		groupMessage:  make([]*RtmpMessage, RtmpGroupMessageCount),
 		closing:       core.NewQuiter(),
 	}
 
@@ -1387,7 +1383,7 @@ func (v *RtmpConnection) requiredMessages() int {
 	return 1
 }
 
-func (v *RtmpConnection) NeedNotify() bool {
+func (v *RtmpConnection) ToggleNotify() bool {
 	nn := v.needNotify
 	v.needNotify = false
 	return nn
@@ -1435,14 +1431,10 @@ func (v *RtmpConnection) Flush() (err error) {
 			// more than 2 group messages.
 			if len(out) > required*2 {
 				// TODO: FIXME: config the msgs group size.
-				for n := 0; n < required; n++ {
-					v.groupMessage[n] = out[n]
-				}
-				out = out[required:]
-
-				if err = v.stack.SendMessage(v.groupMessage...); err != nil {
+				if err = v.stack.SendMessage(out[0:required]...); err != nil {
 					return
 				}
+				out = out[required:]
 				continue
 			}
 
