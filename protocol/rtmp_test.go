@@ -25,35 +25,9 @@ import (
 	"bytes"
 	"github.com/ossrs/go-oryx/core"
 	"io"
+	"io/ioutil"
 	"testing"
 )
-
-func TestBytesWriter(t *testing.T) {
-	w := NewBytesWriter(make([]byte, 1))
-	if n, err := w.Write(make([]byte, 1)); err != nil || n != 1 {
-		t.Error("should be ok")
-	}
-	if n, err := w.Write(make([]byte, 0)); err != nil || n != 0 {
-		t.Error("should be ok")
-	}
-	if n, err := w.Write(nil); err != nil || n != 0 {
-		t.Error("should be ok")
-	}
-	if n, err := w.Write(make([]byte, 2)); err == nil || n != 0 {
-		t.Error("should not be ok")
-	}
-
-	w = NewBytesWriter(make([]byte, 10))
-	if n, err := w.Write(make([]byte, 5)); err != nil || n != 5 {
-		t.Error("should be ok")
-	}
-	if n, err := w.Write(make([]byte, 5)); err != nil || n != 5 {
-		t.Error("should be ok")
-	}
-	if n, err := w.Write(make([]byte, 1)); err == nil || n != 0 {
-		t.Error("should not be ok")
-	}
-}
 
 func TestHsBytes(t *testing.T) {
 	b := NewHsBytes()
@@ -311,7 +285,7 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 		0x0d,
 		0x0c, 0x00, 0x00, 0x00,
 	}, 0, f0, func(b []byte, c *RtmpChunk) {
-		if len(c.partialMessage.Payload) != 0x0e {
+		if len(c.partialMessage.Payload) != 0x0 {
 			t.Error("invalid payload")
 		}
 		if c.payloadLength != 0x0e || c.messageType != 0x0d || c.streamId != 0x0c {
@@ -472,7 +446,7 @@ func TestMixReader(t *testing.T) {
 	}
 
 	r = NewMixReader(bytes.NewBuffer([]byte{0x00}), bytes.NewReader([]byte{0x00}))
-	if _, err := io.CopyN(NewBytesWriter(make([]byte, 2)), r, 2); err != nil {
+	if _, err := io.CopyN(ioutil.Discard, r, 2); err != nil {
 		t.Error("should not be nil")
 	}
 	if _, err := r.Read(make([]byte, 1)); err == nil {
@@ -480,10 +454,10 @@ func TestMixReader(t *testing.T) {
 	}
 
 	r = NewMixReader(bytes.NewBuffer([]byte{0x00}), bytes.NewReader([]byte{0x00}))
-	if _, err := io.CopyN(NewBytesWriter(make([]byte, 1)), r, 1); err != nil {
+	if _, err := io.CopyN(ioutil.Discard, r, 1); err != nil {
 		t.Error("should not be nil")
 	}
-	if _, err := io.CopyN(NewBytesWriter(make([]byte, 1)), r, 1); err != nil {
+	if _, err := io.CopyN(ioutil.Discard, r, 1); err != nil {
 		t.Error("should not be nil")
 	}
 	if _, err := r.Read(make([]byte, 1)); err == nil {

@@ -44,39 +44,6 @@ import (
 // error when create stream.
 var createStreamError error = errors.New("rtmp create stream error")
 
-// use []byte as io.Writer
-type bytesWriter struct {
-	pos int
-	b   []byte
-}
-
-func NewBytesWriter(b []byte) io.Writer {
-	return &bytesWriter{
-		b: b,
-	}
-}
-
-func (v *bytesWriter) Write(p []byte) (n int, err error) {
-	if p == nil || len(p) == 0 {
-		return
-	}
-
-	// check left space.
-	left := len(v.b) - v.pos
-	if left < len(p) {
-		return 0, fmt.Errorf("overflow, left is %v, requires %v", left, len(p))
-	}
-
-	// copy content to left space.
-	_ = copy(v.b[v.pos:], p)
-
-	// copy ok.
-	n = len(p)
-	v.pos += n
-
-	return
-}
-
 // mix []byte and io.Reader
 type mixReader struct {
 	reader io.Reader
@@ -210,11 +177,13 @@ func (v *hsBytes) readC0C1(r io.Reader) (err error) {
 		return
 	}
 
-	w := NewBytesWriter(v.C0C1())
-	if _, err = io.CopyN(w, r, 1537); err != nil {
+	var b bytes.Buffer
+	if _, err = io.CopyN(&b, r, 1537); err != nil {
 		core.Error.Println("read c0c1 failed. err is", err)
 		return
 	}
+
+	copy(v.C0C1(), b.Bytes())
 
 	v.c0c1Ok = true
 	core.Info.Println("read c0c1 ok.")
@@ -258,11 +227,13 @@ func (v *hsBytes) readC2(r io.Reader) (err error) {
 		return
 	}
 
-	w := NewBytesWriter(v.C2())
-	if _, err = io.CopyN(w, r, 1536); err != nil {
+	var b bytes.Buffer
+	if _, err = io.CopyN(&b, r, 1536); err != nil {
 		core.Error.Println("read c2 failed. err is", err)
 		return
 	}
+
+	copy(v.C2(), b.Bytes())
 
 	v.c2Ok = true
 	core.Info.Println("read c2 ok.")
@@ -488,13 +459,14 @@ func (v *chsC1S1) S1Create(s1 []byte, time, version uint32, c1 *chsC1S1) (err er
 	v.time = uint32(time)
 	v.version = version
 
-	w := NewBytesWriter(v.c1s1)
-	if err = binary.Write(w, binary.BigEndian, v.time); err != nil {
+	var b bytes.Buffer
+	if err = binary.Write(&b, binary.BigEndian, v.time); err != nil {
 		return
 	}
-	if err = binary.Write(w, binary.BigEndian, v.version); err != nil {
+	if err = binary.Write(&b, binary.BigEndian, v.version); err != nil {
 		return
 	}
+	copy(v.c1s1[0:8], b.Bytes())
 
 	p := v.c1s1[8:]
 	if v.schema.Schema0() {
@@ -3248,7 +3220,7 @@ type RtmpChunk struct {
 	// the partial message which not completed.
 	partialMessage *RtmpMessage
 	// the number of already received payload size.
-	nbPayload uint32
+	payload *bytes.Buffer
 
 	// 4.1. Message Header
 	// 3bytes.
@@ -3273,6 +3245,7 @@ func NewRtmpChunk(cid uint32) *RtmpChunk {
 	return &RtmpChunk{
 		cid:     cid,
 		isFresh: true,
+		payload: &bytes.Buffer{},
 	}
 }
 
@@ -3625,7 +3598,7 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	r := NewMixReader(inb, in)
 
 	// the preload body must be consumed in a time.
-	left := (int)(chunk.payloadLength - chunk.nbPayload)
+	left := int(chunk.payloadLength) - chunk.payload.Len()
 	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
@@ -3638,17 +3611,16 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	}
 
 	// read payload to buffer
-	w := NewBytesWriter(m.Payload[chunk.nbPayload : int(chunk.nbPayload)+left])
-	if _, err = io.CopyN(w, r, int64(left)); err != nil {
+	if _, err = io.CopyN(chunk.payload, r, int64(left)); err != nil {
 		core.Error.Println("read body failed. err is", err)
 		return
 	}
-	chunk.nbPayload += uint32(left)
 
 	// got entire RTMP message?
-	if chunk.payloadLength == chunk.nbPayload {
+	if int(chunk.payloadLength) == chunk.payload.Len() {
+		chunk.partialMessage.Payload = chunk.payload.Bytes()
+		chunk.payload = &bytes.Buffer{}
 		chunk.partialMessage = nil
-		chunk.nbPayload = 0
 		return
 	}
 
@@ -3897,9 +3869,6 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	chunk.partialMessage.Timestamp = chunk.timestamp
 	chunk.partialMessage.PreferCid = chunk.cid
 	chunk.partialMessage.StreamId = chunk.streamId
-	if chunk.partialMessage.Payload == nil {
-		chunk.partialMessage.Payload = make([]byte, chunk.payloadLength)
-	}
 
 	// update chunk information.
 	chunk.fmt = fmt
