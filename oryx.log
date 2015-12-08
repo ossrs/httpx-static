@@ -1,0 +1,20 @@
+
+[oryx][warn] 2015/12/09 00:06:21 windows not support daemon.
+[oryx][trace] 2015/12/09 00:06:21 Copyright (c) 2013-2015 Oryx(ossrs)
+[oryx][trace] 2015/12/09 00:06:21 go-oryx/0.1.10 is advanced SRS, focus on realtime live streaming.
+[oryx][trace] 2015/12/09 00:06:21 set gc percent from 100 to 100
+[oryx][warn] 2015/12/09 00:06:21 windows does not support reload with signal.
+[oryx][trace] 2015/12/09 00:06:21 rtmp listen at :1935
+[oryx][trace] 2015/12/09 00:06:21 init server ok, conf=conf/oryx.json, log=file(trace/oryx.log), workers=0/4, gc=0/100%, daemon=true
+[oryx][trace] 2015/12/09 00:06:21 apply workers 4 and previous is 4
+[oryx][trace] 2015/12/09 00:06:56 rtmp accept 127.0.0.1:56373
+[oryx][trace] 2015/12/09 00:06:56 complex handshake ok.
+[oryx][trace] 2015/12/09 00:06:56 connect at rtmp://127.0.0.1:1935/live AMF0
+[oryx][trace] 2015/12/09 00:06:56 drop command message, name is _checkbw
+[oryx][warn] 2015/12/09 00:06:56 ignore empty packet.
+[oryx][trace] 2015/12/09 00:06:56 drop command message, name is getStreamLength
+[oryx][warn] 2015/12/09 00:06:56 ignore empty packet.
+[oryx][trace] 2015/12/09 00:06:56 client identified, type=play, stream_name=, duration=0.00
+[oryx][trace] 2015/12/09 00:06:56 redirect vhost 127.0.0.1 to __defaultVhost__
+[oryx][warn] 2015/12/09 00:07:31 read basic header failed. err is EOF
+[oryx][warn] 2015/12/09 00:07:31 rtmp receiver terminated with EOF
