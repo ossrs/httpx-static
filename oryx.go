@@ -28,8 +28,6 @@
 //      server windows
 //      posix plan9
 
-// I can't believe there is nothing changed!
-
 package main
 
 import (
