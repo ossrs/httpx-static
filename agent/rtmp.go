@@ -141,11 +141,14 @@ func (v *Rtmp) serve(c net.Conn) {
 		conn := protocol.NewRtmpConnection(c, v.wc)
 		defer conn.Close()
 
-		if err := v.cycle(conn); !core.IsNormalQuit(err) {
-			core.Warn.Println("ignore error when cycle rtmp. err is", err)
+		if err := v.cycle(conn); err != nil {
+			if !core.IsNormalQuit(err) && !IsControlError(err) {
+				core.Warn.Println("ignore error when cycle rtmp. err is", err)
+			} else {
+				core.Info.Println("rtmp cycle ok.")
+			}
 			return
 		}
-		core.Info.Println("rtmp cycle ok.")
 
 		return
 	})
@@ -280,7 +283,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	}()
 
 	if err = agent.Pump(); err != nil {
-		if !core.IsNormalQuit(err) {
+		if !core.IsNormalQuit(err) && !IsControlError(err) {
 			core.Warn.Println("ignore rtmp agent work failed. err is", err)
 		}
 		return
@@ -478,7 +481,7 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 	// TODO: FIXME: support republish over same connection.
 	if err == AgentControlRepublishError {
 		return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) error {
-			core.Trace.Println("publish drop message", m)
+			core.Info.Println("publish drop message", m)
 			return AgentControlRepublishError
 		})
 	}

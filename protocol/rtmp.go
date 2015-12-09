@@ -843,9 +843,13 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		wait <- true
 
 		// when got quit message, close the underlayer transport.
-		<-v.wc.QC()
-		v.wc.Quit()
-		return v.transport.Close()
+		select {
+		case <- v.wc.QC():
+			v.wc.Quit()
+			return v.transport.Close()
+		case <- v.closing.QC():
+			return v.closing.Quit()
+		}
 	})
 
 	// wait for receiver and sender ok.
@@ -868,6 +872,7 @@ func (v *RtmpConnection) Close() {
 
 	// close the underlayer transport.
 	_ = v.transport.Close()
+	core.Info.Println("close the transport")
 
 	// notify other goroutine to close.
 	v.closing.Quit()
@@ -875,7 +880,7 @@ func (v *RtmpConnection) Close() {
 
 	// wait for sender and receiver to quit.
 	v.workers.Wait()
-	core.Warn.Println("closed")
+	core.Trace.Println("closed")
 
 	return
 }
@@ -3334,7 +3339,9 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		var fmt uint8
 		var cid uint32
 		if fmt, cid, err = rtmpReadBasicHeader(v.in); err != nil {
-			core.Warn.Println("read basic header failed. err is", err)
+			if !core.IsNormalQuit(err) {
+				core.Warn.Println("read basic header failed. err is", err)
+			}
 			return
 		}
 
