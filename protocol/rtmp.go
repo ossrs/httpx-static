@@ -1198,9 +1198,14 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			if err = v.write(res, v.sid); err != nil {
 				return
 			}
-
-			core.Trace.Println("FMLE start publish ok.")
-			return false, nil
+			return true,nil
+		case *RtmpOnStatusCallPacket:
+			if p.Name == "onFCPublish" {
+				core.Trace.Println("FMLE start publish ok.")
+				return false, nil
+			}
+			core.Info.Println("drop FMLE command", p.Name)
+			return true, nil
 		default:
 			return true, nil
 		}
@@ -3295,6 +3300,8 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 			p = NewRtmpFMLEStartPacket()
 		case Amf0CommandPublish:
 			p = NewRtmpPublishPacket()
+		case Amf0CommandOnFcPublish, "_checkbw":
+			p = NewRtmpOnStatusCallPacket()
 		// TODO: FIXME: implements it.
 		default:
 			core.Trace.Println("drop command message, name is", c)
