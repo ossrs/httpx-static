@@ -42,6 +42,14 @@ JetBrains IntelliJ IDEA: [download][go-ide]
 
 IntelliJ IDEA Golang Plugin: [repository][go-ide-plugin], [download][go-ide-plugin-download]
 
+## SRS vs go-oryx
+
+Why rewrite the SRS to go-oryx:
+
+1. Coroutine Or Goroutine: SRS base on ST, it’s more important than c/c++ language for streaming server; while golang support goroutine, which is actually what ST do.
+1. Multiple Processes: SRS is single process. It’s too weak for modern server with 16 or 64 CPUs and 2 or 4 10Gbps network. Multiple cpus and network interfaces requires multiple processes server.
+1. New Arch: New arch for HTTP/RTMP/FLV/HLS/RTSP or other protocol, it’s better to support many protocol especially private protocol, which will provides realtime streaming.
+
 ### Features
 
 1. v0.1.0 Supports Multiple Processes.
