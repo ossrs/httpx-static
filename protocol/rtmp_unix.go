@@ -23,8 +23,19 @@
 
 package protocol
 
+import "net"
+
 func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
 	// wait for golang to implements the writev.
 	// @see https://github.com/golang/go/issues/13451
+
+	// private writev, @see https://github.com/winlinvip/go/pull/1.
+	if c,ok := v.out.(*net.TCPConn); ok {
+		if _,err = c.Writev(iovs); err != nil {
+			return
+		}
+		return
+	}
+	
 	return v.slowSendMessages(iovs...)
 }
