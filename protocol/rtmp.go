@@ -1383,6 +1383,11 @@ func (v *RtmpConnection) flush() (err error) {
 		// cache the required messages.
 		required := v.requiredMessages()
 
+		// force to ignore small pieces for group message.
+		if v.groupMessages && len(v.out) < RtmpGroupMessageCount / 2 {
+			break
+		}
+
 		// copy messages to send.
 		var out []*RtmpMessage
 		func() {
@@ -1408,17 +1413,6 @@ func (v *RtmpConnection) flush() (err error) {
 					}
 				}
 				break
-			}
-
-			// sendout large blocks.
-			// more than 2 group messages.
-			if len(out) > required*2 {
-				// TODO: FIXME: config the msgs group size.
-				if err = v.stack.SendMessage(out[0:required]...); err != nil {
-					return
-				}
-				out = out[required:]
-				continue
 			}
 
 			// last group and left messages.
@@ -3516,6 +3510,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 		}
 	}
 
+	//fmt.Println(fmt.Sprintf("fast send %v messages to %v iovecs", len(msgs), len(iovs)))
 	return v.fastSendMessages(iovs...)
 }
 

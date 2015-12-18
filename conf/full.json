@@ -18,6 +18,8 @@
     // the percent for gc. 0 to not set.
     // default: 0
     "gc_percent": 0,
+    // whether use private writev.
+    "writev": false,
     // the cpu profile filename, for example
     //    go tool pprof oryx cpu.prof
     // default or empty string to ignore.
