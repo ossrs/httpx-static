@@ -198,11 +198,14 @@ func (s *Server) initializeRuntime() (err error) {
 
 		for {
 			if core.Conf.Go.GcTrace > 0 {
+				pgc := stat.NumGC
 				debug.ReadGCStats(stat)
 				if len(stat.Pause) > 3 {
 					stat.Pause = append([]time.Duration{}, stat.Pause[:3]...)
 				}
-				core.Trace.Println("gc", stat.NumGC, stat.PauseTotal, stat.Pause, stat.PauseQuantiles)
+				if pgc < stat.NumGC {
+					core.Trace.Println("gc", stat.NumGC, stat.PauseTotal, stat.Pause, stat.PauseQuantiles)
+				}
 				time.Sleep(time.Duration(core.Conf.Go.GcTrace) * time.Second)
 			} else {
 				time.Sleep(3 * time.Second)
