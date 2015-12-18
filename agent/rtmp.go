@@ -141,11 +141,14 @@ func (v *Rtmp) serve(c net.Conn) {
 		conn := protocol.NewRtmpConnection(c, v.wc)
 		defer conn.Close()
 
-		if err := v.cycle(conn); !core.IsNormalQuit(err) {
-			core.Warn.Println("ignore error when cycle rtmp. err is", err)
+		if err := v.cycle(conn); err != nil {
+			if !core.IsNormalQuit(err) && !IsControlError(err) {
+				core.Warn.Println("ignore error when cycle rtmp. err is", err)
+			} else {
+				core.Info.Println("rtmp cycle ok.")
+			}
 			return
 		}
-		core.Info.Println("rtmp cycle ok.")
 
 		return
 	})
@@ -198,7 +201,13 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	// set chunk size to larger.
 	// set the chunk size before any larger response greater than 128,
 	// to make OBS happy, @see https://github.com/ossrs/srs/issues/454
-	// TODO: FIXME: support set chunk size.
+	if err = conn.SetChunkSize(core.Conf.ChunkSize); err != nil {
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("rtmp set chunk size failed. err is", err)
+		}
+		return
+	}
+	core.Info.Println("set chunk size to", core.Conf.ChunkSize)
 
 	// response the client connect ok and onBWDone.
 	if err = conn.ResponseConnectApp(); err != nil {
@@ -232,6 +241,10 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		core.Error.Println("reparse request failed. err is", err)
 		return
 	}
+	if err = conn.OnUrlParsed(); err != nil {
+		core.Error.Println("notify url parsed failed. err is", err)
+		return
+	}
 
 	// security check
 	// TODO: FIXME: implements it.
@@ -255,6 +268,9 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		core.Trace.Println("redirect vhost", r.Vhost, "to", vhost.Name)
 		r.Vhost = vhost.Name
 	}
+
+	// set chunk_size on vhost level.
+	// TODO: FIXME: support set chunk size.
 
 	var agent core.Agent
 	if conn.Req.Type.IsPlay() {
@@ -280,7 +296,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	}()
 
 	if err = agent.Pump(); err != nil {
-		if !core.IsNormalQuit(err) {
+		if !core.IsNormalQuit(err) && !IsControlError(err) {
 			core.Warn.Println("ignore rtmp agent work failed. err is", err)
 		}
 		return
@@ -306,12 +322,15 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	return
 }
 
+func (v *Rtmp) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
+	return
+}
+
 // rtmp play agent, to serve the player or edge.
 type RtmpPlayAgent struct {
 	conn      *protocol.RtmpConnection
 	wc        core.WorkerContainer
 	upstream  core.Agent
-	cond      chan bool
 	jitter    *Jitter
 	nbDropped uint32
 }
@@ -320,7 +339,6 @@ func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *R
 	return &RtmpPlayAgent{
 		conn:   conn,
 		wc:     wc,
-		cond:   make(chan bool, 1),
 		jitter: NewJitter(),
 	}
 }
@@ -342,21 +360,14 @@ func (v *RtmpPlayAgent) Close() (err error) {
 }
 
 func (v *RtmpPlayAgent) Pump() (err error) {
-	return v.conn.RecvMessageNoTimeout(v.cond,
-		func(m0 *protocol.RtmpMessage, m1 bool) (err error) {
-			// message from publisher to send to player.
-			if m1 {
-				return v.conn.Flush()
-			}
-
-			// message from player.
-			if m0 != nil {
-				// TODO: FIXME: implements it.
-				return
-			}
+	return v.conn.Cycle(func(m *protocol.RtmpMessage) (err error) {
+		// message from player.
+		if m != nil {
+			// TODO: FIXME: implements it.
 			return
-		},
-	)
+		}
+		return
+	})
 }
 
 func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
@@ -376,14 +387,6 @@ func (v *RtmpPlayAgent) Write(m core.Message) (err error) {
 	// cache message.
 	if err = v.conn.CacheMessage(om.Payload()); err != nil {
 		return
-	}
-
-	// unblock the sender when got enough messages.
-	if v.conn.NeedNotify() {
-		select {
-		case v.cond <- true:
-		default:
-		}
 	}
 
 	return
@@ -495,7 +498,7 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 	// TODO: FIXME: support republish over same connection.
 	if err == AgentControlRepublishError {
 		return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) error {
-			core.Trace.Println("publish drop message", m)
+			core.Info.Println("publish drop message", m)
 			return AgentControlRepublishError
 		})
 	}
