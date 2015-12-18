@@ -23,8 +23,8 @@ package core
 
 import (
 	"errors"
-	"net"
 	"io"
+	"net"
 )
 
 // the quit error, used for goroutine to return.

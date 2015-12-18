@@ -844,10 +844,10 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 
 		// when got quit message, close the underlayer transport.
 		select {
-		case <- v.wc.QC():
+		case <-v.wc.QC():
 			v.wc.Quit()
 			return v.transport.Close()
-		case <- v.closing.QC():
+		case <-v.closing.QC():
 			return v.closing.Quit()
 		}
 	})
@@ -1203,7 +1203,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			if err = v.write(res, v.sid); err != nil {
 				return
 			}
-			return true,nil
+			return true, nil
 		case *RtmpOnStatusCallPacket:
 			if p.Name == "onFCPublish" {
 				core.Trace.Println("FMLE start publish ok.")
