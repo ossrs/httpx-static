@@ -33,9 +33,4 @@ const (
 
 	// the input cache, to read from network and put in it.
 	RtmpInCache = 16
-
-	// how many messages send in a group.
-	// one message is about 15ms for RTMP audio and video.
-	// @remark 0 to disable group messages to send one by one.
-	RtmpGroupMessageCount = 8
 )

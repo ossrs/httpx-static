@@ -201,7 +201,13 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	// set chunk size to larger.
 	// set the chunk size before any larger response greater than 128,
 	// to make OBS happy, @see https://github.com/ossrs/srs/issues/454
-	// TODO: FIXME: support set chunk size.
+	if err = conn.SetChunkSize(core.Conf.ChunkSize); err != nil {
+		if !core.IsNormalQuit(err) {
+			core.Error.Println("rtmp set chunk size failed. err is", err)
+		}
+		return
+	}
+	core.Info.Println("set chunk size to", core.Conf.ChunkSize)
 
 	// response the client connect ok and onBWDone.
 	if err = conn.ResponseConnectApp(); err != nil {
@@ -235,6 +241,10 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		core.Error.Println("reparse request failed. err is", err)
 		return
 	}
+	if err = conn.OnUrlParsed(); err != nil {
+		core.Error.Println("notify url parsed failed. err is", err)
+		return
+	}
 
 	// security check
 	// TODO: FIXME: implements it.
@@ -258,6 +268,9 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		core.Trace.Println("redirect vhost", r.Vhost, "to", vhost.Name)
 		r.Vhost = vhost.Name
 	}
+
+	// set chunk_size on vhost level.
+	// TODO: FIXME: support set chunk size.
 
 	var agent core.Agent
 	if conn.Req.Type.IsPlay() {
@@ -306,6 +319,10 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 		return
 	}
 
+	return
+}
+
+func (v *Rtmp) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
 	return
 }
 
