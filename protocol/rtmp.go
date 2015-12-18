@@ -1060,6 +1060,14 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	return v.write(p, 0)
 }
 
+// set the chunk size.
+func (v *RtmpConnection) SetChunkSize(n int) (err error) {
+	p := NewRtmpSetChunkSizePacket().(*RtmpSetChunkSizePacket)
+	p.ChunkSize = RtmpUint32(n)
+
+	return v.write(p, 0)
+}
+
 // @param server_ip the ip of server.
 func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
@@ -3400,6 +3408,34 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 	return
 }
 
+func (v *RtmpStack) onSendMessage(m *RtmpMessage) (err error) {
+	switch m.MessageType {
+	case RtmpMsgSetChunkSize:
+		// we will handle these packet.
+	default:
+		return
+	}
+
+	var p RtmpPacket
+	if p, err = v.DecodeMessage(m); err != nil {
+		return
+	}
+
+	switch p := p.(type) {
+	case *RtmpSetChunkSizePacket:
+		// for some server, the actual chunk size can greater than the max value(65536),
+		// so we just warning the invalid chunk size, and actually use it is ok,
+		// @see: https://github.com/ossrs/srs/issues/160
+		if p.ChunkSize < RtmpMinChunkSize || p.ChunkSize > RtmpMaxChunkSize {
+			core.Warn.Println("accept invalid chunk size", p.ChunkSize)
+		}
+		v.outChunkSize = uint32(p.ChunkSize)
+		core.Trace.Println("output chunk size to", v.outChunkSize)
+	}
+
+	return
+}
+
 func (v *RtmpStack) fetchC0c3Cache(index int) (nextIndex int, iov []byte) {
 	// exceed the index, create the cache.
 	if index >= len(v.c0c3Cache) {
@@ -3507,6 +3543,10 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 			iovs = append(iovs, m.Payload[written:written+size])
 
 			written += size
+		}
+
+		if err = v.onSendMessage(m); err != nil {
+			return
 		}
 	}
 

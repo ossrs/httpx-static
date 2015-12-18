@@ -235,6 +235,7 @@ type Config struct {
 	// the rtmp global section.
 	Listen int  `json:"listen"` // the system service RTMP listen port
 	Daemon bool `json:"daemon"` // whether enabled the daemon for unix-like os
+	ChunkSize int `json:"chunk_size"` // the output chunk size. [128, 65535].
 
 	// the go section.
 	Go struct {
@@ -289,6 +290,7 @@ func NewConfig() *Config {
 	c.Listen = RtmpListen
 	c.Workers = 0
 	c.Daemon = true
+	c.ChunkSize = 60000
 	c.Go.GcInterval = 0
 
 	c.Heartbeat.Enabled = false
@@ -377,6 +379,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Listen <= 0 || c.Listen > 65535 {
 		return fmt.Errorf("listen must in (0, 65535], actual is %v", c.Listen)
+	}
+	if c.ChunkSize < 128 || c.ChunkSize > 65535 {
+		return fmt.Errorf("chunk_size must in [128, 65535], actual is %v", c.ChunkSize)
 	}
 
 	if c.Go.GcInterval < 0 || c.Go.GcInterval > 24*3600 {

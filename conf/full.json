@@ -10,6 +10,12 @@
   // @remark: donot support reload.
   // default: true
   "daemon": true,
+  // the default chunk size is 128, max is 65536,
+  // some client does not support chunk size change,
+  // however, most clients supports it and it can improve
+  // performance about 10%.
+  // default: 60000
+  "chunk_size": 60000,
   // go runtime section.
   "go": {
     // the interval for gc, in seconds. 0 to not set.
