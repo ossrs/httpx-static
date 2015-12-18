@@ -106,7 +106,17 @@
     // for example, user use ip to access the stream: rtmp://192.168.1.2/live/livestream.
     // for which cannot identify the required vhost.
     {
-      "name": "__defaultVhost__"
+      "name": "__defaultVhost__",
+      // for play client, both RTMP and other stream clients,
+      // for instance, the HTTP FLV stream clients.
+      "play": {
+        // set the MW(merged-write) latency in ms.
+        // SRS always set mw on, so we just set the latency value.
+        // the latency of stream >= mw_latency + mr_latency
+        // the value recomment is [300, 1800]
+        // default: 350
+        "mw_latency": 350
+      }
     }
   ]
 }

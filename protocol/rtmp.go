@@ -766,6 +766,7 @@ type RtmpConnection struct {
 	// the connection must send message one when got it,
 	// while we can group messages when send audio/video stream.
 	groupMessages bool
+	nbGroupMessages int
 	// the RTMP protocol stack.
 	stack *RtmpStack
 	// input channel, receive message from client.
@@ -803,7 +804,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		groupMessages: false,
 		stack:         NewRtmpStack(transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
-		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
+		out:           make([]*RtmpMessage, 0),
 		closing:       core.NewQuiter(),
 		shouldFlush:   make(chan bool, 1),
 	}
@@ -856,6 +857,9 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 	<-wait
 	<-wait
 
+	// handle reload.
+	core.Conf.Subscribe(v)
+
 	return v
 }
 
@@ -870,6 +874,9 @@ func (v *RtmpConnection) Close() {
 	}
 	v.closed = true
 
+	// unhandle reload.
+	core.Conf.Unsubscribe(v)
+
 	// close the underlayer transport.
 	_ = v.transport.Close()
 	core.Info.Println("close the transport")
@@ -882,6 +889,18 @@ func (v *RtmpConnection) Close() {
 	v.workers.Wait()
 	core.Trace.Println("closed")
 
+	return
+}
+
+// interface ReloadHandler
+func (v *RtmpConnection) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+	return
+}
+
+func (v *RtmpConnection) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
+	if vhost == v.Req.Vhost && scope == core.ReloadMwLatency {
+		return v.updateNbGroupMessages()
+	}
 	return
 }
 
@@ -1151,6 +1170,15 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 	return
 }
 
+// when request parsed, notify the connection.
+func (v *RtmpConnection) OnUrlParsed() (err error) {
+	return v.updateNbGroupMessages()
+}
+func (v *RtmpConnection) updateNbGroupMessages() (err error) {
+	v.nbGroupMessages, err = core.Conf.VhostGroupMessages(v.Req.Vhost)
+	return
+}
+
 // for Flash encoder, response the start publish event.
 func (v *RtmpConnection) FlashStartPublish() (err error) {
 	res := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
@@ -1368,8 +1396,8 @@ func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
 }
 
 func (v *RtmpConnection) requiredMessages() int {
-	if v.groupMessages {
-		return RtmpGroupMessageCount
+	if v.groupMessages && v.nbGroupMessages > 0 {
+		return v.nbGroupMessages
 	}
 	return 1
 }
@@ -1392,7 +1420,7 @@ func (v *RtmpConnection) flush() (err error) {
 		required := v.requiredMessages()
 
 		// force to ignore small pieces for group message.
-		if v.groupMessages && len(v.out) < RtmpGroupMessageCount / 2 {
+		if v.groupMessages && len(v.out) < v.nbGroupMessages / 2 {
 			break
 		}
 
@@ -3257,16 +3285,9 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
+		c0c3Cache: 	make([][]byte, 0),
+		iovsCache: 	make([][]byte, 0),
 	}
-
-	// assume each message contains 10 chunks,
-	// and each chunk need 3 header(c0, c3, extended-timestamp).
-	v.c0c3Cache = make([][]byte, RtmpGroupMessageCount*10*3)
-	for i := 0; i < len(v.c0c3Cache); i++ {
-		v.c0c3Cache[i] = make([]byte, RtmpMaxChunkHeader)
-	}
-	// iovs cache contains the body cache.
-	v.iovsCache = make([][]byte, 0, RtmpGroupMessageCount*10*4)
 
 	return v
 }
@@ -3558,12 +3579,6 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 // for the os which not support writev.
 // @remark this method will be invoked by platform depends fastSendMessages.
 func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
-	// delay init buffer.
-	if v.slowSendBuffer == nil {
-		// assume each message about 32kB
-		v.slowSendBuffer = make([]byte, 0, RtmpGroupMessageCount*32*1024)
-	}
-
 	// calculate the total size of bytes to send.
 	var total int
 	for _, iov := range iovs {

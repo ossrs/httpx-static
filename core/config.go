@@ -32,12 +32,18 @@ import (
 
 // the scope for reload.
 const (
+	// global specified.
 	ReloadWorkers = iota
 	ReloadLog
 	ReloadListen
 	ReloadCpuProfile
 	ReloadGcPercent
+	// vhost specified.
+	ReloadMwLatency
 )
+
+// merged write latency, the group messages to send.
+const defaultMwLatency = 350
 
 // the reload handler,
 // the client which care about the reload event,
@@ -49,7 +55,13 @@ type ReloadHandler interface {
 	// @param scope defined in const ReloadXXX.
 	// @param cc the current loaded config, GsConfig.
 	// @param pc the previous old config.
-	OnReloadGlobal(scope int, cc, pc *Config) error
+	OnReloadGlobal(scope int, cc, pc *Config) (err error)
+	// when reload the vhost scopes,
+	// for example, the Vhost.Play.MwLatency
+	// @param scope defined in const ReloadXXX.
+	// @param cc the current loaded config, GsConfig.
+	// @param pc the previous old config.
+	OnReloadVhost(vhost string, scope int, cc, pc *Config) (err error)
 }
 
 // the reader support c++-style comment,
@@ -222,6 +234,11 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 // the vhost section in config.
 type Vhost struct {
 	Name string `json:"name"`
+	Play *Play `json:"play"`
+}
+
+type Play struct {
+	MwLatency int `json:"mw_latency`
 }
 
 // the config for this application,
@@ -359,6 +376,18 @@ func (c *Config) reparse() (err error) {
 	// gc percent 0 to use system default(100).
 	if c.Go.GcPercent == 0 {
 		c.Go.GcPercent = 100
+	}
+
+	// default values for vhosts.
+	for _,v := range c.Vhosts {
+		if v.Play != nil {
+			if v.Play.MwLatency == 0 {
+				// how many messages send in a group.
+				// one message is about 14ms for RTMP audio and video.
+				// @remark 0 to disable group messages to send one by one.
+				v.Play.MwLatency = defaultMwLatency
+			}
+		}
 	}
 
 	return
@@ -518,6 +547,20 @@ func (pc *Config) Reload(cc *Config) (err error) {
 		Info.Println("reload ignore gc percent")
 	}
 
+	// vhost specified.
+	for k,cv := range cc.vhosts {
+		if pv := pc.vhosts[k]; cv.Play != nil && pv.Play != nil && cv.Play.MwLatency != pv.Play.MwLatency {
+			for _, h := range cc.reloadHandlers {
+				if err = h.OnReloadVhost(k, ReloadMwLatency, cc, pc); err != nil {
+					return
+				}
+			}
+			Trace.Println("reload apply vhost.play.mw-latency ok")
+		} else {
+			Info.Println("reload ignore vhost.play.mw-latency")
+		}
+	}
+
 	return
 }
 
@@ -531,4 +574,16 @@ func (c *Config) Vhost(name string) (*Vhost, error) {
 	}
 
 	return nil, VhostNotFoundError
+}
+
+func (c *Config) VhostGroupMessages(vhost string) (n int, err error) {
+	var v *Vhost
+	if v, err = c.Vhost(vhost); err != nil {
+		return
+	}
+
+	if v.Play == nil {
+		return defaultMwLatency / 14, nil
+	}
+	return v.Play.MwLatency / 14, nil
 }

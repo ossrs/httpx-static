@@ -422,3 +422,7 @@ func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 
 	return
 }
+
+func (v *Server) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
+	return
+}

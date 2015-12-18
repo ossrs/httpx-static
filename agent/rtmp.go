@@ -241,6 +241,10 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		core.Error.Println("reparse request failed. err is", err)
 		return
 	}
+	if err = conn.OnUrlParsed(); err != nil {
+		core.Error.Println("notify url parsed failed. err is", err)
+		return
+	}
 
 	// security check
 	// TODO: FIXME: implements it.
@@ -315,6 +319,10 @@ func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 		return
 	}
 
+	return
+}
+
+func (v *Rtmp) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
 	return
 }
 
