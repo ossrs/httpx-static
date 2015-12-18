@@ -192,6 +192,21 @@ func (s *Server) initializeRuntime() (err error) {
 		return
 	}
 
+	// show gc trace.
+	go func(){
+		stat := &debug.GCStats{}
+
+		for {
+			if core.Conf.Go.GcTrace > 0 {
+				debug.ReadGCStats(stat)
+				core.Trace.Println("gc", stat.NumGC, stat.PauseTotal, stat.Pause, stat.PauseQuantiles)
+				time.Sleep(time.Duration(core.Conf.Go.GcTrace) * time.Second)
+			} else {
+				time.Sleep(3 * time.Second)
+			}
+		}
+	}()
+
 	return
 }
 

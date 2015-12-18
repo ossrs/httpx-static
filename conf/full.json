@@ -18,7 +18,11 @@
     // the percent for gc. 0 to not set.
     // default: 0
     "gc_percent": 0,
+    // the interval for gc trace, in seconds. 0 to disable.
+    // default: 0
+    "gc_trace": 0,
     // whether use private writev.
+    // default: false
     "writev": false,
     // the cpu profile filename, for example
     //    go tool pprof oryx cpu.prof

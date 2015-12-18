@@ -239,6 +239,7 @@ type Config struct {
 	// the go section.
 	Go struct {
 		Writev bool `json:"writev"` // whether use private writev.
+		GcTrace int `json:"gc_trace"` // the gc trace interval in seconds.
 		GcInterval int    `json:"gc_interval"` // the gc interval in seconds.
 		GcPercent  int    `json:"gc_percent"`  // the gc percent.
 		CpuProfile string `json:"cpu_profile"` // the cpu profile file.
