@@ -25,7 +25,7 @@ package protocol
 
 import (
 	"github.com/ossrs/go-oryx/core"
-	"net"
+	//"net"
 )
 
 func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
