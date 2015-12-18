@@ -63,7 +63,8 @@ Why rewrite the SRS to go-oryx:
 1. v0.1.7 Use agent(source+channel+sink) to build complex stream river.
 1. v0.1.8 Supports Publish and Play VP6 RTMP stream.
 1. v0.1.9 Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
-1. v0.1.10 Supports 10k(8CPUs) play clients over RTMP.
+1. v0.1.10 Supports 10k(8CPUs) for play clients over RTMP.
+1. v0.1.11 Supports 10k(4CPUs) for play clients over RTMP.
 1. [dev] Supports gop-cache and drop frame strategy.
 1. [dev] Supports Connection Oriented Traceable log.
 
