@@ -234,7 +234,7 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 // the vhost section in config.
 type Vhost struct {
 	Name string `json:"name"`
-	Play *Play `json:"play"`
+	Play *Play  `json:"play"`
 }
 
 type Play struct {
@@ -250,14 +250,14 @@ type Config struct {
 	Workers int `json:"workers"` // the number of cpus to use
 
 	// the rtmp global section.
-	Listen int  `json:"listen"` // the system service RTMP listen port
-	Daemon bool `json:"daemon"` // whether enabled the daemon for unix-like os
-	ChunkSize int `json:"chunk_size"` // the output chunk size. [128, 65535].
+	Listen    int  `json:"listen"`     // the system service RTMP listen port
+	Daemon    bool `json:"daemon"`     // whether enabled the daemon for unix-like os
+	ChunkSize int  `json:"chunk_size"` // the output chunk size. [128, 65535].
 
 	// the go section.
 	Go struct {
-		Writev bool `json:"writev"` // whether use private writev.
-		GcTrace int `json:"gc_trace"` // the gc trace interval in seconds.
+		Writev     bool   `json:"writev"`      // whether use private writev.
+		GcTrace    int    `json:"gc_trace"`    // the gc trace interval in seconds.
 		GcInterval int    `json:"gc_interval"` // the gc interval in seconds.
 		GcPercent  int    `json:"gc_percent"`  // the gc percent.
 		CpuProfile string `json:"cpu_profile"` // the cpu profile file.
@@ -379,7 +379,7 @@ func (c *Config) reparse() (err error) {
 	}
 
 	// default values for vhosts.
-	for _,v := range c.Vhosts {
+	for _, v := range c.Vhosts {
 		if v.Play != nil {
 			if v.Play.MwLatency == 0 {
 				// how many messages send in a group.
@@ -548,7 +548,7 @@ func (pc *Config) Reload(cc *Config) (err error) {
 	}
 
 	// vhost specified.
-	for k,cv := range cc.vhosts {
+	for k, cv := range cc.vhosts {
 		if pv := pc.vhosts[k]; cv.Play != nil && pv.Play != nil && cv.Play.MwLatency != pv.Play.MwLatency {
 			for _, h := range cc.reloadHandlers {
 				if err = h.OnReloadVhost(k, ReloadMwLatency, cc, pc); err != nil {

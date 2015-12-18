@@ -765,7 +765,7 @@ type RtmpConnection struct {
 	// when handshake and negotiate,
 	// the connection must send message one when got it,
 	// while we can group messages when send audio/video stream.
-	groupMessages bool
+	groupMessages   bool
 	nbGroupMessages int
 	// the RTMP protocol stack.
 	stack *RtmpStack
@@ -804,7 +804,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		groupMessages: false,
 		stack:         NewRtmpStack(transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
-		out:           make([]*RtmpMessage, 0),
+		out:           make([]*RtmpMessage, 0, RtmpDefaultMwMessages*2),
 		closing:       core.NewQuiter(),
 		shouldFlush:   make(chan bool, 1),
 	}
@@ -1420,7 +1420,7 @@ func (v *RtmpConnection) flush() (err error) {
 		required := v.requiredMessages()
 
 		// force to ignore small pieces for group message.
-		if v.groupMessages && len(v.out) < v.nbGroupMessages / 2 {
+		if v.groupMessages && len(v.out) < v.nbGroupMessages/2 {
 			break
 		}
 
@@ -3277,6 +3277,7 @@ type RtmpStack struct {
 
 // max chunk header is fmt0.
 const RtmpMaxChunkHeader = 12
+
 // the preloaded group messages.
 const RtmpDefaultMwMessages = 25
 
@@ -3291,12 +3292,12 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 
 	// assume each message contains 10 chunks,
 	// and each chunk need 3 header(c0, c3, extended-timestamp).
-	v.c0c3Cache = make([][]byte, RtmpDefaultMwMessages *10*3)
+	v.c0c3Cache = make([][]byte, RtmpDefaultMwMessages*10*3)
 	for i := 0; i < len(v.c0c3Cache); i++ {
 		v.c0c3Cache[i] = make([]byte, RtmpMaxChunkHeader)
 	}
 	// iovs cache contains the body cache.
-	v.iovsCache = make([][]byte, 0, RtmpDefaultMwMessages *10*4)
+	v.iovsCache = make([][]byte, 0, RtmpDefaultMwMessages*10*4)
 
 	return v
 }
@@ -3591,7 +3592,7 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 	// delay init buffer.
 	if v.slowSendBuffer == nil {
 		// assume each message about 32kB
-		v.slowSendBuffer = make([]byte, 0, RtmpDefaultMwMessages *32*1024)
+		v.slowSendBuffer = make([]byte, 0, RtmpDefaultMwMessages*32*1024)
 	}
 	// calculate the total size of bytes to send.
 	var total int

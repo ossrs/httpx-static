@@ -193,7 +193,7 @@ func (s *Server) initializeRuntime() (err error) {
 	}
 
 	// show gc trace.
-	go func(){
+	go func() {
 		stat := &debug.GCStats{}
 
 		for {
