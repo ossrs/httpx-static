@@ -3277,6 +3277,8 @@ type RtmpStack struct {
 
 // max chunk header is fmt0.
 const RtmpMaxChunkHeader = 12
+// the preloaded group messages.
+const RtmpDefaultMwMessages = 25
 
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
@@ -3285,9 +3287,16 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
-		c0c3Cache: 	make([][]byte, 0),
-		iovsCache: 	make([][]byte, 0),
 	}
+
+	// assume each message contains 10 chunks,
+	// and each chunk need 3 header(c0, c3, extended-timestamp).
+	v.c0c3Cache = make([][]byte, RtmpDefaultMwMessages *10*3)
+	for i := 0; i < len(v.c0c3Cache); i++ {
+		v.c0c3Cache[i] = make([]byte, RtmpMaxChunkHeader)
+	}
+	// iovs cache contains the body cache.
+	v.iovsCache = make([][]byte, 0, RtmpDefaultMwMessages *10*4)
 
 	return v
 }
@@ -3579,6 +3588,11 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 // for the os which not support writev.
 // @remark this method will be invoked by platform depends fastSendMessages.
 func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
+	// delay init buffer.
+	if v.slowSendBuffer == nil {
+		// assume each message about 32kB
+		v.slowSendBuffer = make([]byte, 0, RtmpDefaultMwMessages *32*1024)
+	}
 	// calculate the total size of bytes to send.
 	var total int
 	for _, iov := range iovs {
