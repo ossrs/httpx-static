@@ -70,6 +70,7 @@ func serve(svr *app.Server) int {
 }
 
 func main() {
+	// TODO: FIXME: refine refer to https://github.com/winlinvip/go-writev/pull/2
 	flag.Parse()
 
 	ret := func() int {
