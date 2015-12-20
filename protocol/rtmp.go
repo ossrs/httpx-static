@@ -3271,8 +3271,8 @@ type RtmpStack struct {
 	c0c3Cache [][]byte
 	// the cache for the iovs.
 	iovsCache [][]byte
-	// the large buffer cache, for slow send used to concat iovs.
-	slowSendBuffer []byte
+	// use bufio instead byte buffer.
+	slowSendBuffer *bufio.Writer
 }
 
 // max chunk header is fmt0.
@@ -3592,33 +3592,19 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 	// delay init buffer.
 	if v.slowSendBuffer == nil {
 		// assume each message about 32kB
-		v.slowSendBuffer = make([]byte, 0, RtmpDefaultMwMessages*32*1024)
-	}
-	// calculate the total size of bytes to send.
-	var total int
-	for _, iov := range iovs {
-		total += len(iov)
-	}
-	if total > len(v.slowSendBuffer) {
-		v.slowSendBuffer = make([]byte, 2*total)
+		v.slowSendBuffer = bufio.NewWriterSize(v.out, RtmpDefaultMwMessages*32*1024)
 	}
 
 	// write all pieces of iovs to buffer.
-	var nn int
-	b := v.slowSendBuffer[0:total]
 	for _, iov := range iovs {
-		copy(b[nn:], iov)
-		nn += len(iov)
+		if _, err = v.slowSendBuffer.Write(iov); err != nil {
+			return
+		}
 	}
 
 	// send the buffer out.
-	var n int
-	if n, err = v.out.Write(b); err != nil {
+	if err = v.slowSendBuffer.Flush(); err != nil {
 		return
-	}
-
-	if n != len(b) {
-		panic(fmt.Sprintf("netFD.Write EAGAIN, n=%v, nb=%v", n, len(b)))
 	}
 	return
 }
