@@ -73,6 +73,7 @@ func NewServer() *Server {
 		htbt:    NewHeartbeat(),
 		logger:  &simpleLogger{},
 	}
+	core.Trace.Println("ready to get into new rtmp")
 	svr.rtmp = agent.NewRtmp(svr)
 
 	core.Conf.Subscribe(svr)
@@ -187,6 +188,7 @@ func (s *Server) initializeRuntime() (err error) {
 		return
 	}
 
+	core.Trace.Println("ready to step into applyGcPercent")
 	// apply the gc percent.
 	if err = s.applyGcPercent(core.Conf); err != nil {
 		return
@@ -237,6 +239,7 @@ func (s *Server) Initialize() (err error) {
 }
 
 func (s *Server) Run() (err error) {
+	core.Trace.Println("step into server run")
 	func() {
 		s.lock.Lock()
 		defer s.lock.Unlock()

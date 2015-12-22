@@ -75,7 +75,6 @@ func (v *Rtmp) close() (err error) {
 
 func (v *Rtmp) applyListen(c *core.Config) (err error) {
 	v.endpoint = fmt.Sprintf(":%v", c.Listen)
-
 	ep := v.endpoint
 	if v.l, err = net.Listen("tcp", ep); err != nil {
 		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
@@ -146,7 +145,6 @@ func (v *Rtmp) serve(c net.Conn) {
 			return
 		}
 		core.Info.Println("rtmp cycle ok.")
-
 		return
 	})
 }
