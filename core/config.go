@@ -32,12 +32,18 @@ import (
 
 // the scope for reload.
 const (
+	// global specified.
 	ReloadWorkers = iota
 	ReloadLog
 	ReloadListen
 	ReloadCpuProfile
 	ReloadGcPercent
+	// vhost specified.
+	ReloadMwLatency
 )
+
+// merged write latency, the group messages to send.
+const defaultMwLatency = 350
 
 // the reload handler,
 // the client which care about the reload event,
@@ -49,7 +55,13 @@ type ReloadHandler interface {
 	// @param scope defined in const ReloadXXX.
 	// @param cc the current loaded config, GsConfig.
 	// @param pc the previous old config.
-	OnReloadGlobal(scope int, cc, pc *Config) error
+	OnReloadGlobal(scope int, cc, pc *Config) (err error)
+	// when reload the vhost scopes,
+	// for example, the Vhost.Play.MwLatency
+	// @param scope defined in const ReloadXXX.
+	// @param cc the current loaded config, GsConfig.
+	// @param pc the previous old config.
+	OnReloadVhost(vhost string, scope int, cc, pc *Config) (err error)
 }
 
 // the reader support c++-style comment,
@@ -222,6 +234,11 @@ func (v *Reader) Read(p []byte) (n int, err error) {
 // the vhost section in config.
 type Vhost struct {
 	Name string `json:"name"`
+	Play *Play  `json:"play"`
+}
+
+type Play struct {
+	MwLatency int `json:"mw_latency`
 }
 
 // the config for this application,
@@ -233,11 +250,14 @@ type Config struct {
 	Workers int `json:"workers"` // the number of cpus to use
 
 	// the rtmp global section.
-	Listen int  `json:"listen"` // the system service RTMP listen port
-	Daemon bool `json:"daemon"` // whether enabled the daemon for unix-like os
+	Listen    int  `json:"listen"`     // the system service RTMP listen port
+	Daemon    bool `json:"daemon"`     // whether enabled the daemon for unix-like os
+	ChunkSize int  `json:"chunk_size"` // the output chunk size. [128, 65535].
 
 	// the go section.
 	Go struct {
+		Writev     bool   `json:"writev"`      // whether use private writev.
+		GcTrace    int    `json:"gc_trace"`    // the gc trace interval in seconds.
 		GcInterval int    `json:"gc_interval"` // the gc interval in seconds.
 		GcPercent  int    `json:"gc_percent"`  // the gc percent.
 		CpuProfile string `json:"cpu_profile"` // the cpu profile file.
@@ -287,6 +307,7 @@ func NewConfig() *Config {
 	c.Listen = RtmpListen
 	c.Workers = 0
 	c.Daemon = true
+	c.ChunkSize = 60000
 	c.Go.GcInterval = 0
 
 	c.Heartbeat.Enabled = false
@@ -357,6 +378,18 @@ func (c *Config) reparse() (err error) {
 		c.Go.GcPercent = 100
 	}
 
+	// default values for vhosts.
+	for _, v := range c.Vhosts {
+		if v.Play != nil {
+			if v.Play.MwLatency == 0 {
+				// how many messages send in a group.
+				// one message is about 14ms for RTMP audio and video.
+				// @remark 0 to disable group messages to send one by one.
+				v.Play.MwLatency = defaultMwLatency
+			}
+		}
+	}
+
 	return
 }
 
@@ -375,6 +408,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Listen <= 0 || c.Listen > 65535 {
 		return fmt.Errorf("listen must in (0, 65535], actual is %v", c.Listen)
+	}
+	if c.ChunkSize < 128 || c.ChunkSize > 65535 {
+		return fmt.Errorf("chunk_size must in [128, 65535], actual is %v", c.ChunkSize)
 	}
 
 	if c.Go.GcInterval < 0 || c.Go.GcInterval > 24*3600 {
@@ -511,6 +547,20 @@ func (pc *Config) Reload(cc *Config) (err error) {
 		Info.Println("reload ignore gc percent")
 	}
 
+	// vhost specified.
+	for k, cv := range cc.vhosts {
+		if pv := pc.vhosts[k]; cv.Play != nil && pv.Play != nil && cv.Play.MwLatency != pv.Play.MwLatency {
+			for _, h := range cc.reloadHandlers {
+				if err = h.OnReloadVhost(k, ReloadMwLatency, cc, pc); err != nil {
+					return
+				}
+			}
+			Trace.Println("reload apply vhost.play.mw-latency ok")
+		} else {
+			Info.Println("reload ignore vhost.play.mw-latency")
+		}
+	}
+
 	return
 }
 
@@ -524,4 +574,16 @@ func (c *Config) Vhost(name string) (*Vhost, error) {
 	}
 
 	return nil, VhostNotFoundError
+}
+
+func (c *Config) VhostGroupMessages(vhost string) (n int, err error) {
+	var v *Vhost
+	if v, err = c.Vhost(vhost); err != nil {
+		return
+	}
+
+	if v.Play == nil {
+		return defaultMwLatency / 14, nil
+	}
+	return v.Play.MwLatency / 14, nil
 }

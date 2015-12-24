@@ -765,7 +765,8 @@ type RtmpConnection struct {
 	// when handshake and negotiate,
 	// the connection must send message one when got it,
 	// while we can group messages when send audio/video stream.
-	groupMessages bool
+	groupMessages   bool
+	nbGroupMessages int
 	// the RTMP protocol stack.
 	stack *RtmpStack
 	// input channel, receive message from client.
@@ -803,7 +804,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		groupMessages: false,
 		stack:         NewRtmpStack(transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
-		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
+		out:           make([]*RtmpMessage, 0, RtmpDefaultMwMessages*2),
 		closing:       core.NewQuiter(),
 		shouldFlush:   make(chan bool, 1),
 	}
@@ -843,14 +844,21 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		wait <- true
 
 		// when got quit message, close the underlayer transport.
-		<-v.wc.QC()
-		v.wc.Quit()
-		return v.transport.Close()
+		select {
+		case <-v.wc.QC():
+			v.wc.Quit()
+			return v.transport.Close()
+		case <-v.closing.QC():
+			return v.closing.Quit()
+		}
 	})
 
 	// wait for receiver and sender ok.
 	<-wait
 	<-wait
+
+	// handle reload.
+	core.Conf.Subscribe(v)
 
 	return v
 }
@@ -866,8 +874,12 @@ func (v *RtmpConnection) Close() {
 	}
 	v.closed = true
 
+	// unhandle reload.
+	core.Conf.Unsubscribe(v)
+
 	// close the underlayer transport.
 	_ = v.transport.Close()
+	core.Info.Println("close the transport")
 
 	// notify other goroutine to close.
 	v.closing.Quit()
@@ -875,8 +887,20 @@ func (v *RtmpConnection) Close() {
 
 	// wait for sender and receiver to quit.
 	v.workers.Wait()
-	core.Warn.Println("closed")
+	core.Trace.Println("closed")
 
+	return
+}
+
+// interface ReloadHandler
+func (v *RtmpConnection) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+	return
+}
+
+func (v *RtmpConnection) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
+	if vhost == v.Req.Vhost && scope == core.ReloadMwLatency {
+		return v.updateNbGroupMessages()
+	}
 	return
 }
 
@@ -1055,6 +1079,14 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	return v.write(p, 0)
 }
 
+// set the chunk size.
+func (v *RtmpConnection) SetChunkSize(n int) (err error) {
+	p := NewRtmpSetChunkSizePacket().(*RtmpSetChunkSizePacket)
+	p.ChunkSize = RtmpUint32(n)
+
+	return v.write(p, 0)
+}
+
 // @param server_ip the ip of server.
 func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
@@ -1138,6 +1170,15 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 	return
 }
 
+// when request parsed, notify the connection.
+func (v *RtmpConnection) OnUrlParsed() (err error) {
+	return v.updateNbGroupMessages()
+}
+func (v *RtmpConnection) updateNbGroupMessages() (err error) {
+	v.nbGroupMessages, err = core.Conf.VhostGroupMessages(v.Req.Vhost)
+	return
+}
+
 // for Flash encoder, response the start publish event.
 func (v *RtmpConnection) FlashStartPublish() (err error) {
 	res := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
@@ -1198,9 +1239,14 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			if err = v.write(res, v.sid); err != nil {
 				return
 			}
-
-			core.Trace.Println("FMLE start publish ok.")
-			return false, nil
+			return true, nil
+		case *RtmpOnStatusCallPacket:
+			if p.Name == "onFCPublish" {
+				core.Trace.Println("FMLE start publish ok.")
+				return false, nil
+			}
+			core.Info.Println("drop FMLE command", p.Name)
+			return true, nil
 		default:
 			return true, nil
 		}
@@ -1350,8 +1396,8 @@ func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
 }
 
 func (v *RtmpConnection) requiredMessages() int {
-	if v.groupMessages {
-		return RtmpGroupMessageCount
+	if v.groupMessages && v.nbGroupMessages > 0 {
+		return v.nbGroupMessages
 	}
 	return 1
 }
@@ -1372,6 +1418,11 @@ func (v *RtmpConnection) flush() (err error) {
 	for {
 		// cache the required messages.
 		required := v.requiredMessages()
+
+		// force to ignore small pieces for group message.
+		if v.groupMessages && len(v.out) < v.nbGroupMessages/2 {
+			break
+		}
 
 		// copy messages to send.
 		var out []*RtmpMessage
@@ -1398,17 +1449,6 @@ func (v *RtmpConnection) flush() (err error) {
 					}
 				}
 				break
-			}
-
-			// sendout large blocks.
-			// more than 2 group messages.
-			if len(out) > required*2 {
-				// TODO: FIXME: config the msgs group size.
-				if err = v.stack.SendMessage(out[0:required]...); err != nil {
-					return
-				}
-				out = out[required:]
-				continue
 			}
 
 			// last group and left messages.
@@ -3238,6 +3278,9 @@ type RtmpStack struct {
 // max chunk header is fmt0.
 const RtmpMaxChunkHeader = 12
 
+// the preloaded group messages.
+const RtmpDefaultMwMessages = 25
+
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
 		in:           bufio.NewReaderSize(r, RtmpMaxChunkHeader),
@@ -3249,12 +3292,12 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 
 	// assume each message contains 10 chunks,
 	// and each chunk need 3 header(c0, c3, extended-timestamp).
-	v.c0c3Cache = make([][]byte, RtmpGroupMessageCount*10*3)
+	v.c0c3Cache = make([][]byte, RtmpDefaultMwMessages*10*3)
 	for i := 0; i < len(v.c0c3Cache); i++ {
 		v.c0c3Cache[i] = make([]byte, RtmpMaxChunkHeader)
 	}
 	// iovs cache contains the body cache.
-	v.iovsCache = make([][]byte, 0, RtmpGroupMessageCount*10*4)
+	v.iovsCache = make([][]byte, 0, RtmpDefaultMwMessages*10*4)
 
 	return v
 }
@@ -3295,6 +3338,8 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 			p = NewRtmpFMLEStartPacket()
 		case Amf0CommandPublish:
 			p = NewRtmpPublishPacket()
+		case Amf0CommandOnFcPublish, "_checkbw":
+			p = NewRtmpOnStatusCallPacket()
 		// TODO: FIXME: implements it.
 		default:
 			core.Trace.Println("drop command message, name is", c)
@@ -3327,7 +3372,9 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		var fmt uint8
 		var cid uint32
 		if fmt, cid, err = rtmpReadBasicHeader(v.in); err != nil {
-			core.Warn.Println("read basic header failed. err is", err)
+			if !core.IsNormalQuit(err) {
+				core.Warn.Println("read basic header failed. err is", err)
+			}
 			return
 		}
 
@@ -3387,6 +3434,34 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 		core.Trace.Println("input chunk size to", v.inChunkSize)
 	case *RtmpUserControlPacket:
 		// TODO: FIXME: implements it.
+	}
+
+	return
+}
+
+func (v *RtmpStack) onSendMessage(m *RtmpMessage) (err error) {
+	switch m.MessageType {
+	case RtmpMsgSetChunkSize:
+		// we will handle these packet.
+	default:
+		return
+	}
+
+	var p RtmpPacket
+	if p, err = v.DecodeMessage(m); err != nil {
+		return
+	}
+
+	switch p := p.(type) {
+	case *RtmpSetChunkSizePacket:
+		// for some server, the actual chunk size can greater than the max value(65536),
+		// so we just warning the invalid chunk size, and actually use it is ok,
+		// @see: https://github.com/ossrs/srs/issues/160
+		if p.ChunkSize < RtmpMinChunkSize || p.ChunkSize > RtmpMaxChunkSize {
+			core.Warn.Println("accept invalid chunk size", p.ChunkSize)
+		}
+		v.outChunkSize = uint32(p.ChunkSize)
+		core.Trace.Println("output chunk size to", v.outChunkSize)
 	}
 
 	return
@@ -3500,8 +3575,13 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 
 			written += size
 		}
+
+		if err = v.onSendMessage(m); err != nil {
+			return
+		}
 	}
 
+	//fmt.Println(fmt.Sprintf("fast send %v messages to %v iovecs", len(msgs), len(iovs)))
 	return v.fastSendMessages(iovs...)
 }
 
@@ -3512,9 +3592,8 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 	// delay init buffer.
 	if v.slowSendBuffer == nil {
 		// assume each message about 32kB
-		v.slowSendBuffer = make([]byte, 0, RtmpGroupMessageCount*32*1024)
+		v.slowSendBuffer = make([]byte, 0, RtmpDefaultMwMessages*32*1024)
 	}
-
 	// calculate the total size of bytes to send.
 	var total int
 	for _, iov := range iovs {

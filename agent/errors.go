@@ -31,3 +31,8 @@ var AgentNotSupportError = errors.New("agent not support")
 
 // for flash or fmle to republish stream.
 var AgentControlRepublishError = errors.New("agent republish")
+
+// whether control error object.
+func IsControlError(err error) bool {
+	return err == AgentControlRepublishError
+}

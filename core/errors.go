@@ -23,6 +23,7 @@ package core
 
 import (
 	"errors"
+	"io"
 	"net"
 )
 
@@ -47,6 +48,11 @@ func IsNormalQuit(err interface{}) bool {
 	}
 
 	if err, ok := err.(error); ok {
+		// client EOF.
+		if err == io.EOF {
+			return true
+		}
+
 		// manual quit or read timeout.
 		if err == QuitError || err == TimeoutError {
 			return true
