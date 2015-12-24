@@ -23,8 +23,27 @@
 
 package protocol
 
+import (
+	"github.com/ossrs/go-oryx/core"
+	//"net"
+)
+
 func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
+	// we can force to not use writev.
+	if !core.Conf.Go.Writev {
+		return v.slowSendMessages(iovs...)
+	}
+
 	// wait for golang to implements the writev.
 	// @see https://github.com/golang/go/issues/13451
+	// private writev, @see https://github.com/winlinvip/go/pull/1.
+	//if c, ok := v.out.(*net.TCPConn); ok {
+	//	if _, err = c.Writev(iovs); err != nil {
+	//		return
+	//	}
+	//	return
+	//}
+
+	// send by big-buffer or one-by-one
 	return v.slowSendMessages(iovs...)
 }

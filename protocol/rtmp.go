@@ -22,6 +22,7 @@
 package protocol
 
 import (
+	"bufio"
 	"bytes"
 	"crypto"
 	"crypto/hmac"
@@ -43,76 +44,6 @@ import (
 
 // error when create stream.
 var createStreamError error = errors.New("rtmp create stream error")
-
-// use []byte as io.Writer
-type bytesWriter struct {
-	pos int
-	b   []byte
-}
-
-func NewBytesWriter(b []byte) io.Writer {
-	return &bytesWriter{
-		b: b,
-	}
-}
-
-func (v *bytesWriter) Write(p []byte) (n int, err error) {
-	if p == nil || len(p) == 0 {
-		return
-	}
-
-	// check left space.
-	left := len(v.b) - v.pos
-	if left < len(p) {
-		return 0, fmt.Errorf("overflow, left is %v, requires %v", left, len(p))
-	}
-
-	// copy content to left space.
-	_ = copy(v.b[v.pos:], p)
-
-	// copy ok.
-	n = len(p)
-	v.pos += n
-
-	return
-}
-
-// mix []byte and io.Reader
-type mixReader struct {
-	reader io.Reader
-	next   io.Reader
-}
-
-func NewMixReader(a io.Reader, b io.Reader) io.Reader {
-	return &mixReader{
-		reader: a,
-		next:   b,
-	}
-}
-
-func (v *mixReader) Read(p []byte) (n int, err error) {
-	for {
-		if v.reader != nil {
-			n, err = v.reader.Read(p)
-			if err == io.EOF {
-				v.reader = nil
-				continue
-			}
-			return
-		}
-
-		if v.next != nil {
-			n, err = v.next.Read(p)
-			if err == io.EOF {
-				v.next = nil
-				continue
-			}
-			return
-		}
-
-		return 0, io.EOF
-	}
-}
 
 // bytes for handshake.
 type hsBytes struct {
@@ -210,11 +141,13 @@ func (v *hsBytes) readC0C1(r io.Reader) (err error) {
 		return
 	}
 
-	w := NewBytesWriter(v.C0C1())
-	if _, err = io.CopyN(w, r, 1537); err != nil {
+	var b bytes.Buffer
+	if _, err = io.CopyN(&b, r, 1537); err != nil {
 		core.Error.Println("read c0c1 failed. err is", err)
 		return
 	}
+
+	copy(v.C0C1(), b.Bytes())
 
 	v.c0c1Ok = true
 	core.Info.Println("read c0c1 ok.")
@@ -258,11 +191,13 @@ func (v *hsBytes) readC2(r io.Reader) (err error) {
 		return
 	}
 
-	w := NewBytesWriter(v.C2())
-	if _, err = io.CopyN(w, r, 1536); err != nil {
+	var b bytes.Buffer
+	if _, err = io.CopyN(&b, r, 1536); err != nil {
 		core.Error.Println("read c2 failed. err is", err)
 		return
 	}
+
+	copy(v.C2(), b.Bytes())
 
 	v.c2Ok = true
 	core.Info.Println("read c2 ok.")
@@ -488,13 +423,14 @@ func (v *chsC1S1) S1Create(s1 []byte, time, version uint32, c1 *chsC1S1) (err er
 	v.time = uint32(time)
 	v.version = version
 
-	w := NewBytesWriter(v.c1s1)
-	if err = binary.Write(w, binary.BigEndian, v.time); err != nil {
+	var b bytes.Buffer
+	if err = binary.Write(&b, binary.BigEndian, v.time); err != nil {
 		return
 	}
-	if err = binary.Write(w, binary.BigEndian, v.version); err != nil {
+	if err = binary.Write(&b, binary.BigEndian, v.version); err != nil {
 		return
 	}
+	copy(v.c1s1[0:8], b.Bytes())
 
 	p := v.c1s1[8:]
 	if v.schema.Schema0() {
@@ -829,7 +765,8 @@ type RtmpConnection struct {
 	// when handshake and negotiate,
 	// the connection must send message one when got it,
 	// while we can group messages when send audio/video stream.
-	groupMessages bool
+	groupMessages   bool
+	nbGroupMessages int
 	// the RTMP protocol stack.
 	stack *RtmpStack
 	// input channel, receive message from client.
@@ -848,8 +785,13 @@ type RtmpConnection struct {
 	writeLock sync.Mutex
 	// use cache queue.
 	out []*RtmpMessage
-	// cache for group messages.
-	groupMessage []*RtmpMessage
+
+	// whether stack should flush all messages.
+	shouldFlush chan bool
+	// whether the sender need to be notified.
+	needNotifyFlusher bool
+	// whether the sender is working.
+	isFlusherWorking bool
 }
 
 func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
@@ -862,9 +804,9 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		groupMessages: false,
 		stack:         NewRtmpStack(transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
-		out:           make([]*RtmpMessage, 0, RtmpGroupMessageCount*2),
-		groupMessage:  make([]*RtmpMessage, RtmpGroupMessageCount),
+		out:           make([]*RtmpMessage, 0, RtmpDefaultMwMessages*2),
 		closing:       core.NewQuiter(),
+		shouldFlush:   make(chan bool, 1),
 	}
 
 	// wait for goroutine to run.
@@ -902,14 +844,21 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		wait <- true
 
 		// when got quit message, close the underlayer transport.
-		<-v.wc.QC()
-		v.wc.Quit()
-		return v.transport.Close()
+		select {
+		case <-v.wc.QC():
+			v.wc.Quit()
+			return v.transport.Close()
+		case <-v.closing.QC():
+			return v.closing.Quit()
+		}
 	})
 
 	// wait for receiver and sender ok.
 	<-wait
 	<-wait
+
+	// handle reload.
+	core.Conf.Subscribe(v)
 
 	return v
 }
@@ -925,8 +874,12 @@ func (v *RtmpConnection) Close() {
 	}
 	v.closed = true
 
+	// unhandle reload.
+	core.Conf.Unsubscribe(v)
+
 	// close the underlayer transport.
 	_ = v.transport.Close()
+	core.Info.Println("close the transport")
 
 	// notify other goroutine to close.
 	v.closing.Quit()
@@ -934,48 +887,20 @@ func (v *RtmpConnection) Close() {
 
 	// wait for sender and receiver to quit.
 	v.workers.Wait()
-	core.Warn.Println("closed")
+	core.Trace.Println("closed")
 
 	return
 }
 
-func (v *RtmpConnection) waitC0C1() (err error) {
-	// use short handshake timeout.
-	timeout := HandshakeTimeout
-
-	// wait c0c1
-	select {
-	case <-v.handshake.in:
-		break
-	case <-time.After(timeout):
-		core.Error.Println("c0c1 timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing.QC():
-		return v.closing.Quit()
-	case <-v.wc.QC():
-		return v.wc.Quit()
-	}
-
+// interface ReloadHandler
+func (v *RtmpConnection) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	return
 }
 
-func (v *RtmpConnection) waitC2() (err error) {
-	// use short handshake timeout.
-	timeout := HandshakeTimeout
-
-	// wait c2
-	select {
-	case <-v.handshake.in:
-		break
-	case <-time.After(timeout):
-		core.Error.Println("c2 timeout for", timeout)
-		return core.TimeoutError
-	case <-v.closing.QC():
-		return v.closing.Quit()
-	case <-v.wc.QC():
-		return v.wc.Quit()
+func (v *RtmpConnection) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
+	if vhost == v.Req.Vhost && scope == core.ReloadMwLatency {
+		return v.updateNbGroupMessages()
 	}
-
 	return
 }
 
@@ -1070,6 +995,46 @@ func (v *RtmpConnection) Handshake() (err error) {
 	return
 }
 
+func (v *RtmpConnection) waitC0C1() (err error) {
+	// use short handshake timeout.
+	timeout := HandshakeTimeout
+
+	// wait c0c1
+	select {
+	case <-v.handshake.in:
+		break
+	case <-time.After(timeout):
+		core.Error.Println("c0c1 timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing.QC():
+		return v.closing.Quit()
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
+func (v *RtmpConnection) waitC2() (err error) {
+	// use short handshake timeout.
+	timeout := HandshakeTimeout
+
+	// wait c2
+	select {
+	case <-v.handshake.in:
+		break
+	case <-time.After(timeout):
+		core.Error.Println("c2 timeout for", timeout)
+		return core.TimeoutError
+	case <-v.closing.QC():
+		return v.closing.Quit()
+	case <-v.wc.QC():
+		return v.wc.Quit()
+	}
+
+	return
+}
+
 // do connect app with client, to discovery tcUrl.
 func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 	// connect(tcUrl)
@@ -1110,6 +1075,14 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
 	p.Bandwidth = RtmpUint32(bw)
 	p.Type = RtmpUint8(t)
+
+	return v.write(p, 0)
+}
+
+// set the chunk size.
+func (v *RtmpConnection) SetChunkSize(n int) (err error) {
+	p := NewRtmpSetChunkSizePacket().(*RtmpSetChunkSizePacket)
+	p.ChunkSize = RtmpUint32(n)
 
 	return v.write(p, 0)
 }
@@ -1197,6 +1170,15 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 	return
 }
 
+// when request parsed, notify the connection.
+func (v *RtmpConnection) OnUrlParsed() (err error) {
+	return v.updateNbGroupMessages()
+}
+func (v *RtmpConnection) updateNbGroupMessages() (err error) {
+	v.nbGroupMessages, err = core.Conf.VhostGroupMessages(v.Req.Vhost)
+	return
+}
+
 // for Flash encoder, response the start publish event.
 func (v *RtmpConnection) FlashStartPublish() (err error) {
 	res := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
@@ -1257,9 +1239,14 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			if err = v.write(res, v.sid); err != nil {
 				return
 			}
-
-			core.Trace.Println("FMLE start publish ok.")
-			return false, nil
+			return true, nil
+		case *RtmpOnStatusCallPacket:
+			if p.Name == "onFCPublish" {
+				core.Trace.Println("FMLE start publish ok.")
+				return false, nil
+			}
+			core.Info.Println("drop FMLE command", p.Name)
+			return true, nil
 		default:
 			return true, nil
 		}
@@ -1360,54 +1347,115 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	return
 }
 
+// the rtmp connection never provides send message,
+// but we use cache message and the main goroutine of connection
+// will use Cycle to flush messages.
 func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	v.writeLock.Lock()
 	defer v.writeLock.Unlock()
 
 	// push to queue.
 	v.out = append(v.out, m)
+
+	// notify when messages is enough and sender is not working.
+	if len(v.out) >= v.requiredMessages() && !v.isFlusherWorking {
+		v.needNotifyFlusher = true
+	}
+
+	// unblock the sender when got enough messages.
+	if v.toggleNotify() {
+		select {
+		case v.shouldFlush <- true:
+		default:
+		}
+	}
+
 	return
 }
 
-func (v *RtmpConnection) NeedNotify() bool {
-	return len(v.out) > RtmpGroupMessageCount
+// cycle to flush messages, and callback the fn when got message from peer.
+func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
+	for {
+		select {
+		case <-v.shouldFlush:
+			if err = v.flush(); err != nil {
+				return
+			}
+		case m := <-v.in:
+			if err = fn(m); err != nil {
+				return
+			}
+		case <-v.closing.QC():
+			return v.closing.Quit()
+		case <-v.wc.QC():
+			return v.wc.Quit()
+		}
+	}
+
+	return
+}
+
+func (v *RtmpConnection) requiredMessages() int {
+	if v.groupMessages && v.nbGroupMessages > 0 {
+		return v.nbGroupMessages
+	}
+	return 1
+}
+
+func (v *RtmpConnection) toggleNotify() bool {
+	nn := v.needNotifyFlusher
+	v.needNotifyFlusher = false
+	return nn
 }
 
 // to push message to send queue.
-func (v *RtmpConnection) Flush() (err error) {
-	v.writeLock.Lock()
-	defer v.writeLock.Unlock()
+func (v *RtmpConnection) flush() (err error) {
+	v.isFlusherWorking = true
+	defer func() {
+		v.isFlusherWorking = false
+	}()
 
 	for {
-		required := 1
-		if v.groupMessages && RtmpGroupMessageCount > 1 {
-			required = RtmpGroupMessageCount
+		// cache the required messages.
+		required := v.requiredMessages()
+
+		// force to ignore small pieces for group message.
+		if v.groupMessages && len(v.out) < v.nbGroupMessages/2 {
+			break
 		}
 
-		// not enough for group messages.
-		if len(v.out) < required {
-			return
-		}
+		// copy messages to send.
+		var out []*RtmpMessage
+		func() {
+			v.writeLock.Lock()
+			defer v.writeLock.Unlock()
 
-		// send one by one.
-		if required == 1 {
-			for _, m := range v.out {
-				if err = v.stack.SendMessage(m); err != nil {
-					return
-				}
-			}
+			out = v.out[:]
 			v.out = v.out[0:0]
-			continue
-		}
+		}()
 
-		// TODO: FIXME: config the msgs group size.
-		for n := 0; n < required; n++ {
-			v.groupMessage[n] = v.out[n]
-		}
-		v.out = v.out[required:]
+		// sendout all messages.
+		for {
+			// nothing, ingore.
+			if len(out) == 0 {
+				return
+			}
 
-		if err = v.stack.SendMessage(v.groupMessage...); err != nil {
-			return
+			// send one by one.
+			if required <= 1 {
+				for _, m := range out {
+					if err = v.stack.SendMessage(m); err != nil {
+						return
+					}
+				}
+				break
+			}
+
+			// last group and left messages.
+			if err = v.stack.SendMessage(out...); err != nil {
+				return
+			}
+			break
 		}
 	}
 
@@ -1424,30 +1472,6 @@ func (v *RtmpConnection) RecvMessage(timeout time.Duration, fn func(*RtmpMessage
 // to decode the message to packet.
 func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 	return v.stack.DecodeMessage(m)
-}
-
-// to receive message from rtmp or another oryx channel.
-// @remark for performance issue, the mix recv for player never use timer,
-//		for timer consume lost of time, @see https://github.com/ossrs/go-oryx/pull/20#issuecomment-161163480
-func (v *RtmpConnection) RecvMessageNoTimeout(extra <-chan bool, fn func(*RtmpMessage, bool) error) (err error) {
-	for {
-		select {
-		case m := <-extra:
-			if err = fn(nil, m); err != nil {
-				return
-			}
-		case m := <-v.in:
-			if err = fn(m, false); err != nil {
-				return
-			}
-		case <-v.closing.QC():
-			return v.closing.Quit()
-		case <-v.wc.QC():
-			return v.wc.Quit()
-		}
-	}
-
-	return
 }
 
 func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
@@ -1610,7 +1634,7 @@ func (v *RtmpConnection) write(p RtmpPacket, sid uint32) (err error) {
 		return
 	}
 
-	return v.Flush()
+	return v.flush()
 }
 
 // receiver goroutine.
@@ -3200,7 +3224,7 @@ type RtmpChunk struct {
 	// the partial message which not completed.
 	partialMessage *RtmpMessage
 	// the number of already received payload size.
-	nbPayload uint32
+	payload *bytes.Buffer
 
 	// 4.1. Message Header
 	// 3bytes.
@@ -3225,17 +3249,15 @@ func NewRtmpChunk(cid uint32) *RtmpChunk {
 	return &RtmpChunk{
 		cid:     cid,
 		isFresh: true,
+		payload: &bytes.Buffer{},
 	}
 }
 
 // RTMP protocol stack.
 type RtmpStack struct {
 	// the input and output stream.
-	in  io.Reader
+	in  *bufio.Reader
 	out io.Writer
-	// use bytes.Buffer to parse RTMP.
-	// TODO: FIXME: use bufio.Reader instead.
-	inb bytes.Buffer
 	// the chunks for RTMP,
 	// key is the cid from basic header.
 	chunks map[uint32]*RtmpChunk
@@ -3246,14 +3268,22 @@ type RtmpStack struct {
 
 	// the protocol caches, for gc efficiency.
 	// the chunk header c0, c3 and extended-timestamp caches.
-	c0c3Cache chan []byte
+	c0c3Cache [][]byte
+	// the cache for the iovs.
+	iovsCache [][]byte
 	// the large buffer cache, for slow send used to concat iovs.
 	slowSendBuffer []byte
 }
 
+// max chunk header is fmt0.
+const RtmpMaxChunkHeader = 12
+
+// the preloaded group messages.
+const RtmpDefaultMwMessages = 25
+
 func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
-		in:           r,
+		in:           bufio.NewReaderSize(r, RtmpMaxChunkHeader),
 		out:          w,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
@@ -3262,7 +3292,12 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 
 	// assume each message contains 10 chunks,
 	// and each chunk need 3 header(c0, c3, extended-timestamp).
-	v.c0c3Cache = make(chan []byte, RtmpGroupMessageCount*10*3)
+	v.c0c3Cache = make([][]byte, RtmpDefaultMwMessages*10*3)
+	for i := 0; i < len(v.c0c3Cache); i++ {
+		v.c0c3Cache[i] = make([]byte, RtmpMaxChunkHeader)
+	}
+	// iovs cache contains the body cache.
+	v.iovsCache = make([][]byte, 0, RtmpDefaultMwMessages*10*4)
 
 	return v
 }
@@ -3303,6 +3338,8 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 			p = NewRtmpFMLEStartPacket()
 		case Amf0CommandPublish:
 			p = NewRtmpPublishPacket()
+		case Amf0CommandOnFcPublish, "_checkbw":
+			p = NewRtmpOnStatusCallPacket()
 		// TODO: FIXME: implements it.
 		default:
 			core.Trace.Println("drop command message, name is", c)
@@ -3334,8 +3371,10 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		// chunk stream basic header.
 		var fmt uint8
 		var cid uint32
-		if fmt, cid, err = RtmpReadBasicHeader(v.in, &v.inb); err != nil {
-			core.Warn.Println("read basic header failed. err is", err)
+		if fmt, cid, err = rtmpReadBasicHeader(v.in); err != nil {
+			if !core.IsNormalQuit(err) {
+				core.Warn.Println("read basic header failed. err is", err)
+			}
 			return
 		}
 
@@ -3348,17 +3387,14 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		}
 
 		// chunk stream message header
-		if err = RtmpReadMessageHeader(v.in, &v.inb, fmt, chunk); err != nil {
+		if err = rtmpReadMessageHeader(v.in, fmt, chunk); err != nil {
 			return
 		}
 
 		// read msg payload from chunk stream.
-		if m, err = RtmpReadMessagePayload(v.inChunkSize, v.in, &v.inb, chunk); err != nil {
+		if m, err = rtmpReadMessagePayload(v.inChunkSize, v.in, chunk); err != nil {
 			return
 		}
-
-		// truncate the buffer.
-		v.inb.Truncate(v.inb.Len())
 	}
 
 	if err = v.onRecvMessage(m); err != nil {
@@ -3403,26 +3439,51 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 	return
 }
 
-func (v *RtmpStack) getC0c3Cache() []byte {
-	select {
-	case c := <-v.c0c3Cache:
-		return c
+func (v *RtmpStack) onSendMessage(m *RtmpMessage) (err error) {
+	switch m.MessageType {
+	case RtmpMsgSetChunkSize:
+		// we will handle these packet.
 	default:
-		return make([]byte, 12)
+		return
 	}
+
+	var p RtmpPacket
+	if p, err = v.DecodeMessage(m); err != nil {
+		return
+	}
+
+	switch p := p.(type) {
+	case *RtmpSetChunkSizePacket:
+		// for some server, the actual chunk size can greater than the max value(65536),
+		// so we just warning the invalid chunk size, and actually use it is ok,
+		// @see: https://github.com/ossrs/srs/issues/160
+		if p.ChunkSize < RtmpMinChunkSize || p.ChunkSize > RtmpMaxChunkSize {
+			core.Warn.Println("accept invalid chunk size", p.ChunkSize)
+		}
+		v.outChunkSize = uint32(p.ChunkSize)
+		core.Trace.Println("output chunk size to", v.outChunkSize)
+	}
+
+	return
 }
 
-func (v *RtmpStack) putC0c3Cache(c []byte) {
-	select {
-	case v.c0c3Cache <- c:
-	default:
+func (v *RtmpStack) fetchC0c3Cache(index int) (nextIndex int, iov []byte) {
+	// exceed the index, create the cache.
+	if index >= len(v.c0c3Cache) {
+		iov = make([]byte, RtmpMaxChunkHeader)
+		v.c0c3Cache = append(v.c0c3Cache, iov)
 	}
+
+	return index + 1, v.c0c3Cache[index]
 }
 
 // to sendout multiple messages.
 func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 	// cache the messages to send to descrease the syscall.
-	iovs := make([][]byte, 0)
+	iovs := v.iovsCache
+
+	var iovIndex int
+	var iov []byte
 
 	for _, m := range msgs {
 		// we directly send out the packet,
@@ -3432,8 +3493,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 			// for chunk header without extended timestamp.
 			if firstChunk := bool(written == 0); firstChunk {
 				// the fmt0 is 12bytes header.
-				iov := v.getC0c3Cache()
-				defer v.putC0c3Cache(iov)
+				iovIndex, iov = v.fetchC0c3Cache(iovIndex)
 				iovs = append(iovs, iov[0:12])
 
 				// write new chunk stream header, fmt is 0
@@ -3466,8 +3526,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 				iov[11] = byte(m.StreamId >> 24)
 			} else {
 				// the fmt3 is 1bytes header.
-				iov := v.getC0c3Cache()
-				defer v.putC0c3Cache(iov)
+				iovIndex, iov = v.fetchC0c3Cache(iovIndex)
 				iovs = append(iovs, iov[0:1])
 
 				// write no message header chunk stream, fmt is 3
@@ -3497,8 +3556,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 			// @see: http://blog.csdn.net/win_lin/article/details/13363699
 			if m.Timestamp >= RtmpExtendedTimestamp {
 				// the extended-timestamp is 4bytes.
-				iov := v.getC0c3Cache()
-				defer v.putC0c3Cache(iov)
+				iovIndex, iov = v.fetchC0c3Cache(iovIndex)
 				iovs = append(iovs, iov[0:4])
 
 				// big-endian.
@@ -3517,8 +3575,13 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 
 			written += size
 		}
+
+		if err = v.onSendMessage(m); err != nil {
+			return
+		}
 	}
 
+	//fmt.Println(fmt.Sprintf("fast send %v messages to %v iovecs", len(msgs), len(iovs)))
 	return v.fastSendMessages(iovs...)
 }
 
@@ -3528,28 +3591,24 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 	// delay init buffer.
 	if v.slowSendBuffer == nil {
-		// assume each message about 16kB
-		v.slowSendBuffer = make([]byte, RtmpGroupMessageCount*16*1024)
+		// assume each message about 32kB
+		v.slowSendBuffer = make([]byte, 0, RtmpDefaultMwMessages*32*1024)
 	}
-
 	// calculate the total size of bytes to send.
 	var total int
 	for _, iov := range iovs {
 		total += len(iov)
 	}
-
-	// ensure the buffer is ok.
 	if total > len(v.slowSendBuffer) {
 		v.slowSendBuffer = make([]byte, 2*total)
 	}
-	b := v.slowSendBuffer[0:total]
 
 	// write all pieces of iovs to buffer.
-	w := NewBytesWriter(b)
+	var nn int
+	b := v.slowSendBuffer[0:total]
 	for _, iov := range iovs {
-		if _, err = w.Write(iov); err != nil {
-			return
-		}
+		copy(b[nn:], iov)
+		nn += len(iov)
 	}
 
 	// send the buffer out.
@@ -3566,17 +3625,14 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 
 // read the RTMP message from buffer inb which load from reader in.
 // return the completed message from chunk partial message.
-func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, chunk *RtmpChunk) (m *RtmpMessage, err error) {
+func rtmpReadMessagePayload(chunkSize uint32, in *bufio.Reader, chunk *RtmpChunk) (m *RtmpMessage, err error) {
 	m = chunk.partialMessage
 	if m == nil {
 		panic("chunk message should never be nil")
 	}
 
-	// mix reader to read from preload body or reader.
-	r := NewMixReader(inb, in)
-
 	// the preload body must be consumed in a time.
-	left := (int)(chunk.payloadLength - chunk.nbPayload)
+	left := int(chunk.payloadLength) - chunk.payload.Len()
 	if chunk.payloadLength == 0 {
 		// empty message
 		chunk.partialMessage = nil
@@ -3589,17 +3645,16 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 	}
 
 	// read payload to buffer
-	w := NewBytesWriter(m.Payload[chunk.nbPayload : int(chunk.nbPayload)+left])
-	if _, err = io.CopyN(w, r, int64(left)); err != nil {
+	if _, err = io.CopyN(chunk.payload, in, int64(left)); err != nil {
 		core.Error.Println("read body failed. err is", err)
 		return
 	}
-	chunk.nbPayload += uint32(left)
 
 	// got entire RTMP message?
-	if chunk.payloadLength == chunk.nbPayload {
+	if int(chunk.payloadLength) == chunk.payload.Len() {
+		chunk.partialMessage.Payload = chunk.payload.Bytes()
+		chunk.payload = &bytes.Buffer{}
 		chunk.partialMessage = nil
-		chunk.nbPayload = 0
 		return
 	}
 
@@ -3620,7 +3675,7 @@ func RtmpReadMessagePayload(chunkSize uint32, in io.Reader, inb *bytes.Buffer, c
 // @remark we return the b which indicates the body read in this process,
 // 		for the c3 header, we try to read more bytes which maybe header
 // 		or the body.
-func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *RtmpChunk) (err error) {
+func rtmpReadMessageHeader(in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err error) {
 	// we should not assert anything about fmt, for the first packet.
 	// (when first packet, the chunk->msg is NULL).
 	// the fmt maybe 0/1/2/3, the FMLE will send a 0xC4 for some audio packet.
@@ -3683,10 +3738,12 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 
 	var bh []byte
 	if nbh > 0 {
-		if err = core.Grow(in, inb, nbh); err != nil {
+		if bh, err = in.Peek(nbh); err != nil {
 			return
 		}
-		bh = inb.Next(nbh)
+		if _, err = in.Discard(nbh); err != nil {
+			return
+		}
 	}
 
 	// parse the message header.
@@ -3784,10 +3841,10 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	if chunk.hasExtendedTimestamp {
 		// try to read 4 bytes from stream,
 		// which maybe the body or the extended-timestamp.
-		if err = core.Grow(in, inb, 4); err != nil {
+		var b []byte
+		if b, err = in.Peek(4); err != nil {
 			return
 		}
-		b := inb.Bytes()
 
 		// parse the extended-timestamp
 		timestamp := uint32(b[3]) | uint32(b[2])<<8 | uint32(b[1])<<16 | uint32(b[0])<<24
@@ -3817,7 +3874,10 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 		// @remark for the first chunk of message, always use the extended timestamp.
 		if isFirstMsgOfChunk || ctimestamp <= 0 || ctimestamp == timestamp {
 			chunk.timestamp = uint64(timestamp)
-			inb.Next(4) // consume from buffer.
+			// consume from buffer.
+			if _, err = in.Discard(4); err != nil {
+				return
+			}
 		}
 	}
 
@@ -3848,9 +3908,6 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 	chunk.partialMessage.Timestamp = chunk.timestamp
 	chunk.partialMessage.PreferCid = chunk.cid
 	chunk.partialMessage.StreamId = chunk.streamId
-	if chunk.partialMessage.Payload == nil {
-		chunk.partialMessage.Payload = make([]byte, chunk.payloadLength)
-	}
 
 	// update chunk information.
 	chunk.fmt = fmt
@@ -3901,13 +3958,9 @@ func RtmpReadMessageHeader(in io.Reader, inb *bytes.Buffer, fmt uint8, chunk *Rt
 // Chunk stream IDs with values 64-319 could be represented by both 2-
 // byte version and 3-byte version of this field.
 // @remark use inb to parse and read from in to inb if no data.
-func RtmpReadBasicHeader(in io.Reader, inb *bytes.Buffer) (fmt uint8, cid uint32, err error) {
-	if err = core.Grow(in, inb, 1); err != nil {
-		return
-	}
-
+func rtmpReadBasicHeader(in *bufio.Reader) (fmt uint8, cid uint32, err error) {
 	var vb byte
-	if vb, err = inb.ReadByte(); err != nil {
+	if vb, err = in.ReadByte(); err != nil {
 		return
 	}
 
@@ -3923,11 +3976,7 @@ func RtmpReadBasicHeader(in io.Reader, inb *bytes.Buffer) (fmt uint8, cid uint32
 	// 2 or 3B
 	if cid >= 0 {
 		// 64-319, 2B chunk header
-		if err = core.Grow(in, inb, 1); err != nil {
-			return
-		}
-
-		if vb, err = inb.ReadByte(); err != nil {
+		if vb, err = in.ReadByte(); err != nil {
 			return
 		}
 
@@ -3935,11 +3984,7 @@ func RtmpReadBasicHeader(in io.Reader, inb *bytes.Buffer) (fmt uint8, cid uint32
 
 		// 64-65599, 3B chunk header
 		if cid >= 1 {
-			if err = core.Grow(in, inb, 1); err != nil {
-				return
-			}
-
-			if vb, err = inb.ReadByte(); err != nil {
+			if vb, err = in.ReadByte(); err != nil {
 				return
 			}
 

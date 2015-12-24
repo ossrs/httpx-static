@@ -68,9 +68,9 @@ type OpenCloser interface {
 // finally delivery to downstream sink.
 //
 // the arch for agent is:
-//		+-----upstream----+         +---downstream----+
-//    --+-source => sink--+--(tie)--+-source => sink--+--
-//		+-----------------+			+-----------------+
+//      +-----upstream----+           +---downstream----+
+//    --+-source => sink--+--(tie->)--+-source => sink--+--
+//      +-----------------+           +-----------------+
 //
 // @remark all method is sync, user should never assume it's async.
 type Agent interface {

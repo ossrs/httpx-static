@@ -10,6 +10,12 @@
   // @remark: donot support reload.
   // default: true
   "daemon": true,
+  // the default chunk size is 128, max is 65536,
+  // some client does not support chunk size change,
+  // however, most clients supports it and it can improve
+  // performance about 10%.
+  // default: 60000
+  "chunk_size": 60000,
   // go runtime section.
   "go": {
     // the interval for gc, in seconds. 0 to not set.
@@ -18,6 +24,12 @@
     // the percent for gc. 0 to not set.
     // default: 0
     "gc_percent": 0,
+    // the interval for gc trace, in seconds. 0 to disable.
+    // default: 0
+    "gc_trace": 0,
+    // whether use private writev.
+    // default: false
+    "writev": false,
     // the cpu profile filename, for example
     //    go tool pprof oryx cpu.prof
     // default or empty string to ignore.
@@ -94,7 +106,17 @@
     // for example, user use ip to access the stream: rtmp://192.168.1.2/live/livestream.
     // for which cannot identify the required vhost.
     {
-      "name": "__defaultVhost__"
+      "name": "__defaultVhost__",
+      // for play client, both RTMP and other stream clients,
+      // for instance, the HTTP FLV stream clients.
+      "play": {
+        // set the MW(merged-write) latency in ms.
+        // SRS always set mw on, so we just set the latency value.
+        // the latency of stream >= mw_latency + mr_latency
+        // the value recomment is [300, 1800]
+        // default: 350
+        "mw_latency": 350
+      }
     }
   ]
 }
