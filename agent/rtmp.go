@@ -148,11 +148,8 @@ func (v *Rtmp) serve(c net.Conn) {
 			}
 			return
 		}
-<<<<<<< HEAD
 		core.Info.Println("rtmp cycle ok.")
-=======
 
->>>>>>> master
 		return
 	})
 }
