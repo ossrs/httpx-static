@@ -67,6 +67,7 @@ Why rewrite the SRS to go-oryx:
 1. v0.1.11 Supports 10k(4CPUs) for RTMP players.
 1. v0.1.12 Supports 10k(3CPUs) for RTMP players.
 1. v0.1.13 Supports 10k(2CPUs) for RTMP players.
+1. [dev] Supports SRS style config file.
 1. [dev] Supports gop-cache and drop frame strategy.
 1. [dev] Supports Connection Oriented Traceable log.
 

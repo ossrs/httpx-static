@@ -47,3 +47,4 @@ func (v *RtmpStack) fastSendMessages(iovs ...[]byte) (err error) {
 	// send by big-buffer or one-by-one
 	return v.slowSendMessages(iovs...)
 }
+
