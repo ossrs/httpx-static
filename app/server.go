@@ -157,10 +157,10 @@ func (s *Server) ParseConfig(conf string) (err error) {
 
 	core.Trace.Println("start to parse config file", conf)
 	if err = core.Conf.Loads(conf); err != nil {
-		return
+		return err
 	}
 
-	return
+	return nil
 }
 
 func (s *Server) PrepareLogger() (err error) {
