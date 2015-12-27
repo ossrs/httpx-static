@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"time"
+"bufio"
 )
 
 // the buffered random, for the rand is not thread-safe.
@@ -174,5 +175,78 @@ func Unmarshals(b *bytes.Buffer, o ...UnmarshalSizer) (err error) {
 		b.Next(e.Size())
 	}
 
+	return
+}
+
+// whether the reader start with sequence by flags.
+func startsWith(r *bufio.Reader, flags ...byte) (match bool, err error) {
+	var pk []byte
+	if pk,err = r.Peek(len(flags)); err != nil {
+		return
+	}
+	for i := 0; i < len(pk); i++ {
+		if pk[i] != flags[i] {
+			return false,nil
+		}
+	}
+	return true,nil
+}
+
+// discard util the reader starts with sequence by flags.
+func discardUtil(r *bufio.Reader, flags ...byte) (err error) {
+	for {
+		var match bool
+		if match,err = startsWith(r, flags...); err != nil {
+			return
+		} else if match {
+			return nil
+		}
+		if _,err = r.Discard(1); err != nil {
+			return
+		}
+	}
+	return
+}
+
+// discard util any flags match.
+func discardUtilAny(r *bufio.Reader, flags ...byte) (err error) {
+	var pk []byte
+	for {
+		if pk,err = r.Peek(1); err != nil {
+			return
+		}
+		for _,v := range flags {
+			if pk[0] == v {
+				return
+			}
+		}
+		if _,err = r.Discard(1); err != nil {
+			return
+		}
+	}
+	return
+}
+
+// discard util all flags not match.
+func discardUtilNot(r *bufio.Reader, flags ...byte) (err error) {
+	var pk []byte
+	for {
+		if pk,err = r.Peek(1); err != nil {
+			return
+		}
+		var match bool
+		for _,v := range flags {
+			if pk[0] == v {
+				match = true
+				break
+			}
+		}
+		if !match {
+			return
+		}
+		if _,err = r.Discard(1); err != nil {
+			return
+		}
+	}
 	return
 }

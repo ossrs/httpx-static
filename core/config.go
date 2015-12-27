@@ -29,6 +29,7 @@ import (
 	"io/ioutil"
 	"os"
 	"bufio"
+	"strings"
 )
 
 // the scope for reload.
@@ -92,72 +93,6 @@ func NewReader(r io.Reader) io.Reader {
 
 // interface io.Reader
 func (v *jsonCommentReader) Read(p []byte) (n int, err error) {
-	startsWith := func(r *bufio.Reader, flags ...byte) (match bool, err error) {
-		var pk []byte
-		if pk,err = r.Peek(len(flags)); err != nil {
-			return
-		}
-		for i := 0; i < len(pk); i++ {
-			if pk[i] != flags[i] {
-				return false,nil
-			}
-		}
-		return true,nil
-	}
-	discardUtil := func(r *bufio.Reader, flags ...byte) (err error) {
-		for {
-			var match bool
-			if match,err = startsWith(r, flags...); err != nil {
-				return
-			} else if match {
-				return nil
-			}
-			if _,err = r.Discard(1); err != nil {
-				return
-			}
-		}
-		return
-	}
-	discardUtilAny := func(r *bufio.Reader, flags ...byte) (err error) {
-		var pk []byte
-		for {
-			if pk,err = r.Peek(1); err != nil {
-				return
-			}
-			for _,v := range flags {
-				if pk[0] == v {
-					return
-				}
-			}
-			if _,err = r.Discard(1); err != nil {
-				return
-			}
-		}
-		return
-	}
-	discardUtilNot := func(r *bufio.Reader, flags ...byte) (err error) {
-		var pk []byte
-		for {
-			if pk,err = r.Peek(1); err != nil {
-				return
-			}
-			var match bool
-			for _,v := range flags {
-				if pk[0] == v {
-					match = true
-					break
-				}
-			}
-			if !match {
-				return
-			}
-			if _,err = r.Discard(1); err != nil {
-				return
-			}
-		}
-		return
-	}
-
 	for n < len(p) {
 		// from init to working state.
 		if v.st == JsInit {
@@ -305,6 +240,15 @@ func NewConfig() *Config {
 		vhosts:         make(map[string]*Vhost),
 	}
 
+	return c
+}
+
+// get the config file path.
+func (c *Config) Conf() string {
+	return c.conf
+}
+
+func (c *Config) SetDefaults() {
 	c.Listen = RtmpListen
 	c.Workers = 0
 	c.Daemon = true
@@ -321,33 +265,45 @@ func NewConfig() *Config {
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
 	c.Log.File = "oryx.log"
-
-	return c
-}
-
-// get the config file path.
-func (c *Config) Conf() string {
-	return c.conf
 }
 
 // loads and validate config from config file.
 func (c *Config) Loads(conf string) error {
 	c.conf = conf
 
-	// read the whole config to []byte.
-	var d *json.Decoder
-	if f, err := os.Open(conf); err != nil {
-		return err
+	// set default config values.
+	c.SetDefaults()
+
+	// json style should not be *.conf
+	if !strings.HasSuffix(conf, ".conf") {
+		// read the whole config to []byte.
+		var d *json.Decoder
+		if f, err := os.Open(conf); err != nil {
+			return err
+		} else {
+			defer f.Close()
+
+			d = json.NewDecoder(NewReader(f))
+			//d = json.NewDecoder(f)
+		}
+
+		if err := d.Decode(c); err != nil {
+			return err
+		}
 	} else {
-		defer f.Close()
+		// srs-style config.
+		var p *srsConfParser
+		if f, err := os.Open(conf); err != nil {
+			return err
+		} else {
+			defer f.Close()
 
-		d = json.NewDecoder(NewReader(f))
-		//d = json.NewDecoder(f)
-	}
+			p = NewSrsConfParser(f)
+		}
 
-	// decode config from stream.
-	if err := d.Decode(c); err != nil {
-		return err
+		if err := p.Decode(c); err != nil {
+			return err
+		}
 	}
 
 	// when parse EOF, reparse the config.
