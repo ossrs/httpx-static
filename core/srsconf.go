@@ -184,9 +184,6 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 				}
 				return err
 			}
-			if len(dir.name) == 0 {
-				return srsConfInvalid
-			}
 			v.directives = append(v.directives, dir)
 		}
 	}
@@ -196,6 +193,7 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 		return io.EOF
 	}
 
+	// must be something invalid.
 	return srsConfInvalid
 }
 
