@@ -89,6 +89,17 @@ func BenchmarkConfigBasic(b *testing.B) {
 	}
 }
 
+func TestJsonCommentReader(t *testing.T) {
+	r := NewReader(strings.NewReader("winlin//comment\nyang/*abc*/2015'str/*//*/'"))
+	b,err := ioutil.ReadAll(r)
+	if err != nil {
+		t.Error("failed, err is", err)
+	}
+	if string(b) != `winlinyang2015'str/*//*/'` {
+		t.Error("failed, str is", string(b))
+	}
+}
+
 func TestConfigReader(t *testing.T) {
 	f := func(vs []string, eh func(string, string, string), ef func(error)) {
 		for i := 0; i < len(vs)-1; i += 2 {

@@ -43,88 +43,13 @@ func (v *srsConfDirective) ParseDirectives(s *bufio.Scanner) (err error) {
 	return
 }
 
-type srsConfState uint8
-const (
-	ScsInit srsConfState = iota
-	ScsText
-	ScsNoComment
-	ScsComment
-)
-
 // the reader support bash-style comment,
 //      line: # comments
-type srsConfCommentReader struct {
-	quotation byte
-	st srsConfState
-	br *bufio.Reader
-}
-
 func NewSrsConfCommentReader(r io.Reader) io.Reader {
-	return &srsConfCommentReader{
-		br: bufio.NewReader(r),
-		st: ScsInit,
-	}
-}
-
-// interface io.Reader
-func (v *srsConfCommentReader) Read(p []byte) (n int, err error) {
-	for n < len(p) {
-		// from init to working state.
-		if v.st == ScsInit {
-			var match bool
-			if match,err = startsWith(v.br, '#'); err != nil {
-				if err == io.EOF {
-					v.st = ScsText
-					continue
-				}
-				return
-			} else if match {
-				v.st = ScsComment
-			} else {
-				v.st = ScsText
-				continue
-			}
-			if _, err = v.br.Discard(1); err != nil {
-				return
-			}
-		}
-
-		// discard all newline, like \n \r
-		if v.st == ScsComment {
-			if err = discardUtilAny(v.br, '\n', '\r'); err != nil {
-				return
-			}
-			if err = discardUtilNot(v.br, '\n', '\r'); err != nil {
-				return
-			}
-		}
-
-		// append text.
-		if v.st == ScsText || v.st == ScsNoComment {
-			var ch byte
-			if ch,err = v.br.ReadByte(); err != nil {
-				return
-			}
-			if v.st == ScsText {
-				if ch == '"' || ch == '\'' {
-					v.quotation = ch
-					v.st = ScsNoComment
-				}
-			} else {
-				if ch == v.quotation {
-					v.st = ScsText
-				}
-			}
-			p[n] = ch
-			n++
-		}
-
-		// reset to init state.
-		if v.st != ScsNoComment {
-			v.st = ScsInit
-		}
-	}
-	return
+	startMatches := [][]byte{ []byte("'"), []byte("\""), []byte("#"), }
+	endMatches := [][]byte{ []byte("'"), []byte("\""), []byte("\n"), }
+	isComments := []bool { false, false, true, }
+	return NewCommendReader(r, startMatches, endMatches, isComments)
 }
 
 // parse the srs style config.

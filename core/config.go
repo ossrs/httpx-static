@@ -28,7 +28,6 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
-	"bufio"
 	"strings"
 )
 
@@ -66,105 +65,14 @@ type ReloadHandler interface {
 	OnReloadVhost(vhost string, scope int, cc, pc *Config) (err error)
 }
 
-// the state for json with comment parser.
-type jsonState uint8
-const (
-	JsInit jsonState = iota
-	JsText
-	JsNoComment
-	JsBlockComment
-	JsLineComment
-)
-
 // the reader support c++-style comment,
 //      block: /* comments */
 //      line: // comments
-type jsonCommentReader struct {
-	st jsonState
-	br *bufio.Reader
-}
-
 func NewReader(r io.Reader) io.Reader {
-	return &jsonCommentReader{
-		br: bufio.NewReader(r),
-		st: JsInit,
-	}
-}
-
-// interface io.Reader
-func (v *jsonCommentReader) Read(p []byte) (n int, err error) {
-	for n < len(p) {
-		// from init to working state.
-		if v.st == JsInit {
-			var match bool
-			if match,err = startsWith(v.br, '/', '*'); err != nil {
-				if err == io.EOF {
-					v.st = JsText
-					continue
-				}
-				return
-			} else if match {
-				v.st = JsBlockComment
-			} else if match,err = startsWith(v.br, '/', '/'); err != nil {
-				if err == io.EOF {
-					v.st = JsText
-					continue
-				}
-				return
-			} else if match {
-				v.st = JsLineComment
-			} else {
-				v.st = JsText
-				continue
-			}
-			if _, err = v.br.Discard(2); err != nil {
-				return
-			}
-		}
-
-		// block comment state, expect eof with */
-		if v.st == JsBlockComment {
-			if err = discardUtil(v.br, '*', '/'); err != nil {
-				return
-			}
-			if _,err = v.br.Discard(2); err != nil {
-				return
-			}
-		}
-
-		// discard all newline, like \n \r
-		if v.st == JsLineComment {
-			if err = discardUtilAny(v.br, '\n', '\r'); err != nil {
-				return
-			}
-			if err = discardUtilNot(v.br, '\n', '\r'); err != nil {
-				return
-			}
-		}
-
-		// append text.
-		if v.st == JsText || v.st == JsNoComment {
-			var ch byte
-			if ch,err = v.br.ReadByte(); err != nil {
-				return
-			}
-			if ch == '"' {
-				if v.st == JsText {
-					v.st = JsNoComment
-				} else {
-					v.st = JsText
-				}
-			}
-			p[n] = ch
-			n++
-		}
-
-		// reset to init state.
-		if v.st != JsNoComment {
-			v.st = JsInit
-		}
-	}
-	return
+	startMatches := [][]byte{ []byte("'"), []byte("\""), []byte("//"), []byte("/*"), }
+	endMatches := [][]byte{ []byte("'"), []byte("\""), []byte("\n"), []byte("*/"), }
+	isComments := []bool { false, false, true, true, }
+	return NewCommendReader(r, startMatches, endMatches, isComments)
 }
 
 // the vhost section in config.

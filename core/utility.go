@@ -29,6 +29,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"time"
+	"io"
 "bufio"
 )
 
@@ -178,75 +179,95 @@ func Unmarshals(b *bytes.Buffer, o ...UnmarshalSizer) (err error) {
 	return
 }
 
-// whether the reader start with sequence by flags.
-func startsWith(r *bufio.Reader, flags ...byte) (match bool, err error) {
-	var pk []byte
-	if pk,err = r.Peek(len(flags)); err != nil {
-		return
-	}
-	for i := 0; i < len(pk); i++ {
-		if pk[i] != flags[i] {
-			return false,nil
-		}
-	}
-	return true,nil
-}
+// get the first match in flags.
+// @return the matched pos in data and the index of flags.
+func FirstMatch(data []byte, flags [][]byte) (pos, index int) {
+	pos = -1
+	index = pos
 
-// discard util the reader starts with sequence by flags.
-func discardUtil(r *bufio.Reader, flags ...byte) (err error) {
-	for {
-		var match bool
-		if match,err = startsWith(r, flags...); err != nil {
-			return
-		} else if match {
-			return nil
-		}
-		if _,err = r.Discard(1); err != nil {
-			return
-		}
-	}
-	return
-}
-
-// discard util any flags match.
-func discardUtilAny(r *bufio.Reader, flags ...byte) (err error) {
-	var pk []byte
-	for {
-		if pk,err = r.Peek(1); err != nil {
-			return
-		}
-		for _,v := range flags {
-			if pk[0] == v {
-				return
+	for i,flag := range flags {
+		if position := bytes.Index(data, flag); position >= 0 {
+			if pos > position || pos == -1 {
+				pos = position
+				index = i
 			}
 		}
-		if _,err = r.Discard(1); err != nil {
-			return
-		}
 	}
+
 	return
 }
 
-// discard util all flags not match.
-func discardUtilNot(r *bufio.Reader, flags ...byte) (err error) {
-	var pk []byte
-	for {
-		if pk,err = r.Peek(1); err != nil {
-			return
+// the reader support comment with start and end chars.
+type CommentReader struct {
+	b *bytes.Buffer
+	s *bufio.Scanner
+}
+
+func NewCommendReader(r io.Reader, startMatches, endMatches [][]byte, isComments []bool) io.Reader {
+	v := &CommentReader{
+		s: bufio.NewScanner(r),
+		b: &bytes.Buffer{},
+	}
+
+	v.s.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error){
+		if atEOF && len(data) == 0 {
+			// read more.
+			return 0, nil, nil
 		}
-		var match bool
-		for _,v := range flags {
-			if pk[0] == v {
-				match = true
+
+		pos, index := FirstMatch(data, startMatches)
+		if pos == -1 || index == -1 {
+			if atEOF {
+				return len(data), data[:], nil
+			}
+			return 0,nil,nil
+		}
+
+		var extra int
+		left := data[pos + len(startMatches[index]):]
+		if extra = bytes.Index(left, endMatches[index]); extra == -1 {
+			if atEOF {
+				extra = len(left) - len(endMatches[index])
+			} else {
+				return 0,nil,nil
+			}
+		}
+
+		// always consume util end of match.
+		advance = pos + len(startMatches[index]) + extra + len(endMatches[index])
+
+		if !isComments[index] {
+			return advance, data[:advance], nil
+		}
+		return advance, data[:pos], nil
+	})
+	return v
+}
+
+// interface io.Reader
+func (v *CommentReader) Read(p []byte) (n int, err error) {
+	for {
+		if v.b.Len() > 0 {
+			return v.b.Read(p)
+		}
+
+		for v.s.Scan() {
+			if len(v.s.Bytes()) > 0 {
+				if _,err = v.b.Write(v.s.Bytes()); err != nil {
+					return
+				}
 				break
 			}
 		}
-		if !match {
+
+		if err = v.s.Err(); err != nil {
 			return
 		}
-		if _,err = r.Discard(1); err != nil {
-			return
+
+		if v.b.Len() == 0 {
+			return 0,io.EOF
 		}
 	}
+
 	return
 }
