@@ -31,6 +31,7 @@ import (
 	"time"
 	"io"
 "bufio"
+	"errors"
 )
 
 // the buffered random, for the rand is not thread-safe.
@@ -203,7 +204,8 @@ type CommentReader struct {
 	s *bufio.Scanner
 }
 
-func NewCommendReader(r io.Reader, startMatches, endMatches [][]byte, isComments []bool) io.Reader {
+var commentNotMatch = errors.New("comment not match")
+func NewCommendReader(r io.Reader, startMatches, endMatches [][]byte, isComments, requiredMatches []bool) io.Reader {
 	v := &CommentReader{
 		s: bufio.NewScanner(r),
 		b: &bytes.Buffer{},
@@ -227,6 +229,9 @@ func NewCommendReader(r io.Reader, startMatches, endMatches [][]byte, isComments
 		left := data[pos + len(startMatches[index]):]
 		if extra = bytes.Index(left, endMatches[index]); extra == -1 {
 			if atEOF {
+				if requiredMatches[index] {
+					return 0,nil,commentNotMatch
+				}
 				extra = len(left) - len(endMatches[index])
 			} else {
 				return 0,nil,nil

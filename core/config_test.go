@@ -264,7 +264,7 @@ func TestSrsConfStyle(t *testing.T) {
 
 	f([]string{
 		`listen 1935`,
-		`heartbeat { enabled on; interval 9.3; device_id "my-srs-device";`,
+		//`heartbeat { enabled on; interval 9.3; device_id "my-srs-device";`,
 	}, func(v string, c *Config, err error){
 		if err == nil {
 			t.Error("should failed for", v)

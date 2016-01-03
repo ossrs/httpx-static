@@ -72,7 +72,8 @@ func NewReader(r io.Reader) io.Reader {
 	startMatches := [][]byte{ []byte("'"), []byte("\""), []byte("//"), []byte("/*"), }
 	endMatches := [][]byte{ []byte("'"), []byte("\""), []byte("\n"), []byte("*/"), }
 	isComments := []bool { false, false, true, true, }
-	return NewCommendReader(r, startMatches, endMatches, isComments)
+	requiredMatches := []bool { true, true, false, true, }
+	return NewCommendReader(r, startMatches, endMatches, isComments, requiredMatches)
 }
 
 // the vhost section in config.
@@ -81,8 +82,18 @@ type Vhost struct {
 	Play *Play  `json:"play"`
 }
 
+func NewConfVhost() *Vhost {
+	return &Vhost{
+		Play: NewConfPlay(),
+	}
+}
+
 type Play struct {
 	MwLatency int `json:"mw_latency`
+}
+
+func NewConfPlay() *Play {
+	return &Play{}
 }
 
 // the config for this application,
@@ -200,7 +211,7 @@ func (c *Config) Loads(conf string) error {
 		}
 	} else {
 		// srs-style config.
-		var p *srsConfParser
+		var p *SrsConfParser
 		if f, err := os.Open(conf); err != nil {
 			return err
 		} else {
