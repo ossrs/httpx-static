@@ -81,7 +81,7 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
 		return
 	}
-	core.Trace.Println("rtmp listen at", ep)
+	core.Trace.Println("rtmp listen at", fmt.Sprintf("tcp://%v", c.Listen))
 
 	// accept cycle
 	v.wc.GFork("", func(wc core.WorkerContainer) {

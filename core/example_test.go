@@ -30,6 +30,7 @@ import (
 
 func ExampleConfig_Loads() {
 	c := core.NewConfig()
+	c.SetDefaults()
 
 	//if err := c.Loads("config.json"); err != nil {
 	//    panic(err)

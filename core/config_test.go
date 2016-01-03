@@ -30,6 +30,7 @@ import (
 
 func TestConfigBasic(t *testing.T) {
 	c := NewConfig()
+	c.SetDefaults()
 
 	if c.Workers != 0 {
 		t.Error("workers failed.")
@@ -85,6 +86,17 @@ func BenchmarkConfigBasic(b *testing.B) {
 	cc := NewConfig()
 	if err := pc.Reload(cc); err != nil {
 		b.Error("reload failed.")
+	}
+}
+
+func TestJsonCommentReader(t *testing.T) {
+	r := NewReader(strings.NewReader("winlin//comment\nyang/*abc*/2015'str/*//*/'"))
+	b,err := ioutil.ReadAll(r)
+	if err != nil {
+		t.Error("failed, err is", err)
+	}
+	if string(b) != `winlinyang2015'str/*//*/'` {
+		t.Error("failed, str is", string(b))
 	}
 }
 
@@ -196,6 +208,133 @@ func TestConfigComments(t *testing.T) {
 	}, func(v string, o interface{}, err error) {
 		if err == nil {
 			t.Error("show failed for", v)
+		}
+	})
+}
+
+func TestSrsConfCommentReader(t *testing.T) {
+	f := func(vs []string, eh func(string, string, error)) {
+		for _, v := range vs {
+			p := NewSrsConfCommentReader(strings.NewReader(v))
+			str,err := ioutil.ReadAll(p)
+			eh(v, string(str), err)
+		}
+	}
+
+	f([]string{
+		`string#`,
+		`string#comments`,
+		`string# comments `,
+		`string# comments # xxx`,
+	}, func(v, pv string, err error) {
+		if err != nil {
+			t.Error("should pass for", v, "and parsed to", pv, "actual err is", err)
+		}
+		if pv != "string" {
+			t.Error("failed for", v, "and parsed to", pv)
+		}
+	})
+
+	f([]string{
+		`'string #vvv'`,
+		`'string #vvv'# comments`,
+		`'string #vvv'# comments # xxx`,
+		`"string #vvv"`,
+		`"string #vvv"# comments`,
+	}, func(v, pv string, err error) {
+		if err != nil {
+			t.Error("should pass for", v, "and parsed to", pv, "actual err is", err)
+		}
+		pv = strings.Trim(pv, `"'`)
+		if pv != "string #vvv" {
+			t.Error("failed for", v, "and parsed to", pv)
+		}
+	})
+}
+
+func TestSrsConfStyle(t *testing.T) {
+	f := func(vs []string, eh func(string, *Config, error)) {
+		for _,v := range vs {
+			p := NewSrsConfParser(strings.NewReader(v))
+			c := NewConfig()
+			err := p.Decode(c)
+			eh(v, c, err)
+		}
+	}
+
+	f([]string{
+		`listen 1935`,
+		//`heartbeat { enabled on; interval 9.3; device_id "my-srs-device";`,
+	}, func(v string, c *Config, err error){
+		if err == nil {
+			t.Error("should failed for", v)
+		}
+	})
+
+	f([]string{
+		`listen 1935;`,
+		`listen    1935;`,
+		`listen 1935; # comments`,
+		`# comments
+		listen 1935;`,
+		`# comments
+		listen 1935; # comments`,
+	}, func(v string, c *Config, err error){
+		if err != nil {
+			t.Error("should pass for", v, "actual err is", err)
+		}
+		if c.Listen != 1935 {
+			t.Errorf("failed '%v', expect listen=1935, actual is %v", v, c.Listen)
+		}
+	})
+
+	f([]string{
+		`srs_log_file "./objs/#srs.log";`,
+		`srs_log_file './objs/#srs.log';`,
+	}, func(v string, c *Config, err error){
+		if err != nil {
+			t.Error("should pass for", v, "actual err is", err)
+		}
+		if c.Log.File != "./objs/#srs.log" {
+			t.Errorf("failed '%v', expect log file='./objs/#srs.log', actual is %v", v, c.Log.File)
+		}
+	})
+
+	f([]string{
+		`listen 1935; chunk_size 60000;`,
+		`listen 1935;
+		chunk_size 60000;`,
+		`listen 1935;
+
+		chunk_size 60000;`,
+	}, func(v string, c *Config, err error){
+		if err != nil {
+			t.Error("should pass for", v, "actual err is", err)
+		}
+		if c.Listen != 1935 {
+			t.Errorf("should pass for '%v', expect listen=1935, actual is %v", v, c.Listen)
+		}
+		if c.ChunkSize != 60000 {
+			t.Errorf("failed '%v', expect chunk_size=60000, actual is %v", v, c.ChunkSize)
+		}
+	})
+
+	f([]string{
+		`heartbeat {
+			enabled on; interval 9.3; device_id "my-srs-device";
+		}`,
+	}, func(v string, c *Config, err error){
+		if err != nil {
+			t.Error("should pass for", v, "actual err is", err)
+		}
+		if !c.Heartbeat.Enabled {
+			t.Error("failed", v, "for disabled.")
+		}
+		if c.Heartbeat.Interval != 9.3 {
+			t.Error("failed", v, "for interval", c.Heartbeat.Interval, "!= 9.3")
+		}
+		if c.Heartbeat.DeviceId != "my-srs-device" {
+			t.Error("failed", v, "for device_id", c.Heartbeat.DeviceId, "!= my-srs-device")
 		}
 	})
 }

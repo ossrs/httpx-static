@@ -28,6 +28,7 @@ import (
 	"io"
 	"io/ioutil"
 	"os"
+	"strings"
 )
 
 // the scope for reload.
@@ -67,168 +68,12 @@ type ReloadHandler interface {
 // the reader support c++-style comment,
 //      block: /* comments */
 //      line: // comments
-type Reader struct {
-	attention int // attention please, maybe comments.
-	f         funcReader
-	r         io.Reader
-}
-
 func NewReader(r io.Reader) io.Reader {
-	return &Reader{r: r}
-}
-
-// read from r into p, return actual n bytes, the next handler and err indicates error.
-type funcReader func(r io.Reader, p []byte) (n int, next funcReader, err error)
-
-// interface io.Reader
-func (v *Reader) Read(p []byte) (n int, err error) {
-	var lineReader funcReader
-	var blockReader funcReader
-	var contentReader funcReader
-	var stringReader funcReader
-
-	lineReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
-		b := make([]byte, 1)
-		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
-			return
-		}
-
-		// skip any util \n
-		if b[0] != '\n' {
-			return 0, lineReader, nil
-		}
-
-		return 0, contentReader, nil
-	})
-
-	stringReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
-		b := make([]byte, 1)
-		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
-			return
-		}
-
-		p[0] = b[0]
-
-		if b[0] == '"' {
-			return 1, contentReader, err
-		}
-
-		return 1, stringReader, err
-	})
-
-	blockReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
-		if len(p) < v.attention+1 {
-			return 0, nil, nil
-		}
-
-		// read one byte more.
-		b := make([]byte, 1)
-		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
-			// when EOF, ok for content or content reader,
-			// but invalid for block reader.
-			if err == io.EOF {
-				return 0, nil, errors.New("block comments should not EOF")
-			}
-			return
-		}
-
-		// skip any util */
-		if b[0] != '/' && b[0] != '*' {
-			return 0, blockReader, nil
-		}
-
-		// attention
-		if b[0] == '*' {
-			v.attention = 1
-			return 0, blockReader, nil
-		}
-
-		// eof comments.
-		if v.attention != 0 && b[0] == '/' {
-			v.attention = 0
-			return 0, contentReader, nil
-		}
-
-		panic(fmt.Sprintf("invalid block, attention=%v, b=%v", v.attention, b[0]))
-		return
-	})
-
-	contentReader = funcReader(func(r io.Reader, p []byte) (n int, next funcReader, err error) {
-		if len(p) < v.attention+1 {
-			return 0, nil, nil
-		}
-
-		// read one byte more.
-		b := make([]byte, 1)
-		if n, err = io.ReadAtLeast(r, b, 1); err != nil {
-			return
-		}
-
-		// 2byte push.
-		if v.attention != 0 && b[0] != '/' && b[0] != '*' {
-			p[0] = '/'
-			p[1] = b[0]
-			if b[0] == '"' {
-				return 2, stringReader, err
-			}
-			return 2, contentReader, err
-		}
-
-		// 1byte push.
-		if v.attention == 0 && b[0] != '/' {
-			p[0] = b[0]
-			if b[0] == '"' {
-				return 1, stringReader, err
-			}
-			return 1, contentReader, err
-		}
-
-		// attention
-		if v.attention == 0 && b[0] == '/' {
-			v.attention = 1
-			return 0, contentReader, err
-		}
-
-		// line comments.
-		if v.attention != 0 && b[0] == '/' {
-			v.attention = 0
-			return 0, lineReader, err
-		}
-
-		// block comments.
-		if v.attention != 0 && b[0] == '*' {
-			v.attention = 0
-			return 0, blockReader, err
-		}
-
-		panic(fmt.Sprintf("invalid content, attention=%v, b=%v", v.attention, b[0]))
-		return
-	})
-
-	// start using normal byte reader.
-	var f funcReader
-	if f = v.f; f == nil {
-		f = contentReader
-	}
-
-	// read util full or no func reader specified.
-	for i := 0; f != nil && i < len(p); {
-		var ne int
-		if ne, f, err = f(v.r, p[i:]); err != nil {
-			break
-		}
-
-		// apply the consumed bytes.
-		n += ne
-		i += ne
-
-		// remember the last handler we use.
-		if f != nil {
-			v.f = f
-		}
-	}
-
-	return
+	startMatches := [][]byte{ []byte("'"), []byte("\""), []byte("//"), []byte("/*"), }
+	endMatches := [][]byte{ []byte("'"), []byte("\""), []byte("\n"), []byte("*/"), }
+	isComments := []bool { false, false, true, true, }
+	requiredMatches := []bool { true, true, false, true, }
+	return NewCommendReader(r, startMatches, endMatches, isComments, requiredMatches)
 }
 
 // the vhost section in config.
@@ -237,8 +82,18 @@ type Vhost struct {
 	Play *Play  `json:"play"`
 }
 
+func NewConfVhost() *Vhost {
+	return &Vhost{
+		Play: NewConfPlay(),
+	}
+}
+
 type Play struct {
 	MwLatency int `json:"mw_latency`
+}
+
+func NewConfPlay() *Play {
+	return &Play{}
 }
 
 // the config for this application,
@@ -304,6 +159,15 @@ func NewConfig() *Config {
 		vhosts:         make(map[string]*Vhost),
 	}
 
+	return c
+}
+
+// get the config file path.
+func (c *Config) Conf() string {
+	return c.conf
+}
+
+func (c *Config) SetDefaults() {
 	c.Listen = RtmpListen
 	c.Workers = 0
 	c.Daemon = true
@@ -320,33 +184,45 @@ func NewConfig() *Config {
 	c.Log.Tank = "file"
 	c.Log.Level = "trace"
 	c.Log.File = "oryx.log"
-
-	return c
-}
-
-// get the config file path.
-func (c *Config) Conf() string {
-	return c.conf
 }
 
 // loads and validate config from config file.
 func (c *Config) Loads(conf string) error {
 	c.conf = conf
 
-	// read the whole config to []byte.
-	var d *json.Decoder
-	if f, err := os.Open(conf); err != nil {
-		return err
+	// set default config values.
+	c.SetDefaults()
+
+	// json style should not be *.conf
+	if !strings.HasSuffix(conf, ".conf") {
+		// read the whole config to []byte.
+		var d *json.Decoder
+		if f, err := os.Open(conf); err != nil {
+			return err
+		} else {
+			defer f.Close()
+
+			d = json.NewDecoder(NewReader(f))
+			//d = json.NewDecoder(f)
+		}
+
+		if err := d.Decode(c); err != nil {
+			return err
+		}
 	} else {
-		defer f.Close()
+		// srs-style config.
+		var p *SrsConfParser
+		if f, err := os.Open(conf); err != nil {
+			return err
+		} else {
+			defer f.Close()
 
-		d = json.NewDecoder(NewReader(f))
-		//d = json.NewDecoder(f)
-	}
+			p = NewSrsConfParser(f)
+		}
 
-	// decode config from stream.
-	if err := d.Decode(c); err != nil {
-		return err
+		if err := p.Decode(c); err != nil {
+			return err
+		}
 	}
 
 	// when parse EOF, reparse the config.
