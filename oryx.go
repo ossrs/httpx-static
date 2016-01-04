@@ -73,7 +73,7 @@ func main() {
 	flag.StringVar(&confFile, "c", "", "the config file")
 	flag.StringVar(&confFile, "conf", "", "the config file")
 
-	flag.Usage = func(){
+	flag.Usage = func() {
 		fmt.Println(fmt.Sprintf("Usage: %v [-c|--conf <filename>] [-?|-h|--help]", os.Args[0]))
 		fmt.Println(fmt.Sprintf("	-c, --conf filename     : the config file path"))
 		fmt.Println(fmt.Sprintf("	-?, -h, --help          : show this help and exit"))

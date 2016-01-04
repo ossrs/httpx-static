@@ -91,7 +91,7 @@ func BenchmarkConfigBasic(b *testing.B) {
 
 func TestJsonCommentReader(t *testing.T) {
 	r := NewReader(strings.NewReader("winlin//comment\nyang/*abc*/2015'str/*//*/'"))
-	b,err := ioutil.ReadAll(r)
+	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		t.Error("failed, err is", err)
 	}
@@ -216,7 +216,7 @@ func TestSrsConfCommentReader(t *testing.T) {
 	f := func(vs []string, eh func(string, string, error)) {
 		for _, v := range vs {
 			p := NewSrsConfCommentReader(strings.NewReader(v))
-			str,err := ioutil.ReadAll(p)
+			str, err := ioutil.ReadAll(p)
 			eh(v, string(str), err)
 		}
 	}
@@ -254,7 +254,7 @@ func TestSrsConfCommentReader(t *testing.T) {
 
 func TestSrsConfStyle(t *testing.T) {
 	f := func(vs []string, eh func(string, *Config, error)) {
-		for _,v := range vs {
+		for _, v := range vs {
 			p := NewSrsConfParser(strings.NewReader(v))
 			c := NewConfig()
 			err := p.Decode(c)
@@ -265,7 +265,7 @@ func TestSrsConfStyle(t *testing.T) {
 	f([]string{
 		`listen 1935`,
 		//`heartbeat { enabled on; interval 9.3; device_id "my-srs-device";`,
-	}, func(v string, c *Config, err error){
+	}, func(v string, c *Config, err error) {
 		if err == nil {
 			t.Error("should failed for", v)
 		}
@@ -279,7 +279,7 @@ func TestSrsConfStyle(t *testing.T) {
 		listen 1935;`,
 		`# comments
 		listen 1935; # comments`,
-	}, func(v string, c *Config, err error){
+	}, func(v string, c *Config, err error) {
 		if err != nil {
 			t.Error("should pass for", v, "actual err is", err)
 		}
@@ -291,7 +291,7 @@ func TestSrsConfStyle(t *testing.T) {
 	f([]string{
 		`srs_log_file "./objs/#srs.log";`,
 		`srs_log_file './objs/#srs.log';`,
-	}, func(v string, c *Config, err error){
+	}, func(v string, c *Config, err error) {
 		if err != nil {
 			t.Error("should pass for", v, "actual err is", err)
 		}
@@ -307,7 +307,7 @@ func TestSrsConfStyle(t *testing.T) {
 		`listen 1935;
 
 		chunk_size 60000;`,
-	}, func(v string, c *Config, err error){
+	}, func(v string, c *Config, err error) {
 		if err != nil {
 			t.Error("should pass for", v, "actual err is", err)
 		}
@@ -323,7 +323,7 @@ func TestSrsConfStyle(t *testing.T) {
 		`heartbeat {
 			enabled on; interval 9.3; device_id "my-srs-device";
 		}`,
-	}, func(v string, c *Config, err error){
+	}, func(v string, c *Config, err error) {
 		if err != nil {
 			t.Error("should pass for", v, "actual err is", err)
 		}

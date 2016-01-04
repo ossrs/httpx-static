@@ -69,10 +69,10 @@ type ReloadHandler interface {
 //      block: /* comments */
 //      line: // comments
 func NewReader(r io.Reader) io.Reader {
-	startMatches := [][]byte{ []byte("'"), []byte("\""), []byte("//"), []byte("/*"), }
-	endMatches := [][]byte{ []byte("'"), []byte("\""), []byte("\n"), []byte("*/"), }
-	isComments := []bool { false, false, true, true, }
-	requiredMatches := []bool { true, true, false, true, }
+	startMatches := [][]byte{[]byte("'"), []byte("\""), []byte("//"), []byte("/*")}
+	endMatches := [][]byte{[]byte("'"), []byte("\""), []byte("\n"), []byte("*/")}
+	isComments := []bool{false, false, true, true}
+	requiredMatches := []bool{true, true, false, true}
 	return NewCommendReader(r, startMatches, endMatches, isComments, requiredMatches)
 }
 

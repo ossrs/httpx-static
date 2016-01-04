@@ -22,23 +22,23 @@
 package core
 
 import (
-	"io"
 	"bufio"
 	"bytes"
+	"errors"
+	"io"
 	"strconv"
 	"strings"
-	"errors"
 )
 
 type srsConfDirective struct {
-	name string
-	args []string
+	name       string
+	args       []string
 	directives []*srsConfDirective
 }
 
 func NewSrsConfDirective() *srsConfDirective {
 	return &srsConfDirective{
-		args: make([]string, 0),
+		args:       make([]string, 0),
 		directives: make([]*srsConfDirective, 0),
 	}
 }
@@ -65,15 +65,15 @@ func (v *srsConfDirective) Arg2() string {
 }
 
 func (v *srsConfDirective) Get(name string, args ...string) *srsConfDirective {
-	mainLoop:
-	for _,v := range v.directives {
+mainLoop:
+	for _, v := range v.directives {
 		if v.name != name {
 			continue
 		}
 		if len(args) > len(v.args) {
 			continue
 		}
-		for i,arg := range args {
+		for i, arg := range args {
 			if arg != v.args[i] {
 				continue mainLoop
 			}
@@ -93,16 +93,16 @@ var scanString = func(data []byte, atEOF bool) (advance int, token []byte, err e
 		if atEOF {
 			return 0, nil, stringNotMatch
 		}
-		return 0,nil,nil
+		return 0, nil, nil
 	}
 
 	if i := bytes.IndexByte(data[1:], data[0]); i < 0 {
 		if atEOF {
 			return 0, nil, stringNotMatch
 		}
-		return 0,nil,nil
+		return 0, nil, nil
 	} else {
-		return i+2,data[:i+2], nil
+		return i + 2, data[:i+2], nil
 	}
 	return
 }
@@ -111,9 +111,10 @@ var srsConfEndOfObject = errors.New("object EOF")
 var srsConfStartOfObject = errors.New("object START")
 var srsConfEndOfDirective = errors.New("directive EOF")
 var srsConfInvalid = errors.New("invalid srs config")
+
 func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 	// name and args.
-	s.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error){
+	s.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 {
 			return 0, nil, nil
 		}
@@ -122,7 +123,7 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 			return scanString(data, atEOF)
 		}
 
-		advance,token,err = bufio.ScanWords(data, atEOF)
+		advance, token, err = bufio.ScanWords(data, atEOF)
 		if err != nil || token == nil {
 			return
 		}
@@ -133,7 +134,7 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 		}
 
 		if i == 0 {
-			return 1,token[:1],nil
+			return 1, token[:1], nil
 		} else if i > 0 {
 			token = token[:i]
 			advance = bytes.Index(data, token) + len(token)
@@ -200,10 +201,10 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 // the reader support bash-style comment,
 //      line: # comments
 func NewSrsConfCommentReader(r io.Reader) io.Reader {
-	startMatches := [][]byte{ []byte("'"), []byte("\""), []byte("#"), }
-	endMatches := [][]byte{ []byte("'"), []byte("\""), []byte("\n"), }
-	isComments := []bool { false, false, true, }
-	requiredMatches := []bool { true, true, false, }
+	startMatches := [][]byte{[]byte("'"), []byte("\""), []byte("#")}
+	endMatches := [][]byte{[]byte("'"), []byte("\""), []byte("\n")}
+	isComments := []bool{false, false, true}
+	requiredMatches := []bool{true, true, false}
 	return NewCommendReader(r, startMatches, endMatches, isComments, requiredMatches)
 }
 
@@ -234,7 +235,7 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 	}
 
 	if d := root.Get("listen"); d != nil {
-		if c.Listen,err = strconv.Atoi(d.Arg0()); err != nil {
+		if c.Listen, err = strconv.Atoi(d.Arg0()); err != nil {
 			return
 		}
 	}
@@ -250,7 +251,7 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 	}
 
 	if d := root.Get("chunk_size"); d != nil {
-		if c.ChunkSize,err = strconv.Atoi(d.Arg0()); err != nil {
+		if c.ChunkSize, err = strconv.Atoi(d.Arg0()); err != nil {
 			return
 		}
 	}
@@ -263,7 +264,7 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 			c.Heartbeat.Enabled = srs_switch2bool(d.Arg0())
 		}
 		if d := d.Get("interval"); d != nil {
-			if c.Heartbeat.Interval,err = strconv.ParseFloat(d.Arg0(), 64); err != nil {
+			if c.Heartbeat.Interval, err = strconv.ParseFloat(d.Arg0(), 64); err != nil {
 				return
 			}
 		}
@@ -280,13 +281,13 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 
 	if d := root.Get("stats"); d != nil {
 		if d := d.Get("network"); d != nil {
-			if c.Stat.Network,err = strconv.Atoi(d.Arg0()); err != nil {
+			if c.Stat.Network, err = strconv.Atoi(d.Arg0()); err != nil {
 				return
 			}
 		}
 		if d := d.Get("disk"); d != nil {
 			c.Stat.Disks = make([]string, 0)
-			for _,v := range d.args {
+			for _, v := range d.args {
 				c.Stat.Disks = append(c.Stat.Disks, v)
 			}
 		}
@@ -304,7 +305,7 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 
 		if d := d.Get("play"); d != nil {
 			if d := d.Get("mw_latency"); d != nil {
-				if vhost.Play.MwLatency,err = strconv.Atoi(d.Arg0()); err != nil {
+				if vhost.Play.MwLatency, err = strconv.Atoi(d.Arg0()); err != nil {
 					return
 				}
 			}
@@ -317,4 +318,3 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 func srs_switch2bool(v string) bool {
 	return v == "on"
 }
-

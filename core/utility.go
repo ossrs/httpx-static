@@ -22,16 +22,16 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"encoding"
+	"errors"
+	"io"
 	"math/rand"
 	"reflect"
 	"runtime"
 	"runtime/debug"
 	"time"
-	"io"
-"bufio"
-	"errors"
 )
 
 // the buffered random, for the rand is not thread-safe.
@@ -186,7 +186,7 @@ func FirstMatch(data []byte, flags [][]byte) (pos, index int) {
 	pos = -1
 	index = pos
 
-	for i,flag := range flags {
+	for i, flag := range flags {
 		if position := bytes.Index(data, flag); position >= 0 {
 			if pos > position || pos == -1 {
 				pos = position
@@ -205,13 +205,14 @@ type CommentReader struct {
 }
 
 var commentNotMatch = errors.New("comment not match")
+
 func NewCommendReader(r io.Reader, startMatches, endMatches [][]byte, isComments, requiredMatches []bool) io.Reader {
 	v := &CommentReader{
 		s: bufio.NewScanner(r),
 		b: &bytes.Buffer{},
 	}
 
-	v.s.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error){
+	v.s.Split(func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF && len(data) == 0 {
 			// read more.
 			return 0, nil, nil
@@ -222,19 +223,19 @@ func NewCommendReader(r io.Reader, startMatches, endMatches [][]byte, isComments
 			if atEOF {
 				return len(data), data[:], nil
 			}
-			return 0,nil,nil
+			return 0, nil, nil
 		}
 
 		var extra int
-		left := data[pos + len(startMatches[index]):]
+		left := data[pos+len(startMatches[index]):]
 		if extra = bytes.Index(left, endMatches[index]); extra == -1 {
 			if atEOF {
 				if requiredMatches[index] {
-					return 0,nil,commentNotMatch
+					return 0, nil, commentNotMatch
 				}
 				extra = len(left) - len(endMatches[index])
 			} else {
-				return 0,nil,nil
+				return 0, nil, nil
 			}
 		}
 
@@ -258,7 +259,7 @@ func (v *CommentReader) Read(p []byte) (n int, err error) {
 
 		for v.s.Scan() {
 			if len(v.s.Bytes()) > 0 {
-				if _,err = v.b.Write(v.s.Bytes()); err != nil {
+				if _, err = v.b.Write(v.s.Bytes()); err != nil {
 					return
 				}
 				break
@@ -270,7 +271,7 @@ func (v *CommentReader) Read(p []byte) (n int, err error) {
 		}
 
 		if v.b.Len() == 0 {
-			return 0,io.EOF
+			return 0, io.EOF
 		}
 	}
 
