@@ -97,12 +97,12 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Println(fmt.Sprintf("Usage: %v [-c|--conf <filename>] [-?|-h|--help] [-v|-V|--version] [-g|--signature]", os.Args[0]))
-		fmt.Println(fmt.Sprintf("	-c, --conf filename     : the config file path"))
-		fmt.Println(fmt.Sprintf("	-?, -h, --help          : show this help and exit"))
-		fmt.Println(fmt.Sprintf("	-v, -V, --version       : print version and exit"))
-		fmt.Println(fmt.Sprintf("	-g, --signature         : print server signature and exit"))
+		fmt.Println(fmt.Sprintf("	    -c, --conf filename     : the config file path"))
+		fmt.Println(fmt.Sprintf("	    -?, -h, --help          : show this help and exit"))
+		fmt.Println(fmt.Sprintf("	    -v, -V, --version       : print version and exit"))
+		fmt.Println(fmt.Sprintf("	    -g, --signature         : print server signature and exit"))
 		fmt.Println(fmt.Sprintf("For example:"))
-		fmt.Println(fmt.Sprintf("	%v -c conf/oryx.json", os.Args[0]))
+		fmt.Println(fmt.Sprintf("	    %v -c conf/oryx.json", os.Args[0]))
 	}
 	flag.Parse()
 
