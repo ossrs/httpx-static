@@ -41,10 +41,10 @@ func OryxSigStableBranch() string {
 }
 
 // project info.
-const OryxSigKey = "SRS"
+const OryxSigKey = "Oryx"
 const OryxSigCode = "MonkeyKing"
 const OryxSigRole = "cluster"
-const OryxSigName = OryxSigKey + "(Simple RTMP Server)"
+const OryxSigName = OryxSigKey + "(SRS++)"
 const OryxSigUrlShort = "github.com/ossrs/go-oryx"
 const OryxSigUrl = "https://" + OryxSigUrlShort
 const OryxSigWeb = "http://ossrs.net"
@@ -52,6 +52,7 @@ const OryxSigEmail = "winlin@vip.126.com"
 const OryxSigLicense = "The MIT License (MIT)"
 const OryxSigCopyright = "Copyright (c) 2013-2015 Oryx(ossrs)"
 const OryxSigAuthors = "winlin"
+const OryxSigProduct = "The go-oryx is SRS++, focus on real-time live streaming cluster."
 
 func OryxSigPrimary() string {
 	return fmt.Sprintf("Oryx/%v", OryxSigStable)

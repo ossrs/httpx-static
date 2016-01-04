@@ -46,8 +46,9 @@ func serve(svr *app.Server) int {
 
 	oryxMain(svr)
 
-	core.Trace.Println("Copyright (c) 2013-2015 Oryx(ossrs)")
-	core.Trace.Println(fmt.Sprintf("go-oryx/%v is advanced SRS, focus on realtime live streaming.", core.Version()))
+	core.Trace.Println(core.OryxSigServer())
+	core.Trace.Println(core.OryxSigCopyright)
+	core.Trace.Println(core.OryxSigProduct)
 
 	if err := svr.Initialize(); err != nil {
 		core.Error.Println("initialize server failed, err is", err)
@@ -63,31 +64,64 @@ func serve(svr *app.Server) int {
 }
 
 func main() {
-	// the startup argv:
+	// the args format:
 	//          -c conf/oryx.json
 	//          --c conf/oryx.json
 	//          -c=conf/oryx.json
 	//          --c=conf/oryx.json
 	//          --conf=conf/oryx.json
 	var confFile string
-	flag.StringVar(&confFile, "c", "", "the config file")
-	flag.StringVar(&confFile, "conf", "", "the config file")
+	if true {
+		dv := ""
+		ua := "the config file"
+		flag.StringVar(&confFile, "c", dv, ua)
+		flag.StringVar(&confFile, "conf", dv, ua)
+	}
+
+	var showHelp bool
+	if true {
+		dv := false
+		ua := "print version"
+		flag.BoolVar(&showHelp, "v", dv, ua)
+		flag.BoolVar(&showHelp, "V", dv, ua)
+		flag.BoolVar(&showHelp, "version", dv, ua)
+	}
+
+	var showSignature bool
+	if true {
+		dv := false
+		ua := "print signature"
+		flag.BoolVar(&showSignature, "g", dv, ua)
+		flag.BoolVar(&showSignature, "signature", dv, ua)
+	}
 
 	flag.Usage = func() {
-		fmt.Println(fmt.Sprintf("Usage: %v [-c|--conf <filename>] [-?|-h|--help]", os.Args[0]))
+		fmt.Println(fmt.Sprintf("Usage: %v [-c|--conf <filename>] [-?|-h|--help] [-v|-V|--version] [-g|--signature]", os.Args[0]))
 		fmt.Println(fmt.Sprintf("	-c, --conf filename     : the config file path"))
 		fmt.Println(fmt.Sprintf("	-?, -h, --help          : show this help and exit"))
+		fmt.Println(fmt.Sprintf("	-v, -V, --version       : print version and exit"))
+		fmt.Println(fmt.Sprintf("	-g, --signature         : print server signature and exit"))
 		fmt.Println(fmt.Sprintf("For example:"))
 		fmt.Println(fmt.Sprintf("	%v -c conf/oryx.json", os.Args[0]))
 	}
 	flag.Parse()
 
-	// show help without conf.
+	if showHelp {
+		fmt.Fprintln(os.Stderr, core.Version())
+		os.Exit(0)
+	}
+
+	if showSignature {
+		fmt.Fprintln(os.Stderr, core.OryxSigServer())
+		os.Exit(0)
+	}
+
 	if len(confFile) == 0 {
 		flag.Usage()
 		os.Exit(0)
 	}
 
+	fmt.Println(fmt.Sprintf("%v signature is %v", core.OryxSigName, core.OryxSigServer()))
 	ret := func() int {
 		svr := app.NewServer()
 		defer svr.Close()
