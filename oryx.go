@@ -68,23 +68,32 @@ func main() {
 	//          --c conf/oryx.json
 	//          -c=conf/oryx.json
 	//          --c=conf/oryx.json
-	var confFile = flag.String("c", "conf/oryx.json", "the config file.")
+	//          --conf=conf/oryx.json
+	var confFile string
+	flag.StringVar(&confFile, "c", "", "the config file")
+	flag.StringVar(&confFile, "conf", "", "the config file")
 
 	flag.Usage = func(){
-		fmt.Println(fmt.Sprintf("Usage: %v [--c=string] [-h|--help]", os.Args[0]))
-		fmt.Println(fmt.Sprintf("	c, the config file path"))
-		fmt.Println(fmt.Sprintf("	help, show this help and exit"))
+		fmt.Println(fmt.Sprintf("Usage: %v [-c|--conf <filename>] [-?|-h|--help]", os.Args[0]))
+		fmt.Println(fmt.Sprintf("	-c, --conf filename     : the config file path"))
+		fmt.Println(fmt.Sprintf("	-?, -h, --help          : show this help and exit"))
 		fmt.Println(fmt.Sprintf("For example:"))
-		fmt.Println(fmt.Sprintf("	%v --c=conf/oryx.json", os.Args[0]))
+		fmt.Println(fmt.Sprintf("	%v -c conf/oryx.json", os.Args[0]))
 	}
 	flag.Parse()
+
+	// show help without conf.
+	if len(confFile) == 0 {
+		flag.Usage()
+		os.Exit(0)
+	}
 
 	ret := func() int {
 		svr := app.NewServer()
 		defer svr.Close()
 
-		if err := svr.ParseConfig(*confFile); err != nil {
-			core.Error.Println("parse config from", *confFile, "failed, err is", err)
+		if err := svr.ParseConfig(confFile); err != nil {
+			core.Error.Println("parse config from", confFile, "failed, err is", err)
 			return -1
 		}
 
