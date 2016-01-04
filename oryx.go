@@ -96,6 +96,7 @@ func main() {
 	}
 
 	flag.Usage = func() {
+		fmt.Println(core.OryxSigProduct)
 		fmt.Println(fmt.Sprintf("Usage: %v [-c|--conf <filename>] [-?|-h|--help] [-v|-V|--version] [-g|--signature]", os.Args[0]))
 		fmt.Println(fmt.Sprintf("	    -c, --conf filename     : the config file path"))
 		fmt.Println(fmt.Sprintf("	    -?, -h, --help          : show this help and exit"))
