@@ -211,7 +211,7 @@ func (c *Config) Loads(conf string) error {
 		}
 	} else {
 		// srs-style config.
-		var p *SrsConfParser
+		var p *srsConfParser
 		if f, err := os.Open(conf); err != nil {
 			return err
 		} else {

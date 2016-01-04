@@ -208,17 +208,17 @@ func NewSrsConfCommentReader(r io.Reader) io.Reader {
 }
 
 // parse the srs style config.
-type SrsConfParser struct {
+type srsConfParser struct {
 	r io.Reader
 }
 
-func NewSrsConfParser(r io.Reader) *SrsConfParser {
-	return &SrsConfParser{
+func NewSrsConfParser(r io.Reader) *srsConfParser {
+	return &srsConfParser{
 		r: NewSrsConfCommentReader(r),
 	}
 }
 
-func (v *SrsConfParser) Decode(c *Config) (err error) {
+func (v *srsConfParser) Decode(c *Config) (err error) {
 	root := NewSrsConfDirective()
 
 	s := bufio.NewScanner(v.r)

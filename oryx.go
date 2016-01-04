@@ -38,13 +38,6 @@ import (
 	"os"
 )
 
-// the startup argv:
-//          -c conf/oryx.json
-//          --c conf/oryx.json
-//          -c=conf/oryx.json
-//          --c=conf/oryx.json
-var confFile = flag.String("c", "conf/oryx.json", "the config file.")
-
 func serve(svr *app.Server) int {
 	if err := svr.PrepareLogger(); err != nil {
 		core.Error.Println("prepare logger failed, err is", err)
@@ -70,7 +63,20 @@ func serve(svr *app.Server) int {
 }
 
 func main() {
-	// TODO: FIXME: refine refer to https://github.com/winlinvip/go-writev/pull/2
+	// the startup argv:
+	//          -c conf/oryx.json
+	//          --c conf/oryx.json
+	//          -c=conf/oryx.json
+	//          --c=conf/oryx.json
+	var confFile = flag.String("c", "conf/oryx.json", "the config file.")
+
+	flag.Usage = func(){
+		fmt.Println(fmt.Sprintf("Usage: %v [--c=string] [-h|--help]", os.Args[0]))
+		fmt.Println(fmt.Sprintf("	c, the config file path"))
+		fmt.Println(fmt.Sprintf("	help, show this help and exit"))
+		fmt.Println(fmt.Sprintf("For example:"))
+		fmt.Println(fmt.Sprintf("	%v --c=conf/oryx.json", os.Args[0]))
+	}
 	flag.Parse()
 
 	ret := func() int {
