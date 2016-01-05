@@ -46,8 +46,7 @@ func serve(svr *app.Server) int {
 
 	oryxMain(svr)
 
-	core.Trace.Println(core.OryxSigServer())
-	core.Trace.Println(core.OryxSigCopyright)
+	core.Trace.Println(core.OryxSigServer(), core.OryxSigCopyright)
 	core.Trace.Println(core.OryxSigProduct)
 
 	if err := svr.Initialize(); err != nil {
@@ -63,14 +62,13 @@ func serve(svr *app.Server) int {
 	return 0
 }
 
-func main() {
+func parseArgv() (confFile string) {
 	// the args format:
 	//          -c conf/oryx.json
 	//          --c conf/oryx.json
 	//          -c=conf/oryx.json
 	//          --c=conf/oryx.json
 	//          --conf=conf/oryx.json
-	var confFile string
 	if true {
 		dv := ""
 		ua := "the config file"
@@ -119,10 +117,16 @@ func main() {
 
 	if len(confFile) == 0 {
 		flag.Usage()
-		os.Exit(0)
+		os.Exit(-1)
 	}
 
+	return
+}
+
+func main() {
+	confFile := parseArgv()
 	fmt.Println(fmt.Sprintf("%v signature is %v", core.OryxSigName, core.OryxSigServer()))
+
 	ret := func() int {
 		svr := app.NewServer()
 		defer svr.Close()
