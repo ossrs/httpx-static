@@ -28,6 +28,7 @@ import (
 )
 
 type DupAgent struct {
+	ctx core.Context
 	upstream core.Agent
 	sources  []core.Agent
 
@@ -44,8 +45,9 @@ type DupAgent struct {
 	lastTimestamp uint64
 }
 
-func NewDupAgent() core.Agent {
+func NewDupAgent(ctx core.Context) core.Agent {
 	return &DupAgent{
+		ctx: ctx,
 		sources: make([]core.Agent, 0),
 	}
 }
@@ -59,11 +61,15 @@ func (v *DupAgent) Close() (err error) {
 }
 
 func (v *DupAgent) Pump() (err error) {
-	core.Error.Println("dup agent not support pump.")
+	ctx := v.ctx
+
+	core.Error.Println(ctx, "dup agent not support pump.")
 	return AgentNotSupportError
 }
 
 func (v *DupAgent) Write(m core.Message) (err error) {
+	ctx := v.ctx
+
 	var ok bool
 	var om *protocol.OryxRtmpMessage
 	if om, ok = m.(*protocol.OryxRtmpMessage); !ok {
@@ -76,13 +82,13 @@ func (v *DupAgent) Write(m core.Message) (err error) {
 	// cache the sequence header.
 	if om.Metadata {
 		v.msh = om.Copy()
-		core.Trace.Println("cache metadta sh.")
+		core.Trace.Println(ctx, "cache metadta sh.")
 	} else if om.VideoSequenceHeader {
 		v.vsh = om.Copy()
-		core.Trace.Println("cache video sh.")
+		core.Trace.Println(ctx, "cache video sh.")
 	} else if om.AudioSequenceHeader {
 		v.ash = om.Copy()
-		core.Trace.Println("cache audio sh.")
+		core.Trace.Println(ctx, "cache audio sh.")
 	}
 
 	// copy to all agents.

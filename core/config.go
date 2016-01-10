@@ -144,16 +144,18 @@ type Config struct {
 	// the vhosts section.
 	Vhosts []*Vhost `json:"vhosts"`
 
+	ctx Context `json:"-"`
 	conf           string            `json:"-"` // the config file path.
 	reloadHandlers []ReloadHandler   `json:"-"`
 	vhosts         map[string]*Vhost `json:"-"`
 }
 
 // the current global config.
-var Conf = NewConfig()
+var Conf *Config
 
-func NewConfig() *Config {
+func NewConfig(ctx Context) *Config {
 	c := &Config{
+		ctx: ctx,
 		reloadHandlers: []ReloadHandler{},
 		Vhosts:         make([]*Vhost, 0),
 		vhosts:         make(map[string]*Vhost),
@@ -163,8 +165,8 @@ func NewConfig() *Config {
 }
 
 // get the config file path.
-func (c *Config) Conf() string {
-	return c.conf
+func (v *Config) Conf() string {
+	return v.conf
 }
 
 func (c *Config) SetDefaults() {
@@ -187,11 +189,11 @@ func (c *Config) SetDefaults() {
 }
 
 // loads and validate config from config file.
-func (c *Config) Loads(conf string) error {
-	c.conf = conf
+func (v *Config) Loads(conf string) error {
+	v.conf = conf
 
 	// set default config values.
-	c.SetDefaults()
+	v.SetDefaults()
 
 	// json style should not be *.conf
 	if !strings.HasSuffix(conf, ".conf") {
@@ -206,7 +208,7 @@ func (c *Config) Loads(conf string) error {
 			//d = json.NewDecoder(f)
 		}
 
-		if err := d.Decode(c); err != nil {
+		if err := d.Decode(v); err != nil {
 			return err
 		}
 	} else {
@@ -220,18 +222,18 @@ func (c *Config) Loads(conf string) error {
 			p = NewSrsConfParser(f)
 		}
 
-		if err := p.Decode(c); err != nil {
+		if err := p.Decode(v); err != nil {
 			return err
 		}
 	}
 
 	// when parse EOF, reparse the config.
-	if err := c.reparse(); err != nil {
+	if err := v.reparse(); err != nil {
 		return err
 	}
 
 	// validate the config.
-	if err := c.Validate(); err != nil {
+	if err := v.Validate(); err != nil {
 		return err
 	}
 
@@ -239,29 +241,29 @@ func (c *Config) Loads(conf string) error {
 }
 
 // reparse the config, to compatible and better structure.
-func (c *Config) reparse() (err error) {
+func (v *Config) reparse() (err error) {
 	// check vhost, never dup name.
-	for _, v := range c.Vhosts {
-		if _, ok := c.vhosts[v.Name]; ok {
-			return fmt.Errorf("dup vhost name is", v.Name)
+	for _, p := range v.Vhosts {
+		if _, ok := v.vhosts[p.Name]; ok {
+			return fmt.Errorf("dup vhost name is", p.Name)
 		}
 
-		c.vhosts[v.Name] = v
+		v.vhosts[p.Name] = p
 	}
 
 	// gc percent 0 to use system default(100).
-	if c.Go.GcPercent == 0 {
-		c.Go.GcPercent = 100
+	if v.Go.GcPercent == 0 {
+		v.Go.GcPercent = 100
 	}
 
 	// default values for vhosts.
-	for _, v := range c.Vhosts {
-		if v.Play != nil {
-			if v.Play.MwLatency == 0 {
+	for _, p := range v.Vhosts {
+		if p.Play != nil {
+			if p.Play.MwLatency == 0 {
 				// how many messages send in a group.
 				// one message is about 14ms for RTMP audio and video.
 				// @remark 0 to disable group messages to send one by one.
-				v.Play.MwLatency = defaultMwLatency
+				p.Play.MwLatency = defaultMwLatency
 			}
 		}
 	}
@@ -270,41 +272,43 @@ func (c *Config) reparse() (err error) {
 }
 
 // validate the config whether ok.
-func (c *Config) Validate() error {
-	if c.Log.Level == "info" {
-		Warn.Println("info level hurts performance")
+func (v *Config) Validate() error {
+	ctx := v.ctx
+
+	if v.Log.Level == "info" {
+		Warn.Println(ctx, "info level hurts performance")
 	}
 
-	if len(c.Stat.Disks) > 0 {
-		Warn.Println("stat disks not support")
+	if len(v.Stat.Disks) > 0 {
+		Warn.Println(ctx, "stat disks not support")
 	}
 
-	if c.Workers < 0 || c.Workers > 64 {
-		return fmt.Errorf("workers must in [0, 64], actual is %v", c.Workers)
+	if v.Workers < 0 || v.Workers > 64 {
+		return fmt.Errorf("workers must in [0, 64], actual is %v", v.Workers)
 	}
-	if c.Listen <= 0 || c.Listen > 65535 {
-		return fmt.Errorf("listen must in (0, 65535], actual is %v", c.Listen)
+	if v.Listen <= 0 || v.Listen > 65535 {
+		return fmt.Errorf("listen must in (0, 65535], actual is %v", v.Listen)
 	}
-	if c.ChunkSize < 128 || c.ChunkSize > 65535 {
-		return fmt.Errorf("chunk_size must in [128, 65535], actual is %v", c.ChunkSize)
-	}
-
-	if c.Go.GcInterval < 0 || c.Go.GcInterval > 24*3600 {
-		return fmt.Errorf("go gc_interval must in [0, 24*3600], actual is %v", c.Go.GcInterval)
+	if v.ChunkSize < 128 || v.ChunkSize > 65535 {
+		return fmt.Errorf("chunk_size must in [128, 65535], actual is %v", v.ChunkSize)
 	}
 
-	if c.Log.Level != "info" && c.Log.Level != "trace" && c.Log.Level != "warn" && c.Log.Level != "error" {
-		return fmt.Errorf("log.leve must be info/trace/warn/error, actual is %v", c.Log.Level)
+	if v.Go.GcInterval < 0 || v.Go.GcInterval > 24*3600 {
+		return fmt.Errorf("go gc_interval must in [0, 24*3600], actual is %v", v.Go.GcInterval)
 	}
-	if c.Log.Tank != "console" && c.Log.Tank != "file" {
-		return fmt.Errorf("log.tank must be console/file, actual is %v", c.Log.Tank)
+
+	if v.Log.Level != "info" && v.Log.Level != "trace" && v.Log.Level != "warn" && v.Log.Level != "error" {
+		return fmt.Errorf("log.leve must be info/trace/warn/error, actual is %v", v.Log.Level)
 	}
-	if c.Log.Tank == "file" && len(c.Log.File) == 0 {
+	if v.Log.Tank != "console" && v.Log.Tank != "file" {
+		return fmt.Errorf("log.tank must be console/file, actual is %v", v.Log.Tank)
+	}
+	if v.Log.Tank == "file" && len(v.Log.File) == 0 {
 		return errors.New("log.file must not be empty for file tank")
 	}
 
-	for i, v := range c.Vhosts {
-		if v.Name == "" {
+	for i, p := range v.Vhosts {
+		if p.Name == "" {
 			return fmt.Errorf("the %v vhost is empty", i)
 		}
 	}
@@ -313,29 +317,29 @@ func (c *Config) Validate() error {
 }
 
 // whether log tank is file
-func (c *Config) LogToFile() bool {
-	return c.Log.Tank == "file"
+func (v *Config) LogToFile() bool {
+	return v.Log.Tank == "file"
 }
 
 // get the log tank writer for specified level.
 // the param dw is the default writer.
-func (c *Config) LogTank(level string, dw io.Writer) io.Writer {
-	if c.Log.Level == "info" {
+func (v *Config) LogTank(level string, dw io.Writer) io.Writer {
+	if v.Log.Level == "info" {
 		return dw
 	}
-	if c.Log.Level == "trace" {
+	if v.Log.Level == "trace" {
 		if level == "info" {
 			return ioutil.Discard
 		}
 		return dw
 	}
-	if c.Log.Level == "warn" {
+	if v.Log.Level == "warn" {
 		if level == "info" || level == "trace" {
 			return ioutil.Discard
 		}
 		return dw
 	}
-	if c.Log.Level == "error" {
+	if v.Log.Level == "error" {
 		if level != "error" {
 			return ioutil.Discard
 		}
@@ -347,36 +351,39 @@ func (c *Config) LogTank(level string, dw io.Writer) io.Writer {
 
 // subscribe the reload event,
 // when got reload event, notify all handlers.
-func (c *Config) Subscribe(h ReloadHandler) {
+func (v *Config) Subscribe(h ReloadHandler) {
 	// ignore exists.
-	for _, v := range c.reloadHandlers {
+	for _, v := range v.reloadHandlers {
 		if v == h {
 			return
 		}
 	}
 
-	c.reloadHandlers = append(c.reloadHandlers, h)
+	v.reloadHandlers = append(v.reloadHandlers, h)
 }
 
-func (c *Config) Unsubscribe(h ReloadHandler) {
-	for i, v := range c.reloadHandlers {
-		if v == h {
-			c.reloadHandlers = append(c.reloadHandlers[:i], c.reloadHandlers[i+1:]...)
+func (v *Config) Unsubscribe(h ReloadHandler) {
+	for i, p := range v.reloadHandlers {
+		if p == h {
+			v.reloadHandlers = append(v.reloadHandlers[:i], v.reloadHandlers[i+1:]...)
 			return
 		}
 	}
 }
 
-func (pc *Config) Reload(cc *Config) (err error) {
+func (v *Config) Reload(cc *Config) (err error) {
+	pc := v
+	ctx := v.ctx
+
 	if cc.Workers != pc.Workers {
 		for _, h := range cc.reloadHandlers {
 			if err = h.OnReloadGlobal(ReloadWorkers, cc, pc); err != nil {
 				return
 			}
 		}
-		Trace.Println("reload apply workers ok")
+		Trace.Println(ctx, "reload apply workers ok")
 	} else {
-		Info.Println("reload ignore workers")
+		Info.Println(ctx, "reload ignore workers")
 	}
 
 	if cc.Log.File != pc.Log.File || cc.Log.Level != pc.Log.Level || cc.Log.Tank != pc.Log.Tank {
@@ -385,9 +392,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		Trace.Println("reload apply log ok")
+		Trace.Println(ctx, "reload apply log ok")
 	} else {
-		Info.Println("reload ignore log")
+		Info.Println(ctx, "reload ignore log")
 	}
 
 	if cc.Listen != pc.Listen {
@@ -396,9 +403,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		Trace.Println("reload apply listen ok")
+		Trace.Println(ctx, "reload apply listen ok")
 	} else {
-		Info.Println("reload ignore listen")
+		Info.Println(ctx, "reload ignore listen")
 	}
 
 	if cc.Go.CpuProfile != pc.Go.CpuProfile {
@@ -407,9 +414,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		Trace.Println("reload apply cpu profile ok")
+		Trace.Println(ctx, "reload apply cpu profile ok")
 	} else {
-		Info.Println("reload ignore cpu profile")
+		Info.Println(ctx, "reload ignore cpu profile")
 	}
 
 	if cc.Go.GcPercent != pc.Go.GcPercent {
@@ -418,9 +425,9 @@ func (pc *Config) Reload(cc *Config) (err error) {
 				return
 			}
 		}
-		Trace.Println("reload apply gc percent ok")
+		Trace.Println(ctx, "reload apply gc percent ok")
 	} else {
-		Info.Println("reload ignore gc percent")
+		Info.Println(ctx, "reload ignore gc percent")
 	}
 
 	// vhost specified.
@@ -431,35 +438,35 @@ func (pc *Config) Reload(cc *Config) (err error) {
 					return
 				}
 			}
-			Trace.Println("reload apply vhost.play.mw-latency ok")
+			Trace.Println(ctx, "reload apply vhost.play.mw-latency ok")
 		} else {
-			Info.Println("reload ignore vhost.play.mw-latency")
+			Info.Println(ctx, "reload ignore vhost.play.mw-latency")
 		}
 	}
 
 	return
 }
 
-func (c *Config) Vhost(name string) (*Vhost, error) {
-	if v, ok := c.vhosts[name]; ok {
+func (v *Config) Vhost(name string) (*Vhost, error) {
+	if v, ok := v.vhosts[name]; ok {
 		return v, nil
 	}
 
 	if name != RtmpDefaultVhost {
-		return c.Vhost(RtmpDefaultVhost)
+		return v.Vhost(RtmpDefaultVhost)
 	}
 
 	return nil, VhostNotFoundError
 }
 
-func (c *Config) VhostGroupMessages(vhost string) (n int, err error) {
-	var v *Vhost
-	if v, err = c.Vhost(vhost); err != nil {
+func (v *Config) VhostGroupMessages(vhost string) (n int, err error) {
+	var p *Vhost
+	if p, err = v.Vhost(vhost); err != nil {
 		return
 	}
 
-	if v.Play == nil {
+	if p.Play == nil {
 		return defaultMwLatency / 14, nil
 	}
-	return v.Play.MwLatency / 14, nil
+	return p.Play.MwLatency / 14, nil
 }

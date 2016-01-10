@@ -33,13 +33,15 @@ import (
 )
 
 type Heartbeat struct {
+	ctx core.Context
 	ips      []string
 	exportIp string
 	lock     sync.Mutex
 }
 
-func NewHeartbeat() *Heartbeat {
+func NewHeartbeat(ctx core.Context) *Heartbeat {
 	return &Heartbeat{
+		ctx: ctx,
 		ips: []string{},
 	}
 }
@@ -49,7 +51,9 @@ const (
 	discoveryRefreshInterval = 3600 * time.Second
 )
 
-func (h *Heartbeat) discoveryCycle(w core.WorkerContainer) {
+func (v *Heartbeat) discoveryCycle(w core.WorkerContainer) {
+	ctx := v.ctx
+
 	interval := time.Duration(0)
 	for {
 		select {
@@ -57,16 +61,16 @@ func (h *Heartbeat) discoveryCycle(w core.WorkerContainer) {
 			w.Quit()
 			return
 		case <-time.After(interval):
-			core.Info.Println("start to discovery network every", interval)
+			core.Info.Println(ctx, "start to discovery network every", interval)
 
-			if err := h.discovery(); err != nil {
-				core.Warn.Println("heartbeat discovery failed, err is", err)
+			if err := v.discovery(); err != nil {
+				core.Warn.Println(ctx, "heartbeat discovery failed, err is", err)
 			} else {
-				if len(h.ips) <= 0 {
+				if len(v.ips) <= 0 {
 					interval = discoveryEmptyInterval
 					continue
 				}
-				core.Trace.Println("local ip is", h.ips, "exported", h.exportIp)
+				core.Trace.Println(ctx, "local ip is", v.ips, "exported", v.exportIp)
 				interval = discoveryRefreshInterval
 			}
 		}
@@ -75,7 +79,9 @@ func (h *Heartbeat) discoveryCycle(w core.WorkerContainer) {
 	return
 }
 
-func (h *Heartbeat) beatCycle(w core.WorkerContainer) {
+func (v *Heartbeat) beatCycle(w core.WorkerContainer) {
+	ctx := v.ctx
+
 	for {
 		c := &core.Conf.Heartbeat
 
@@ -88,20 +94,22 @@ func (h *Heartbeat) beatCycle(w core.WorkerContainer) {
 				continue
 			}
 
-			core.Info.Println("start to heartbeat every", c.Interval)
+			core.Info.Println(ctx, "start to heartbeat every", c.Interval)
 
-			if err := h.beat(); err != nil {
-				core.Warn.Println("heartbeat to", c.Url, "every", c.Interval, "failed, err is", err)
+			if err := v.beat(); err != nil {
+				core.Warn.Println(ctx, "heartbeat to", c.Url, "every", c.Interval, "failed, err is", err)
 			} else {
-				core.Info.Println("heartbeat to", c.Url, "every", c.Interval)
+				core.Info.Println(ctx, "heartbeat to", c.Url, "every", c.Interval)
 			}
 		}
 	}
 }
 
-func (h *Heartbeat) discovery() (err error) {
-	h.lock.Lock()
-	defer h.lock.Unlock()
+func (v *Heartbeat) discovery() (err error) {
+	ctx := v.ctx
+
+	v.lock.Lock()
+	defer v.lock.Unlock()
 
 	// check whether the ip is ok to export.
 	vf := func(ip net.IP) bool {
@@ -124,7 +132,7 @@ func (h *Heartbeat) discovery() (err error) {
 		return
 	}
 
-	h.ips = []string{}
+	v.ips = []string{}
 	for _, iface := range ifaces {
 		var addrs []net.Addr
 		if addrs, err = iface.Addrs(); err != nil {
@@ -133,46 +141,48 @@ func (h *Heartbeat) discovery() (err error) {
 
 		// dumps all network interfaces.
 		for _, addr := range addrs {
-			if v, ok := ipf(addr); ok {
-				core.Trace.Println("iface", iface.Name, "ip is", v)
-				h.ips = append(h.ips, v)
+			if p, ok := ipf(addr); ok {
+				core.Trace.Println(ctx, "iface", iface.Name, "ip is", p)
+				v.ips = append(v.ips, p)
 			} else {
-				core.Info.Println("iface", iface.Name, addr, reflect.TypeOf(addr))
+				core.Info.Println(ctx, "iface", iface.Name, addr, reflect.TypeOf(addr))
 			}
 		}
 	}
 
 	// choose one as exported network address.
-	if len(h.ips) > 0 {
-		h.exportIp = h.ips[core.Conf.Stat.Network%len(h.ips)]
+	if len(v.ips) > 0 {
+		v.exportIp = v.ips[core.Conf.Stat.Network%len(v.ips)]
 	}
 	return
 }
 
-func (h *Heartbeat) beat() (err error) {
-	h.lock.Lock()
-	defer h.lock.Unlock()
+func (v *Heartbeat) beat() (err error) {
+	ctx := v.ctx
 
-	if len(h.exportIp) <= 0 {
-		core.Info.Println("heartbeat not ready.")
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	if len(v.exportIp) <= 0 {
+		core.Info.Println(ctx, "heartbeat not ready.")
 		return
 	}
 
-	v := struct {
+	p := struct {
 		DeviceId string      `json:"device_id"`
 		Ip       string      `json:"ip"`
 		Summary  interface{} `json:"summaries,omitempty"`
 	}{}
 
 	c := &core.Conf.Heartbeat
-	v.DeviceId = c.DeviceId
-	v.Ip = h.exportIp
+	p.DeviceId = c.DeviceId
+	p.Ip = v.exportIp
 
 	if c.Summary {
 		s := NewSummary()
 		s.Ok = true
 
-		v.Summary = struct {
+		p.Summary = struct {
 			Code int      `json:"code"`
 			Data *Summary `json:"data"`
 		}{
@@ -182,10 +192,10 @@ func (h *Heartbeat) beat() (err error) {
 	}
 
 	var b []byte
-	if b, err = json.Marshal(&v); err != nil {
+	if b, err = json.Marshal(&p); err != nil {
 		return
 	}
-	core.Info.Println("heartbeat info is", string(b))
+	core.Info.Println(ctx, "heartbeat info is", string(b))
 
 	var resp *http.Response
 	if resp, err = http.Post(c.Url, core.HttpJson, bytes.NewReader(b)); err != nil {
@@ -193,6 +203,6 @@ func (h *Heartbeat) beat() (err error) {
 	}
 	defer resp.Body.Close()
 
-	core.Info.Println("heartbeat to", c.Url, "ok")
+	core.Info.Println(ctx, "heartbeat to", c.Url, "ok")
 	return
 }

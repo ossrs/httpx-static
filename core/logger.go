@@ -25,6 +25,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"fmt"
 )
 
 const (
@@ -35,20 +36,52 @@ const (
 	LogErrorLabel = logLabel + "[error] "
 )
 
+// the context for current goroutine.
+type Context interface {
+	// get current goroutine cid.
+	Cid() int
+}
+type context int
+
+var __cid int = 100
+func NewContext() Context {
+	v := context(__cid)
+	__cid++
+	return v
+}
+
+func (v context) Cid() int {
+	return int(v)
+}
+
+// the LOG+ which provides connection-based log.
+type LogPlus struct {
+	logger *log.Logger
+}
+
+func NewLogPlus(l *log.Logger) Logger {
+	return &LogPlus{ logger: l, }
+}
+
+func (v *LogPlus) Println(ctx Context, a ...interface{}) {
+	a = append([]interface{}{fmt.Sprintf("[%v][%v]", os.Getpid(), ctx.Cid())}, a...)
+	v.logger.Println(a...)
+}
+
 // the application loggers
 // info, the verbose info level, very detail log, the lowest level, to discard.
-var Info Logger = log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags)
+var Info Logger = NewLogPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
 
 // trace, the trace level, something important, the default log level, to stdout.
-var Trace Logger = log.New(os.Stdout, LogTraceLabel, log.LstdFlags)
+var Trace Logger = NewLogPlus(log.New(os.Stdout, LogTraceLabel, log.LstdFlags))
 
 // warn, the warning level, dangerous information, to stderr.
-var Warn Logger = log.New(os.Stderr, LogWarnLabel, log.LstdFlags)
+var Warn Logger = NewLogPlus(log.New(os.Stderr, LogWarnLabel, log.LstdFlags))
 
 // error, the error level, fatal error things, ot stderr.
-var Error Logger = log.New(os.Stderr, LogErrorLabel, log.LstdFlags)
+var Error Logger = NewLogPlus(log.New(os.Stderr, LogErrorLabel, log.LstdFlags))
 
 // the logger for gsrs.
 type Logger interface {
-	Println(a ...interface{})
+	Println(ctx Context, a ...interface{})
 }

@@ -23,8 +23,10 @@
 
 package core
 
-func (c *Config) ReloadCycle(wc WorkerContainer) {
-	Warn.Println("windows does not support reload with signal.")
+func (v *Config) ReloadCycle(wc WorkerContainer) {
+	ctx := v.ctx
+
+	Warn.Println(ctx, "windows does not support reload with signal.")
 
 	// wait for server to quit.
 	<-wc.QC()

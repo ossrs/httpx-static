@@ -41,12 +41,14 @@ const (
 // time jitter detect and correct,
 // to ensure the stream is monotonically.
 type Jitter struct {
+	ctx core.Context
 	lastPacketTimestamp        int64
 	lastPacketCorrectTimestamp int64
 }
 
-func NewJitter() *Jitter {
+func NewJitter(ctx core.Context) *Jitter {
 	return &Jitter{
+		ctx: ctx,
 		lastPacketTimestamp:        -1,
 		lastPacketCorrectTimestamp: -1,
 	}
@@ -59,6 +61,8 @@ const (
 )
 
 func (v *Jitter) Correct(ts uint64, ag JitterAlgorithm) uint64 {
+	ctx := v.ctx
+
 	// for performance issue
 	if ag != Full {
 		// all jitter correct features is disabled, ignore.
@@ -102,7 +106,7 @@ func (v *Jitter) Correct(ts uint64, ag JitterAlgorithm) uint64 {
 			// @see https://github.com/ossrs/srs/issues/425
 			delta = frameIntervalMs
 
-			core.Trace.Println(fmt.Sprintf("jitter, last=%v, pts=%v, diff=%v, lastok=%v, ok=%v, delta=%v",
+			core.Trace.Println(ctx, fmt.Sprintf("jitter, last=%v, pts=%v, diff=%v, lastok=%v, ok=%v, delta=%v",
 				v.lastPacketTimestamp, time, time-v.lastPacketTimestamp, v.lastPacketCorrectTimestamp,
 				v.lastPacketCorrectTimestamp+delta, delta))
 		}

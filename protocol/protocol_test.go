@@ -30,10 +30,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	core.Info = log.New(ioutil.Discard, core.LogInfoLabel, log.LstdFlags)
-	core.Trace = log.New(ioutil.Discard, core.LogTraceLabel, log.LstdFlags)
-	core.Warn = log.New(ioutil.Discard, core.LogWarnLabel, log.LstdFlags)
-	core.Error = log.New(ioutil.Discard, core.LogErrorLabel, log.LstdFlags)
+	core.Info =  core.NewLogPlus(log.New(ioutil.Discard, core.LogInfoLabel, log.LstdFlags))
+	core.Trace = core.NewLogPlus(log.New(ioutil.Discard, core.LogTraceLabel, log.LstdFlags))
+	core.Warn =  core.NewLogPlus(log.New(ioutil.Discard, core.LogWarnLabel, log.LstdFlags))
+	core.Error = core.NewLogPlus(log.New(ioutil.Discard, core.LogErrorLabel, log.LstdFlags))
 
 	os.Exit(m.Run())
 }

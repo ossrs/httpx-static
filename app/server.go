@@ -48,6 +48,7 @@ const (
 )
 
 type Server struct {
+	ctx core.Context
 	// signal handler.
 	sigs chan os.Signal
 	// whether closed.
@@ -64,59 +65,62 @@ type Server struct {
 	lock sync.Mutex
 }
 
-func NewServer() *Server {
-	svr := &Server{
+func NewServer(ctx core.Context) *Server {
+	v := &Server{
+		ctx: ctx,
 		sigs:    make(chan os.Signal, 1),
 		closed:  StateInit,
 		closing: make(chan bool, 1),
 		quit:    make(chan bool, 1),
-		htbt:    NewHeartbeat(),
-		logger:  &simpleLogger{},
+		htbt:    NewHeartbeat(ctx),
+		logger:  &simpleLogger{ ctx: ctx, },
 	}
-	svr.rtmp = agent.NewRtmp(svr)
+	v.rtmp = agent.NewRtmp(ctx, v)
 
-	core.Conf.Subscribe(svr)
+	core.Conf.Subscribe(v)
 
-	return svr
+	return v
 }
 
 // notify server to stop and wait for cleanup.
-func (s *Server) Close() {
+func (v *Server) Close() {
+	ctx := v.ctx
+
 	// wait for stopped.
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	v.lock.Lock()
+	defer v.lock.Unlock()
 
 	// only create?
-	if s.closed == StateInit {
+	if v.closed == StateInit {
 		return
 	}
 
 	// closed?
-	if s.closed == StateClosed {
-		core.Warn.Println("server already closed.")
+	if v.closed == StateClosed {
+		core.Warn.Println(ctx, "server already closed.")
 		return
 	}
 
 	// notify to close.
-	if s.closed == StateRunning {
-		core.Info.Println("notify server to stop.")
+	if v.closed == StateRunning {
+		core.Info.Println(ctx, "notify server to stop.")
 		select {
-		case s.quit <- true:
+		case v.quit <- true:
 		default:
 		}
 	}
 
 	// wait for closed.
-	if s.closed == StateRunning {
-		<-s.closing
+	if v.closed == StateRunning {
+		<-v.closing
 	}
 
 	// do cleanup when stopped.
-	core.Conf.Unsubscribe(s)
+	core.Conf.Unsubscribe(v)
 
 	// close the rtmp agent.
-	if err := s.rtmp.Close(); err != nil {
-		core.Warn.Println("close rtmp agent failed. err is", err)
+	if err := v.rtmp.Close(); err != nil {
+		core.Warn.Println(ctx, "close rtmp agent failed. err is", err)
 	}
 
 	// close the agent manager.
@@ -125,36 +129,38 @@ func (s *Server) Close() {
 	// when cpu profile is enabled, close it.
 	if core.Conf.Go.CpuProfile != "" {
 		pprof.StopCPUProfile()
-		core.Trace.Println("cpu profile ok, file is", core.Conf.Go.CpuProfile)
+		core.Trace.Println(ctx, "cpu profile ok, file is", core.Conf.Go.CpuProfile)
 	}
 
 	// when memory profile enabled, write heap info.
 	if core.Conf.Go.MemProfile != "" {
 		if f, err := os.Create(core.Conf.Go.MemProfile); err != nil {
-			core.Warn.Println("ignore open memory profile failed. err is", err)
+			core.Warn.Println(ctx, "ignore open memory profile failed. err is", err)
 		} else {
 			defer f.Close()
 			if err = pprof.Lookup("heap").WriteTo(f, 0); err != nil {
-				core.Warn.Println("write memory profile failed. err is", err)
+				core.Warn.Println(ctx, "write memory profile failed. err is", err)
 			}
 		}
-		core.Trace.Println("mem profile ok, file is", core.Conf.Go.MemProfile)
+		core.Trace.Println(ctx, "mem profile ok, file is", core.Conf.Go.MemProfile)
 	}
 
 	// ok, closed.
-	s.closed = StateClosed
-	core.Trace.Println("server closed")
+	v.closed = StateClosed
+	core.Trace.Println(ctx, "server closed")
 }
 
-func (s *Server) ParseConfig(conf string) (err error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+func (v *Server) ParseConfig(conf string) (err error) {
+	ctx := v.ctx
 
-	if s.closed != StateInit {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	if v.closed != StateInit {
 		panic("server invalid state.")
 	}
 
-	core.Trace.Println("start to parse config file", conf)
+	core.Trace.Println(ctx, "start to parse config file", conf)
 	if err = core.Conf.Loads(conf); err != nil {
 		return
 	}
@@ -162,33 +168,35 @@ func (s *Server) ParseConfig(conf string) (err error) {
 	return
 }
 
-func (s *Server) PrepareLogger() (err error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+func (v *Server) PrepareLogger() (err error) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
 
-	if s.closed != StateInit {
+	if v.closed != StateInit {
 		panic("server invalid state.")
 	}
 
-	if err = s.applyLogger(core.Conf); err != nil {
+	if err = v.applyLogger(core.Conf); err != nil {
 		return
 	}
 
 	return
 }
 
-func (s *Server) initializeRuntime() (err error) {
+func (v *Server) initializeRuntime() (err error) {
+	ctx := v.ctx
+
 	// install signals.
 	// TODO: FIXME: when process the current signal, others may drop.
-	signal.Notify(s.sigs)
+	signal.Notify(v.sigs)
 
 	// apply the cpu profile.
-	if err = s.applyCpuProfile(core.Conf); err != nil {
+	if err = v.applyCpuProfile(core.Conf); err != nil {
 		return
 	}
 
 	// apply the gc percent.
-	if err = s.applyGcPercent(core.Conf); err != nil {
+	if err = v.applyGcPercent(core.Conf); err != nil {
 		return
 	}
 
@@ -204,7 +212,7 @@ func (s *Server) initializeRuntime() (err error) {
 					stat.Pause = append([]time.Duration{}, stat.Pause[:3]...)
 				}
 				if pgc < stat.NumGC {
-					core.Trace.Println("gc", stat.NumGC, stat.PauseTotal, stat.Pause, stat.PauseQuantiles)
+					core.Trace.Println(ctx, "gc", stat.NumGC, stat.PauseTotal, stat.Pause, stat.PauseQuantiles)
 				}
 				time.Sleep(time.Duration(core.Conf.Go.GcTrace) * time.Second)
 			} else {
@@ -216,30 +224,32 @@ func (s *Server) initializeRuntime() (err error) {
 	return
 }
 
-func (s *Server) Initialize() (err error) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+func (v *Server) Initialize() (err error) {
+	ctx := v.ctx
 
-	if s.closed != StateInit {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	if v.closed != StateInit {
 		panic("server invalid state.")
 	}
 
 	// about the runtime.
-	if err = s.initializeRuntime(); err != nil {
+	if err = v.initializeRuntime(); err != nil {
 		return
 	}
 
 	// use worker container to fork.
-	var wc core.WorkerContainer = s
+	var wc core.WorkerContainer = v
 
 	// reload goroutine
 	wc.GFork("reload", core.Conf.ReloadCycle)
 	// heartbeat goroutine
-	wc.GFork("htbt(discovery)", s.htbt.discoveryCycle)
-	wc.GFork("htbt(main)", s.htbt.beatCycle)
+	wc.GFork("htbt(discovery)", v.htbt.discoveryCycle)
+	wc.GFork("htbt(main)", v.htbt.beatCycle)
 	// open rtmp agent.
-	if err = s.rtmp.Open(); err != nil {
-		core.Error.Println("open rtmp agent failed. err is", err)
+	if err = v.rtmp.Open(); err != nil {
+		core.Error.Println(ctx, "open rtmp agent failed. err is", err)
 		return
 	}
 
@@ -248,40 +258,42 @@ func (s *Server) Initialize() (err error) {
 	if !c.LogToFile() {
 		l = fmt.Sprintf("%v(%v)", c.Log.Tank, c.Log.Level)
 	}
-	core.Trace.Println(fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v/%v%%, daemon=%v",
+	core.Trace.Println(ctx, fmt.Sprintf("init server ok, conf=%v, log=%v, workers=%v/%v, gc=%v/%v%%, daemon=%v",
 		c.Conf(), l, c.Workers, runtime.NumCPU(), c.Go.GcInterval, c.Go.GcPercent, c.Daemon))
 
 	// set to ready, requires cleanup.
-	s.closed = StateReady
+	v.closed = StateReady
 
 	return
 }
 
-func (s *Server) Run() (err error) {
-	func() {
-		s.lock.Lock()
-		defer s.lock.Unlock()
+func (v *Server) Run() (err error) {
+	ctx := v.ctx
 
-		if s.closed != StateReady {
+	func() {
+		v.lock.Lock()
+		defer v.lock.Unlock()
+
+		if v.closed != StateReady {
 			panic("server invalid state.")
 		}
-		s.closed = StateRunning
+		v.closed = StateRunning
 	}()
 
 	// when terminated, notify the chan.
 	defer func() {
 		select {
-		case s.closing <- true:
+		case v.closing <- true:
 		default:
 		}
 	}()
 
-	core.Info.Println("server cycle running")
+	core.Info.Println(ctx, "server cycle running")
 
 	// run server, apply settings.
-	s.applyMultipleProcesses(core.Conf.Workers)
+	v.applyMultipleProcesses(core.Conf.Workers)
 
-	var wc core.WorkerContainer = s
+	var wc core.WorkerContainer = v
 	for {
 		var gcc <-chan time.Time = nil
 		if core.Conf.Go.GcInterval > 0 {
@@ -289,8 +301,8 @@ func (s *Server) Run() (err error) {
 		}
 
 		select {
-		case signal := <-s.sigs:
-			core.Trace.Println("got signal", signal)
+		case signal := <-v.sigs:
+			core.Trace.Println(ctx, "got signal", signal)
 			switch signal {
 			case os.Interrupt, syscall.SIGTERM:
 				// SIGINT, SIGTERM
@@ -300,12 +312,12 @@ func (s *Server) Run() (err error) {
 			wc.Quit()
 
 			// wait for all goroutines quit.
-			s.wg.Wait()
-			core.Warn.Println("server cycle ok")
+			v.wg.Wait()
+			core.Warn.Println(ctx, "server cycle ok")
 			return
 		case <-gcc:
 			runtime.GC()
-			core.Info.Println("go runtime gc every", core.Conf.Go.GcInterval, "seconds")
+			core.Info.Println(ctx, "go runtime gc every", core.Conf.Go.GcInterval, "seconds")
 		}
 	}
 
@@ -313,45 +325,49 @@ func (s *Server) Run() (err error) {
 }
 
 // interface WorkContainer
-func (s *Server) QC() <-chan bool {
-	return s.quit
+func (v *Server) QC() <-chan bool {
+	return v.quit
 }
 
-func (s *Server) Quit() error {
+func (v *Server) Quit() error {
 	select {
-	case s.quit <- true:
+	case v.quit <- true:
 	default:
 	}
 
 	return core.QuitError
 }
 
-func (s *Server) GFork(name string, f func(core.WorkerContainer)) {
-	s.wg.Add(1)
+func (v *Server) GFork(name string, f func(core.WorkerContainer)) {
+	ctx := v.ctx
+
+	v.wg.Add(1)
 	go func() {
-		defer s.wg.Done()
+		defer v.wg.Done()
 
 		defer func() {
 			if r := recover(); r != nil {
 				if !core.IsNormalQuit(r) {
-					core.Warn.Println("rtmp ignore", r)
+					core.Warn.Println(ctx, "rtmp ignore", r)
 				}
 
-				core.Error.Println(string(debug.Stack()))
+				core.Error.Println(ctx, string(debug.Stack()))
 
-				s.Quit()
+				v.Quit()
 			}
 		}()
 
-		f(s)
+		f(v)
 
 		if name != "" {
-			core.Trace.Println(name, "worker terminated.")
+			core.Trace.Println(ctx, name, "worker terminated.")
 		}
 	}()
 }
 
-func (s *Server) applyMultipleProcesses(workers int) {
+func (v *Server) applyMultipleProcesses(workers int) {
+	ctx := v.ctx
+
 	if workers < 0 {
 		panic("should not be negative workers")
 	}
@@ -361,24 +377,28 @@ func (s *Server) applyMultipleProcesses(workers int) {
 	}
 	pv := runtime.GOMAXPROCS(workers)
 
-	core.Trace.Println("apply workers", workers, "and previous is", pv)
+	core.Trace.Println(ctx, "apply workers", workers, "and previous is", pv)
 }
 
-func (s *Server) applyLogger(c *core.Config) (err error) {
-	if err = s.logger.close(c); err != nil {
-		return
-	}
-	core.Info.Println("close logger ok")
+func (v *Server) applyLogger(c *core.Config) (err error) {
+	ctx := v.ctx
 
-	if err = s.logger.open(c); err != nil {
+	if err = v.logger.close(c); err != nil {
 		return
 	}
-	core.Info.Println("open logger ok")
+	core.Info.Println(ctx, "close logger ok")
+
+	if err = v.logger.open(c); err != nil {
+		return
+	}
+	core.Info.Println(ctx, "open logger ok")
 
 	return
 }
 
-func (s *Server) applyCpuProfile(c *core.Config) (err error) {
+func (v *Server) applyCpuProfile(c *core.Config) (err error) {
+	ctx := v.ctx
+
 	pprof.StopCPUProfile()
 
 	if c.Go.CpuProfile == "" {
@@ -387,37 +407,39 @@ func (s *Server) applyCpuProfile(c *core.Config) (err error) {
 
 	var f *os.File
 	if f, err = os.Create(c.Go.CpuProfile); err != nil {
-		core.Error.Println("open cpu profile file failed. err is", err)
+		core.Error.Println(ctx, "open cpu profile file failed. err is", err)
 		return
 	}
 	if err = pprof.StartCPUProfile(f); err != nil {
-		core.Error.Println("start cpu profile failed. err is", err)
+		core.Error.Println(ctx, "start cpu profile failed. err is", err)
 		return
 	}
 	return
 }
 
-func (s *Server) applyGcPercent(c *core.Config) (err error) {
+func (v *Server) applyGcPercent(c *core.Config) (err error) {
+	ctx := v.ctx
+
 	if c.Go.GcPercent == 0 {
 		debug.SetGCPercent(100)
 		return
 	}
 
 	pv := debug.SetGCPercent(c.Go.GcPercent)
-	core.Trace.Println("set gc percent from", pv, "to", c.Go.GcPercent)
+	core.Trace.Println(ctx, "set gc percent from", pv, "to", c.Go.GcPercent)
 	return
 }
 
 // interface ReloadHandler
-func (s *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
+func (v *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	if scope == core.ReloadWorkers {
-		s.applyMultipleProcesses(cc.Workers)
+		v.applyMultipleProcesses(cc.Workers)
 	} else if scope == core.ReloadLog {
-		s.applyLogger(cc)
+		v.applyLogger(cc)
 	} else if scope == core.ReloadCpuProfile {
-		s.applyCpuProfile(cc)
+		v.applyCpuProfile(cc)
 	} else if scope == core.ReloadGcPercent {
-		s.applyGcPercent(cc)
+		v.applyGcPercent(cc)
 	}
 
 	return
