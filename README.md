@@ -81,6 +81,7 @@ Why rewrite the SRS to go-oryx:
 1. [plan] [#35](../../issues/35) HLS: Support HLS+ Edge Cluster.
 1. [plan] [#24](../../issues/24) RTMP: Support standard uri like http. 
 1. [plan] [#46](../../issues/46) Codec: Support encode the audio and video device to stream.
+1. [plan] [#47](../../issues/47) System: Support copy stream to another vhost.
 
 Winlin 2015.10
 
