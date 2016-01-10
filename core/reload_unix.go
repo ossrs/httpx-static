@@ -44,14 +44,14 @@ func (v *Config) ReloadCycle(wc WorkerContainer) {
 			Trace.Println(ctx, "start reload by", signal)
 
 			if err := v.doReload(); err != nil {
+				defer wc.Quit()
 				Error.Println(ctx, "quit for reload failed. err is", err)
-				wc.Quit()
 				return
 			}
 
 		case <-wc.QC():
-			Warn.Println(ctx, "user stop reload")
-			wc.Quit()
+			defer wc.Quit()
+			Warn.Println(ctx, "user stop server")
 			return
 		}
 	}
