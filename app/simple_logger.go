@@ -30,52 +30,57 @@ import (
 // the simple logger which implements the interface
 // and log to console or file.
 type simpleLogger struct {
+	ctx core.Context
 	file *os.File
 }
 
 // TODO: FIXME: maybe we can got goroutine id by reflect.
-func (l *simpleLogger) open(c *core.Config) (err error) {
-	core.Info.Println("apply log tank", c.Log.Tank)
-	core.Info.Println("apply log level", c.Log.Level)
+func (v *simpleLogger) open(c *core.Config) (err error) {
+	ctx := v.ctx
+
+	core.Info.Println(ctx, "apply log tank", c.Log.Tank)
+	core.Info.Println(ctx, "apply log level", c.Log.Level)
 
 	if c.LogToFile() {
-		core.Trace.Println("apply log", c.Log.Tank, c.Log.Level, c.Log.File)
-		core.Trace.Println("please see detail of log: tailf", c.Log.File)
+		core.Trace.Println(ctx, "apply log", c.Log.Tank, c.Log.Level, c.Log.File)
+		core.Trace.Println(ctx, "please see detail of log: tailf", c.Log.File)
 
-		if l.file, err = os.OpenFile(c.Log.File, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
-			core.Error.Println("open log file", c.Log.File, "failed, err is", err)
+		if v.file, err = os.OpenFile(c.Log.File, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
+			core.Error.Println(ctx, "open log file", c.Log.File, "failed, err is", err)
 			return
 		} else {
-			core.Info = log.New(c.LogTank("info", l.file), core.LogInfoLabel, log.LstdFlags)
-			core.Trace = log.New(c.LogTank("trace", l.file), core.LogTraceLabel, log.LstdFlags)
-			core.Warn = log.New(c.LogTank("warn", l.file), core.LogWarnLabel, log.LstdFlags)
-			core.Error = log.New(c.LogTank("error", l.file), core.LogErrorLabel, log.LstdFlags)
+			core.Info = core.NewLogPlus(log.New(c.LogTank("info", v.file), core.LogInfoLabel, log.LstdFlags))
+			core.Trace = core.NewLogPlus(log.New(c.LogTank("trace", v.file), core.LogTraceLabel, log.LstdFlags))
+			core.Warn = core.NewLogPlus(log.New(c.LogTank("warn", v.file), core.LogWarnLabel, log.LstdFlags))
+			core.Error = core.NewLogPlus(log.New(c.LogTank("error", v.file), core.LogErrorLabel, log.LstdFlags))
 		}
 	} else {
-		core.Trace.Println("apply log", c.Log.Tank, c.Log.Level)
+		core.Trace.Println(ctx, "apply log", c.Log.Tank, c.Log.Level)
 
-		core.Info = log.New(c.LogTank("info", os.Stdout), core.LogInfoLabel, log.LstdFlags)
-		core.Trace = log.New(c.LogTank("trace", os.Stdout), core.LogTraceLabel, log.LstdFlags)
-		core.Warn = log.New(c.LogTank("warn", os.Stderr), core.LogWarnLabel, log.LstdFlags)
-		core.Error = log.New(c.LogTank("error", os.Stderr), core.LogErrorLabel, log.LstdFlags)
+		core.Info = core.NewLogPlus(log.New(c.LogTank("info", os.Stdout), core.LogInfoLabel, log.LstdFlags))
+		core.Trace = core.NewLogPlus(log.New(c.LogTank("trace", os.Stdout), core.LogTraceLabel, log.LstdFlags))
+		core.Warn = core.NewLogPlus(log.New(c.LogTank("warn", os.Stderr), core.LogWarnLabel, log.LstdFlags))
+		core.Error = core.NewLogPlus(log.New(c.LogTank("error", os.Stderr), core.LogErrorLabel, log.LstdFlags))
 	}
 
 	return
 }
 
-func (l *simpleLogger) close(c *core.Config) (err error) {
-	if l.file == nil {
+func (v *simpleLogger) close(c *core.Config) (err error) {
+	ctx := v.ctx
+
+	if v.file == nil {
 		return
 	}
 
 	// when log closed, set the logger warn to stderr for file closed.
-	core.Warn = log.New(os.Stderr, core.LogWarnLabel, log.LstdFlags)
+	core.Warn = core.NewLogPlus(log.New(os.Stderr, core.LogWarnLabel, log.LstdFlags))
 
 	// try to close the log file.
-	if err = l.file.Close(); err != nil {
-		core.Warn.Println("gracefully close log file", c.Log.File, "failed, err is", err)
+	if err = v.file.Close(); err != nil {
+		core.Warn.Println(ctx, "gracefully close log file", c.Log.File, "failed, err is", err)
 	} else {
-		core.Warn.Println("close log file", c.Log.File, "ok")
+		core.Warn.Println(ctx, "close log file", c.Log.File, "ok")
 	}
 
 	return

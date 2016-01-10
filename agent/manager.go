@@ -28,100 +28,101 @@ import (
 )
 
 type AgentManager struct {
+	ctx core.Context
 	// the media stream sources agent,
 	// generally it's a dup agent.
 	sources map[string]core.Agent
 	lock    sync.Mutex
 }
 
-var Manager *AgentManager = NewManager()
+var Manager *AgentManager
 
-func NewManager() *AgentManager {
+func NewManager(ctx core.Context) *AgentManager {
 	return &AgentManager{
+		ctx: ctx,
 		sources: make(map[string]core.Agent),
 	}
 }
 
 func (v *AgentManager) Close() {
+	ctx := v.ctx
+
 	for _, v := range v.sources {
 		if err := v.Close(); err != nil {
-			core.Warn.Println("ignore close agent failed. err is", err)
+			core.Warn.Println(ctx, "ignore close agent failed. err is", err)
 		}
 	}
 }
 
-func (v *AgentManager) NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) (play core.Agent, err error) {
+func (v *AgentManager) NewRtmpPlayAgent(ctx core.Context, conn *protocol.RtmpConnection, wc core.WorkerContainer) (play core.Agent, err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
 	// finger the source agent out, which dup to other agent.
 	var dup core.Agent
-	if dup, err = v.getDupAgent(conn.Req.Uri()); err != nil {
+	if dup, err = v.getDupAgent(ctx, conn.Req.Uri()); err != nil {
 		return
 	}
 
 	// create the publish agent
-	play = NewRtmpPlayAgent(conn, wc)
+	play = NewRtmpPlayAgent(ctx, conn, wc)
 
 	if err = play.Open(); err != nil {
-		core.Warn.Println("open play failed. err is", err)
+		core.Warn.Println(ctx, "open play failed. err is", err)
 		return
 	}
 
 	// tie the play agent to dup sink.
 	if err = play.Tie(dup); err != nil {
-		core.Error.Println("tie play failed. err is", err)
+		core.Error.Println(ctx, "tie play failed. err is", err)
 		return
 	}
 
 	return
 }
 
-func (v *AgentManager) NewRtmpPublishAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) (pub core.Agent, err error) {
+func (v *AgentManager) NewRtmpPublishAgent(ctx core.Context, conn *protocol.RtmpConnection, wc core.WorkerContainer) (pub core.Agent, err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
 	// finger the source agent out, which dup to other agent.
 	var dup core.Agent
-	if dup, err = v.getDupAgent(conn.Req.Uri()); err != nil {
+	if dup, err = v.getDupAgent(ctx, conn.Req.Uri()); err != nil {
 		return
 	}
 
 	// when dup source not nil, then the source is using.
 	if dup.TiedSink() != nil {
 		err = AgentBusyError
-		core.Error.Println("source busy. err is", err)
+		core.Error.Println(ctx, "source busy. err is", err)
 		return
 	}
 
 	// create the publish agent
-	pub = &RtmpPublishAgent{
-		conn: conn,
-		wc:   wc,
-	}
+	pub = NewRtmpPublishAgent(ctx, conn, wc)
 
 	if err = pub.Open(); err != nil {
-		core.Warn.Println("open publish failed. err is", err)
+		core.Warn.Println(ctx, "open publish failed. err is", err)
 		return
 	}
 
 	// tie the publish agent to dup source.
 	if err = dup.Tie(pub); err != nil {
-		core.Error.Println("tie publish failed. err is", err)
+		core.Error.Println(ctx, "tie publish failed. err is", err)
 		return
 	}
 
 	return
 }
 
-func (v *AgentManager) getDupAgent(uri string) (dup core.Agent, err error) {
+func (v *AgentManager) getDupAgent(ctx core.Context, uri string) (dup core.Agent, err error) {
 	var ok bool
 	if dup, ok = v.sources[uri]; !ok {
-		dup = NewDupAgent()
+		dup = NewDupAgent(ctx)
 		v.sources[uri] = dup
 
 		if err = dup.Open(); err != nil {
-			core.Error.Println("open dup agent failed. err is", err)
+			core.Error.Println(ctx, "open dup agent failed. err is", err)
 			return
 		}
 	}

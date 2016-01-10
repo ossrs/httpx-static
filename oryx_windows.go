@@ -26,10 +26,10 @@ import (
 	"github.com/ossrs/go-oryx/core"
 )
 
-func run(svr *app.Server) int {
-	return serve(svr)
+func run(svr *app.Server, ctx core.Context) int {
+	return serve(svr, ctx)
 }
 
-func oryxMain(svr *app.Server) {
-	core.Warn.Println("windows not support daemon.")
+func oryxMain(svr *app.Server, ctx core.Context) {
+	core.Warn.Println(ctx, "windows not support daemon.")
 }

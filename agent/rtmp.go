@@ -33,13 +33,15 @@ import (
 // to listen at RTMP(tcp://1935) and recv data from RTMP publisher or player,
 // when identified the client type, redirect to the specified agent.
 type Rtmp struct {
+	ctx core.Context
 	endpoint string
 	wc       core.WorkerContainer
 	l        net.Listener
 }
 
-func NewRtmp(wc core.WorkerContainer) (agent core.OpenCloser) {
+func NewRtmp(ctx core.Context, wc core.WorkerContainer) (agent core.OpenCloser) {
 	v := &Rtmp{
+		ctx: ctx,
 		wc: wc,
 	}
 
@@ -59,29 +61,33 @@ func (v *Rtmp) Close() (err error) {
 }
 
 func (v *Rtmp) close() (err error) {
+	ctx := v.ctx
+
 	if v.l == nil {
 		return
 	}
 
 	if err = v.l.Close(); err != nil {
-		core.Error.Println("close rtmp listener failed. err is", err)
+		core.Error.Println(ctx, "close rtmp listener failed. err is", err)
 		return
 	}
 	v.l = nil
 
-	core.Trace.Println("close rtmp listen", v.endpoint, "ok")
+	core.Trace.Println(ctx, "close rtmp listen", v.endpoint, "ok")
 	return
 }
 
 func (v *Rtmp) applyListen(c *core.Config) (err error) {
+	ctx := v.ctx
+
 	v.endpoint = fmt.Sprintf(":%v", c.Listen)
 
 	ep := v.endpoint
 	if v.l, err = net.Listen("tcp", ep); err != nil {
-		core.Error.Println("rtmp listen at", ep, "failed. err is", err)
+		core.Error.Println(ctx, "rtmp listen at", ep, "failed. err is", err)
 		return
 	}
-	core.Trace.Println("rtmp listen at", fmt.Sprintf("tcp://%v", c.Listen))
+	core.Trace.Println(ctx, "rtmp listen at", fmt.Sprintf("tcp://%v", c.Listen))
 
 	// accept cycle
 	v.wc.GFork("", func(wc core.WorkerContainer) {
@@ -89,7 +95,7 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 			var c net.Conn
 			if c, err = v.l.Accept(); err != nil {
 				if v.l != nil {
-					core.Warn.Println("accept failed. err is", err)
+					core.Warn.Println(ctx, "accept failed. err is", err)
 				}
 				return
 			}
@@ -101,8 +107,8 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 	// should quit?
 	v.wc.GFork("", func(wc core.WorkerContainer) {
 		<-wc.QC()
+		defer wc.Quit()
 		_ = v.close()
-		wc.Quit()
 	})
 
 	return
@@ -111,18 +117,21 @@ func (v *Rtmp) applyListen(c *core.Config) (err error) {
 func (v *Rtmp) serve(c net.Conn) {
 	// use gfork to serve the connection.
 	v.wc.GFork("", func(wc core.WorkerContainer) {
+		// create new context for connection.
+		ctx := core.NewContext()
+
 		defer func() {
 			if r := recover(); r != nil {
 				if !core.IsNormalQuit(r) {
-					core.Warn.Println("rtmp ignore", r)
+					core.Warn.Println(ctx, "rtmp ignore", r)
 				}
 
-				core.Error.Println(string(debug.Stack()))
+				core.Error.Println(ctx, string(debug.Stack()))
 			}
 		}()
 		defer func() {
 			if err := c.Close(); err != nil {
-				core.Info.Println("ignore close failed. err is", err)
+				core.Info.Println(ctx, "ignore close failed. err is", err)
 			}
 		}()
 
@@ -132,20 +141,20 @@ func (v *Rtmp) serve(c net.Conn) {
 			// TODO: FIXME: config it.
 			// TODO: FIXME: refine for the realtime streaming.
 			if err := c.SetNoDelay(false); err != nil {
-				core.Error.Println("set TCP_NODELAY failed. err is", err)
+				core.Error.Println(ctx, "set TCP_NODELAY failed. err is", err)
 				return
 			}
 		}
-		core.Trace.Println("rtmp accept", c.RemoteAddr())
+		core.Trace.Println(ctx, "rtmp accept", c.RemoteAddr())
 
-		conn := protocol.NewRtmpConnection(c, v.wc)
+		conn := protocol.NewRtmpConnection(ctx, c, v.wc)
 		defer conn.Close()
 
 		if err := v.cycle(conn); err != nil {
 			if !core.IsNormalQuit(err) && !IsControlError(err) {
-				core.Warn.Println("ignore error when cycle rtmp. err is", err)
+				core.Warn.Println(ctx, "ignore error when cycle rtmp. err is", err)
 			} else {
-				core.Info.Println("rtmp cycle ok.")
+				core.Info.Println(ctx, "rtmp cycle ok.")
 			}
 			return
 		}
@@ -155,41 +164,42 @@ func (v *Rtmp) serve(c net.Conn) {
 }
 
 func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
+	ctx := conn.Ctx()
 	r := conn.Req
 
 	// handshake with client.
 	if err = conn.Handshake(); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("rtmp handshake failed. err is", err)
+			core.Error.Println(ctx, "rtmp handshake failed. err is", err)
 		}
 		return
 	}
-	core.Info.Println("rtmp handshake ok.")
+	core.Info.Println(ctx, "rtmp handshake ok.")
 
 	// expoect connect app.
 	if err = conn.ExpectConnectApp(r); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("rtmp connnect app failed. err is", err)
+			core.Error.Println(ctx, "rtmp connnect app failed. err is", err)
 		}
 		return
 	}
-	core.Info.Println("rtmp connect app ok, tcUrl is", r.TcUrl)
+	core.Info.Println(ctx, "rtmp connect app ok, tcUrl is", r.TcUrl)
 
 	if err = conn.SetWindowAckSize(uint32(2.5 * 1000 * 1000)); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("rtmp set ack size failed. err is", err)
+			core.Error.Println(ctx, "rtmp set ack size failed. err is", err)
 		}
 		return
 	}
-	core.Info.Println("set window ack ok.")
+	core.Info.Println(ctx, "set window ack ok.")
 
 	if err = conn.SetPeerBandwidth(uint32(2.5*1000*1000), uint8(2)); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("rtmp set peer bandwidth failed. err is", err)
+			core.Error.Println(ctx, "rtmp set peer bandwidth failed. err is", err)
 		}
 		return
 	}
-	core.Info.Println("set peer bandwidth ok.")
+	core.Info.Println(ctx, "set peer bandwidth ok.")
 
 	// do bandwidth test if connect to the vhost which is for bandwidth check.
 	// TODO: FIXME: support bandwidth check.
@@ -203,46 +213,46 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	// to make OBS happy, @see https://github.com/ossrs/srs/issues/454
 	if err = conn.SetChunkSize(core.Conf.ChunkSize); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("rtmp set chunk size failed. err is", err)
+			core.Error.Println(ctx, "rtmp set chunk size failed. err is", err)
 		}
 		return
 	}
-	core.Info.Println("set chunk size to", core.Conf.ChunkSize)
+	core.Info.Println(ctx, "set chunk size to", core.Conf.ChunkSize)
 
 	// response the client connect ok and onBWDone.
 	if err = conn.ResponseConnectApp(); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("response connect app failed. err is", err)
+			core.Error.Println(ctx, "response connect app failed. err is", err)
 		}
 		return
 	}
-	core.Info.Println("response connect app ok.")
+	core.Info.Println(ctx, "response connect app ok.")
 	if err = conn.OnBwDone(); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("response onBWDone failed. err is", err)
+			core.Error.Println(ctx, "response onBWDone failed. err is", err)
 		}
 		return
 	}
-	core.Info.Println("onBWDone ok.")
+	core.Info.Println(ctx, "onBWDone ok.")
 
 	// identify the client, publish or play.
 	if r.Type, r.Stream, r.Duration, err = conn.Identify(); err != nil {
 		if !core.IsNormalQuit(err) {
-			core.Error.Println("identify client failed. err is", err)
+			core.Error.Println(ctx, "identify client failed. err is", err)
 		}
 		return
 	}
-	core.Trace.Println(fmt.Sprintf(
+	core.Trace.Println(ctx, fmt.Sprintf(
 		"client identified, type=%s, stream_name=%s, duration=%.2f",
 		r.Type, r.Stream, r.Duration))
 
 	// reparse the request by connect and play/publish.
 	if err = r.Reparse(); err != nil {
-		core.Error.Println("reparse request failed. err is", err)
+		core.Error.Println(ctx, "reparse request failed. err is", err)
 		return
 	}
 	if err = conn.OnUrlParsed(); err != nil {
-		core.Error.Println("notify url parsed failed. err is", err)
+		core.Error.Println(ctx, "notify url parsed failed. err is", err)
 		return
 	}
 
@@ -262,10 +272,10 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	//		connect("rtmp://ip/app") && play("stream?vhost=vhost"), specified in stream.
 	var vhost *core.Vhost
 	if vhost, err = core.Conf.Vhost(r.Vhost); err != nil {
-		core.Error.Println("check vhost failed, vhost is", r.Vhost, "and err is", err)
+		core.Error.Println(ctx, "check vhost failed, vhost is", r.Vhost, "and err is", err)
 		return
 	} else if r.Vhost != vhost.Name {
-		core.Trace.Println("redirect vhost", r.Vhost, "to", vhost.Name)
+		core.Trace.Println(ctx, "redirect vhost", r.Vhost, "to", vhost.Name)
 		r.Vhost = vhost.Name
 	}
 
@@ -274,30 +284,30 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 
 	var agent core.Agent
 	if conn.Req.Type.IsPlay() {
-		if agent, err = Manager.NewRtmpPlayAgent(conn, v.wc); err != nil {
-			core.Error.Println("create play agent failed. err is", err)
+		if agent, err = Manager.NewRtmpPlayAgent(ctx, conn, v.wc); err != nil {
+			core.Error.Println(ctx, "create play agent failed. err is", err)
 			return
 		}
 	} else if conn.Req.Type.IsPublish() {
-		if agent, err = Manager.NewRtmpPublishAgent(conn, v.wc); err != nil {
-			core.Error.Println("create publish agent failed. err is", err)
+		if agent, err = Manager.NewRtmpPublishAgent(ctx, conn, v.wc); err != nil {
+			core.Error.Println(ctx, "create publish agent failed. err is", err)
 			return
 		}
 	} else {
-		core.Warn.Println("close invalid", conn.Req.Type, "client")
+		core.Warn.Println(ctx, "close invalid", conn.Req.Type, "client")
 		return
 	}
 
 	// always create the agent when work done.
 	defer func() {
 		if err := agent.Close(); err != nil {
-			core.Warn.Println("ignore agent close failed. err is", err)
+			core.Warn.Println(ctx, "ignore agent close failed. err is", err)
 		}
 	}()
 
 	if err = agent.Pump(); err != nil {
 		if !core.IsNormalQuit(err) && !IsControlError(err) {
-			core.Warn.Println("ignore rtmp agent work failed. err is", err)
+			core.Warn.Println(ctx, "ignore rtmp agent work failed. err is", err)
 		}
 		return
 	}
@@ -328,6 +338,7 @@ func (v *Rtmp) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err 
 
 // rtmp play agent, to serve the player or edge.
 type RtmpPlayAgent struct {
+	ctx core.Context
 	conn      *protocol.RtmpConnection
 	wc        core.WorkerContainer
 	upstream  core.Agent
@@ -335,17 +346,20 @@ type RtmpPlayAgent struct {
 	nbDropped uint32
 }
 
-func NewRtmpPlayAgent(conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
+func NewRtmpPlayAgent(ctx core.Context, conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
 	return &RtmpPlayAgent{
+		ctx: ctx,
 		conn:   conn,
 		wc:     wc,
-		jitter: NewJitter(),
+		jitter: NewJitter(ctx),
 	}
 }
 
 func (v *RtmpPlayAgent) Open() (err error) {
+	ctx := v.ctx
+
 	if err = v.conn.FlashStartPlay(); err != nil {
-		core.Error.Println("start play failed. err is", err)
+		core.Error.Println(ctx, "start play failed. err is", err)
 		return
 	}
 
@@ -403,12 +417,16 @@ func (v *RtmpPlayAgent) UnTie(sink core.Agent) (err error) {
 }
 
 func (v *RtmpPlayAgent) Flow(source core.Agent) (err error) {
-	core.Error.Println("play agent not support flow.")
+	ctx := v.ctx
+
+	core.Error.Println(ctx, "play agent not support flow.")
 	return AgentNotSupportError
 }
 
 func (v *RtmpPlayAgent) UnFlow(source core.Agent) (err error) {
-	core.Error.Println("play agent not support flow.")
+	ctx := v.ctx
+
+	core.Error.Println(ctx, "play agent not support flow.")
 	return AgentNotSupportError
 }
 
@@ -418,20 +436,31 @@ func (v *RtmpPlayAgent) TiedSink() (sink core.Agent) {
 
 // rtmp publish agent, to serve the FMLE or flash publisher/encoder.
 type RtmpPublishAgent struct {
+	ctx core.Context
 	conn *protocol.RtmpConnection
 	wc   core.WorkerContainer
 	flow core.Agent
 }
 
+func NewRtmpPublishAgent(ctx core.Context, conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPublishAgent {
+	return &RtmpPublishAgent{
+		ctx: ctx,
+		conn: conn,
+		wc: wc,
+	}
+}
+
 func (v *RtmpPublishAgent) Open() (err error) {
+	ctx := v.ctx
+
 	if v.conn.Req.Type == protocol.RtmpFmlePublish {
 		if err = v.conn.FmleStartPublish(); err != nil {
-			core.Error.Println("fmle start publish failed. err is", err)
+			core.Error.Println(ctx, "fmle start publish failed. err is", err)
 			return
 		}
 	} else {
 		if err = v.conn.FlashStartPublish(); err != nil {
-			core.Error.Println("flash start publish failed. err is", err)
+			core.Error.Println(ctx, "flash start publish failed. err is", err)
 			return
 		}
 	}
@@ -454,6 +483,8 @@ func (v *RtmpPublishAgent) Close() (err error) {
 }
 
 func (v *RtmpPublishAgent) Pump() (err error) {
+	ctx := v.ctx
+
 	tm := protocol.PublishRecvTimeout
 
 	err = v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) (err error) {
@@ -462,7 +493,7 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 			if v.conn.Req.Type == protocol.RtmpFlashPublish {
 				// flash unpublish.
 				// TODO: maybe need to support republish.
-				core.Trace.Println("flash publish finished.")
+				core.Trace.Println(ctx, "flash publish finished.")
 				return AgentControlRepublishError
 			}
 
@@ -477,11 +508,11 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 					return
 				}
 
-				core.Trace.Println("fmle publish finished.")
+				core.Trace.Println(ctx, "fmle publish finished.")
 				return AgentControlRepublishError
 			}
 
-			core.Trace.Println("fmle ignore AMF0/AMF3 command message.")
+			core.Trace.Println(ctx, "fmle ignore AMF0/AMF3 command message.")
 			return
 		}
 
@@ -498,7 +529,7 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 	// TODO: FIXME: support republish over same connection.
 	if err == AgentControlRepublishError {
 		return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) error {
-			core.Info.Println("publish drop message", m)
+			core.Info.Println(ctx, "publish drop message", m)
 			return AgentControlRepublishError
 		})
 	}
@@ -506,17 +537,23 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 }
 
 func (v *RtmpPublishAgent) Write(m core.Message) (err error) {
-	core.Error.Println("publish agent not support write message.")
+	ctx := v.ctx
+
+	core.Error.Println(ctx, "publish agent not support write message.")
 	return AgentNotSupportError
 }
 
 func (v *RtmpPublishAgent) Tie(sink core.Agent) (err error) {
-	core.Error.Println("publish agent has no upstream.")
+	ctx := v.ctx
+
+	core.Error.Println(ctx, "publish agent has no upstream.")
 	return AgentNotSupportError
 }
 
 func (v *RtmpPublishAgent) UnTie(sink core.Agent) (err error) {
-	core.Error.Println("publish agent has no upstream.")
+	ctx := v.ctx
+
+	core.Error.Println(ctx, "publish agent has no upstream.")
 	return AgentNotSupportError
 }
 

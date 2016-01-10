@@ -31,48 +31,52 @@ import (
 	"syscall"
 )
 
-func (c *Config) ReloadCycle(wc WorkerContainer) {
+func (v *Config) ReloadCycle(wc WorkerContainer) {
+	ctx := v.ctx
+
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGHUP)
 
-	Trace.Println("wait for reload signals: kill -1", os.Getpid())
+	Trace.Println(ctx, "wait for reload signals: kill -1", os.Getpid())
 	for {
 		select {
 		case signal := <-signals:
-			Trace.Println("start reload by", signal)
+			Trace.Println(ctx, "start reload by", signal)
 
-			if err := c.doReload(); err != nil {
-				Error.Println("quit for reload failed. err is", err)
-				wc.Quit()
+			if err := v.doReload(); err != nil {
+				defer wc.Quit()
+				Error.Println(ctx, "quit for reload failed. err is", err)
 				return
 			}
 
 		case <-wc.QC():
-			Warn.Println("user stop reload")
-			wc.Quit()
+			defer wc.Quit()
+			Warn.Println(ctx, "user stop server")
 			return
 		}
 	}
 }
 
-func (c *Config) doReload() (err error) {
-	pc := c
-	cc := NewConfig()
+func (v *Config) doReload() (err error) {
+	ctx := v.ctx
+
+	pc := v
+	cc := NewConfig(v.ctx)
 	cc.reloadHandlers = pc.reloadHandlers[:]
-	if err = cc.Loads(c.conf); err != nil {
-		Error.Println("reload config failed. err is", err)
+	if err = cc.Loads(v.conf); err != nil {
+		Error.Println(ctx, "reload config failed. err is", err)
 		return
 	}
-	Info.Println("reload parse fresh config ok")
+	Info.Println(ctx, "reload parse fresh config ok")
 
 	if err = pc.Reload(cc); err != nil {
-		Error.Println("apply reload failed. err is", err)
+		Error.Println(ctx, "apply reload failed. err is", err)
 		return
 	}
-	Info.Println("reload completed work")
+	Info.Println(ctx, "reload completed work")
 
 	Conf = cc
-	Trace.Println("reload config ok")
+	Trace.Println(ctx, "reload config ok")
 
 	return
 }

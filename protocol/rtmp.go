@@ -47,6 +47,8 @@ var createStreamError error = errors.New("rtmp create stream error")
 
 // bytes for handshake.
 type hsBytes struct {
+	ctx core.Context
+
 	// whether the
 	c0c1Ok   bool
 	s0s1s2Ok bool
@@ -67,8 +69,10 @@ type hsBytes struct {
 	out chan []byte
 }
 
-func NewHsBytes() *hsBytes {
+func NewHsBytes(ctx core.Context) *hsBytes {
 	return &hsBytes{
+		ctx: ctx,
+
 		c0c1c2: make([]byte, 3073),
 		s0s1s2: make([]byte, 3073),
 		// use buffer size 2 for we atmost got 2 messages to in/out.
@@ -126,81 +130,93 @@ func (v *hsBytes) ServerPlaintext() bool {
 }
 
 func (v *hsBytes) inCacheC0C1() (err error) {
+	ctx := v.ctx
+
 	select {
 	case v.in <- v.C0C1():
 	default:
 		return core.OverflowError
 	}
 
-	core.Info.Println("cache c0c1 ok.")
+	core.Info.Println(ctx, "cache c0c1 ok.")
 	return
 }
 
 func (v *hsBytes) readC0C1(r io.Reader) (err error) {
+	ctx := v.ctx
+
 	if v.c0c1Ok {
 		return
 	}
 
 	var b bytes.Buffer
 	if _, err = io.CopyN(&b, r, 1537); err != nil {
-		core.Error.Println("read c0c1 failed. err is", err)
+		core.Error.Println(ctx, "read c0c1 failed. err is", err)
 		return
 	}
 
 	copy(v.C0C1(), b.Bytes())
 
 	v.c0c1Ok = true
-	core.Info.Println("read c0c1 ok.")
+	core.Info.Println(ctx, "read c0c1 ok.")
 	return
 }
 
 func (v *hsBytes) outCacheS0S1S2() (err error) {
+	ctx := v.ctx
+
 	select {
 	case v.out <- v.S0S1S2():
 	default:
 		return core.OverflowError
 	}
 
-	core.Info.Println("cache s0s1s2 ok.")
+	core.Info.Println(ctx, "cache s0s1s2 ok.")
 	return
 }
 
 func (v *hsBytes) writeS0S1S2(w io.Writer) (err error) {
+	ctx := v.ctx
+
 	r := bytes.NewReader(v.S0S1S2())
 	if _, err = io.CopyN(w, r, 3073); err != nil {
 		return
 	}
 
-	core.Info.Println("write s0s1s2 ok.")
+	core.Info.Println(ctx, "write s0s1s2 ok.")
 	return
 }
 
 func (v *hsBytes) inCacheC2() (err error) {
+	ctx := v.ctx
+
 	select {
 	case v.in <- v.C2():
 	default:
 		return core.OverflowError
 	}
 
-	core.Info.Println("cache c2 ok.")
+	core.Info.Println(ctx, "cache c2 ok.")
 	return
 }
 
 func (v *hsBytes) readC2(r io.Reader) (err error) {
+	ctx := v.ctx
+
 	if v.c2Ok {
 		return
 	}
 
 	var b bytes.Buffer
 	if _, err = io.CopyN(&b, r, 1536); err != nil {
-		core.Error.Println("read c2 failed. err is", err)
+		core.Error.Println(ctx, "read c2 failed. err is", err)
 		return
 	}
 
 	copy(v.C2(), b.Bytes())
 
 	v.c2Ok = true
-	core.Info.Println("read c2 ok.")
+	core.Info.Println(ctx, "read c2 ok.")
 	return
 }
 
@@ -554,6 +570,8 @@ func (v *chsC2S2) S2Create(s2 []byte, c1 *chsC1S1) (err error) {
 
 // rtmp request.
 type RtmpRequest struct {
+	ctx core.Context
+
 	// the tcUrl in RTMP connect app request.
 	TcUrl string
 	// the required object encoding.
@@ -574,8 +592,9 @@ type RtmpRequest struct {
 	Url *url.URL
 }
 
-func NewRtmpRequest() *RtmpRequest {
+func NewRtmpRequest(ctx core.Context) *RtmpRequest {
 	return &RtmpRequest{
+		ctx: ctx,
 		Type: RtmpUnknown,
 		Url:  &url.URL{},
 	}
@@ -622,7 +641,9 @@ func (v *RtmpRequest) Host() string {
 
 // parse the rtmp request object from tcUrl/stream?params
 // to finger it out the vhost and url.
-func (r *RtmpRequest) Reparse() (err error) {
+func (v *RtmpRequest) Reparse() (err error) {
+	ctx := v.ctx
+
 	// convert app...pn0...pv0...pn1...pv1...pnn...pvn
 	// to (without space):
 	// 		app ? pn0=pv0 && pn1=pv1 && pnn=pvn
@@ -656,17 +677,17 @@ func (r *RtmpRequest) Reparse() (err error) {
 	}
 
 	// format the app and stream.
-	r.TcUrl = ffn(r.TcUrl)
-	r.Stream = ffn(r.Stream)
+	v.TcUrl = ffn(v.TcUrl)
+	v.Stream = ffn(v.Stream)
 
 	// format the tcUrl and stream.
 	var params string
-	if ss := strings.SplitN(r.TcUrl, "?", 2); len(ss) == 2 {
-		r.TcUrl = ss[0]
+	if ss := strings.SplitN(v.TcUrl, "?", 2); len(ss) == 2 {
+		v.TcUrl = ss[0]
 		params = ss[1]
 	}
-	if ss := strings.SplitN(r.Stream, "?", 2); len(ss) == 2 {
-		r.Stream = ss[0]
+	if ss := strings.SplitN(v.Stream, "?", 2); len(ss) == 2 {
+		v.Stream = ss[0]
 		params += "&&" + ss[1]
 	}
 	params = strings.TrimLeft(params, "&&")
@@ -680,36 +701,36 @@ func (r *RtmpRequest) Reparse() (err error) {
 	// some client use stream to pass the params:
 	//		rtmp://ip/app/stream?params
 	// we will parse all uri to the standard rtmp uri.
-	u := fmt.Sprintf("%v?%v", r.TcUrl, params)
-	if r.Url, err = url.Parse(u); err != nil {
+	u := fmt.Sprintf("%v?%v", v.TcUrl, params)
+	if v.Url, err = url.Parse(u); err != nil {
 		return
 	}
-	q := r.Url.Query()
+	q := v.Url.Query()
 
 	// parse result.
-	r.Vhost = r.Host()
-	if v := q.Get("vhost"); v != "" {
-		r.Vhost = v
-	} else if v := q.Get("domain"); v != "" {
-		r.Vhost = v
+	v.Vhost = v.Host()
+	if p := q.Get("vhost"); p != "" {
+		v.Vhost = p
+	} else if p := q.Get("domain"); p != "" {
+		v.Vhost = p
 	}
 
-	if r.App = strings.TrimLeft(r.Url.Path, "/"); r.App == "" {
-		r.App = core.RtmpDefaultApp
+	if v.App = strings.TrimLeft(v.Url.Path, "/"); v.App == "" {
+		v.App = core.RtmpDefaultApp
 	}
-	r.Stream = strings.Trim(r.Stream, "/")
+	v.Stream = strings.Trim(v.Stream, "/")
 
 	// check.
-	if r.Vhost == "" {
-		core.Error.Println("vhost must not be empty")
+	if v.Vhost == "" {
+		core.Error.Println(ctx, "vhost must not be empty")
 		return RequestUrlError
 	}
-	if r.App == "" && r.Stream == "" {
-		core.Error.Println("both app and stream must not be empty")
+	if v.App == "" && v.Stream == "" {
+		core.Error.Println(ctx, "both app and stream must not be empty")
 		return RequestUrlError
 	}
-	if p := r.Port(); p <= 0 {
-		core.Error.Println("port must be positive, actual is", p)
+	if p := v.Port(); p <= 0 {
+		core.Error.Println(ctx, "port must be positive, actual is", p)
 		return RequestUrlError
 	}
 
@@ -751,6 +772,8 @@ const (
 
 // rtmp protocol stack.
 type RtmpConnection struct {
+	ctx core.Context
+
 	// the current using stream id.
 	sid uint32
 	// the rtmp request.
@@ -794,15 +817,16 @@ type RtmpConnection struct {
 	isFlusherWorking bool
 }
 
-func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
+func NewRtmpConnection(ctx core.Context, transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
+		ctx: ctx,
 		sid:           0,
-		Req:           NewRtmpRequest(),
+		Req:           NewRtmpRequest(ctx),
 		wc:            wc,
-		handshake:     NewHsBytes(),
+		handshake:     NewHsBytes(ctx),
 		transport:     transport,
 		groupMessages: false,
-		stack:         NewRtmpStack(transport, transport),
+		stack:         NewRtmpStack(ctx, transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
 		out:           make([]*RtmpMessage, 0, RtmpDefaultMwMessages*2),
 		closing:       core.NewQuiter(),
@@ -814,7 +838,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 
 	// start the receiver and sender.
 	// directly use raw goroutine, for donot cause the container to quit.
-	go core.Recover("rtmp receiver", func() error {
+	go core.Recover(ctx, "rtmp receiver", func() error {
 		v.workers.Add(1)
 		defer v.workers.Done()
 
@@ -831,7 +855,7 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 		}
 		return nil
 	})
-	go core.Recover("rtmp sender", func() error {
+	go core.Recover(ctx, "rtmp sender", func() error {
 		v.workers.Add(1)
 		defer v.workers.Done()
 
@@ -863,9 +887,16 @@ func NewRtmpConnection(transport io.ReadWriteCloser, wc core.WorkerContainer) *R
 	return v
 }
 
+// retrieve the context of connection.
+func (v *RtmpConnection) Ctx() core.Context {
+	return v.ctx
+}
+
 // close the connection to client.
 // TODO: FIXME: should be thread safe.
 func (v *RtmpConnection) Close() {
+	ctx := v.ctx
+
 	v.closeLock.Lock()
 	defer v.closeLock.Unlock()
 
@@ -879,15 +910,15 @@ func (v *RtmpConnection) Close() {
 
 	// close the underlayer transport.
 	_ = v.transport.Close()
-	core.Info.Println("close the transport")
+	core.Info.Println(ctx, "close the transport")
 
 	// notify other goroutine to close.
 	v.closing.Quit()
-	core.Info.Println("set closed and wait.")
+	core.Info.Println(ctx, "set closed and wait.")
 
 	// wait for sender and receiver to quit.
 	v.workers.Wait()
-	core.Trace.Println("closed")
+	core.Trace.Println(ctx, "closed")
 
 	return
 }
@@ -906,6 +937,8 @@ func (v *RtmpConnection) OnReloadVhost(vhost string, scope int, cc, pc *core.Con
 
 // handshake with client, try complex then simple.
 func (v *RtmpConnection) Handshake() (err error) {
+	ctx := v.ctx
+
 	// got c0c1.
 	if err = v.waitC0C1(); err != nil {
 		return
@@ -969,12 +1002,12 @@ func (v *RtmpConnection) Handshake() (err error) {
 		return
 	}
 	if !completed {
-		core.Trace.Println("rollback to simple handshake.")
+		core.Trace.Println(ctx, "rollback to simple handshake.")
 		if err = shs(); err != nil {
 			return
 		}
 	} else {
-		core.Trace.Println("complex handshake ok.")
+		core.Trace.Println(ctx, "complex handshake ok.")
 	}
 
 	// cache the s0s1s2 for sender to write.
@@ -996,6 +1029,8 @@ func (v *RtmpConnection) Handshake() (err error) {
 }
 
 func (v *RtmpConnection) waitC0C1() (err error) {
+	ctx := v.ctx
+
 	// use short handshake timeout.
 	timeout := HandshakeTimeout
 
@@ -1004,7 +1039,7 @@ func (v *RtmpConnection) waitC0C1() (err error) {
 	case <-v.handshake.in:
 		break
 	case <-time.After(timeout):
-		core.Error.Println("c0c1 timeout for", timeout)
+		core.Error.Println(ctx, "c0c1 timeout for", timeout)
 		return core.TimeoutError
 	case <-v.closing.QC():
 		return v.closing.Quit()
@@ -1016,6 +1051,8 @@ func (v *RtmpConnection) waitC0C1() (err error) {
 }
 
 func (v *RtmpConnection) waitC2() (err error) {
+	ctx := v.ctx
+
 	// use short handshake timeout.
 	timeout := HandshakeTimeout
 
@@ -1024,7 +1061,7 @@ func (v *RtmpConnection) waitC2() (err error) {
 	case <-v.handshake.in:
 		break
 	case <-time.After(timeout):
-		core.Error.Println("c2 timeout for", timeout)
+		core.Error.Println(ctx, "c2 timeout for", timeout)
 		return core.TimeoutError
 	case <-v.closing.QC():
 		return v.closing.Quit()
@@ -1037,6 +1074,8 @@ func (v *RtmpConnection) waitC2() (err error) {
 
 // do connect app with client, to discovery tcUrl.
 func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
+	ctx := v.ctx
+
 	// connect(tcUrl)
 	return v.read(ConnectAppTimeout, func(m *RtmpMessage) (loop bool, err error) {
 		var p RtmpPacket
@@ -1052,7 +1091,7 @@ func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 			}
 
 			objectEncoding := fmt.Sprintf("AMF%v", int(r.ObjectEncoding))
-			core.Trace.Println("connect at", r.TcUrl, objectEncoding)
+			core.Trace.Println(ctx, "connect at", r.TcUrl, objectEncoding)
 		} else {
 			// try next.
 			return true, nil
@@ -1134,18 +1173,20 @@ func (v *RtmpConnection) OnBwDone() (err error) {
 // @stream_name, output the client publish/play stream name. @see: SrsRequest.stream
 // @duration, output the play client duration. @see: SrsRequest.duration
 func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, duration float64, err error) {
+	ctx := v.ctx
+
 	err = v.identify(func(p RtmpPacket) (loop bool, err error) {
 		switch p := p.(type) {
 		case *RtmpCreateStreamPacket:
-			core.Info.Println("identify createStream")
+			core.Info.Println(ctx, "identify createStream")
 			connType, streamName, duration, err = v.identifyCreateStream(nil, p)
 			return
 		case *RtmpFMLEStartPacket:
-			core.Info.Println("identify fmlePublish")
+			core.Info.Println(ctx, "identify fmlePublish")
 			connType, streamName, err = v.identifyFmlePublish(p)
 			return
 		case *RtmpPlayPacket:
-			core.Info.Println("identify play")
+			core.Info.Println(ctx, "identify play")
 			connType, streamName, duration, err = v.identifyPlay(p)
 			return
 		}
@@ -1159,7 +1200,7 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 			res := NewRtmpCallResPacket().(*RtmpCallResPacket)
 			res.TransactionId = p.TransactionId
 			if err = v.write(res, 0); err != nil {
-				core.Error.Println("response call failed. err is", err)
+				core.Error.Println(ctx, "response call failed. err is", err)
 				return
 			}
 		}
@@ -1181,6 +1222,8 @@ func (v *RtmpConnection) updateNbGroupMessages() (err error) {
 
 // for Flash encoder, response the start publish event.
 func (v *RtmpConnection) FlashStartPublish() (err error) {
+	ctx := v.ctx
+
 	res := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
 	res.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
 	res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
@@ -1190,12 +1233,14 @@ func (v *RtmpConnection) FlashStartPublish() (err error) {
 		return
 	}
 
-	core.Trace.Println("Flash start publish ok.")
+	core.Trace.Println(ctx, "Flash start publish ok.")
 	return
 }
 
 // for FMLE encoder, response the start publish event.
 func (v *RtmpConnection) FmleStartPublish() (err error) {
+	ctx := v.ctx
+
 	return v.read(FmlePublishTimeout, func(m *RtmpMessage) (loop bool, err error) {
 		var p RtmpPacket
 		if p, err = v.stack.DecodeMessage(m); err != nil {
@@ -1242,10 +1287,10 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			return true, nil
 		case *RtmpOnStatusCallPacket:
 			if p.Name == "onFCPublish" {
-				core.Trace.Println("FMLE start publish ok.")
+				core.Trace.Println(ctx, "FMLE start publish ok.")
 				return false, nil
 			}
-			core.Info.Println("drop FMLE command", p.Name)
+			core.Info.Println(ctx, "drop FMLE command", p.Name)
 			return true, nil
 		default:
 			return true, nil
@@ -1475,6 +1520,7 @@ func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error)
 }
 
 func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (connType RtmpConnType, streamName string, duration float64, err error) {
+	ctx := v.ctx
 	current := p1
 
 	if csr := NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket); csr != nil {
@@ -1484,7 +1530,7 @@ func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (c
 		csr.TransactionId = current.TransactionId
 		csr.StreamId = Amf0Number(float64(v.sid))
 		if err = v.write(csr, 0); err != nil {
-			core.Error.Println("response createStream failed. err is", err)
+			core.Error.Println(ctx, "response createStream failed. err is", err)
 			return
 		}
 	}
@@ -1501,7 +1547,7 @@ func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (c
 			// to avoid stack overflow attach.
 			if p0 != nil {
 				err = createStreamError
-				core.Error.Println("only support two createStream packet. err is", err)
+				core.Error.Println(ctx, "only support two createStream packet. err is", err)
 				return
 			}
 
@@ -1519,6 +1565,8 @@ func (v *RtmpConnection) identifyFlashPublish(p *RtmpPublishPacket) (connType Rt
 }
 
 func (v *RtmpConnection) identifyFmlePublish(p *RtmpFMLEStartPacket) (connType RtmpConnType, streamName string, err error) {
+	ctx := v.ctx
+
 	connType = RtmpFmlePublish
 	streamName = string(p.Stream)
 
@@ -1526,7 +1574,7 @@ func (v *RtmpConnection) identifyFmlePublish(p *RtmpFMLEStartPacket) (connType R
 	res.TransactionId = p.TransactionId
 
 	if err = v.write(res, 0); err != nil {
-		core.Error.Println("response identify fmle failed. err is", err)
+		core.Error.Println(ctx, "response identify fmle failed. err is", err)
 		return
 	}
 
@@ -1549,6 +1597,8 @@ type rtmpIdentifyHandler func(p RtmpPacket) (loop bool, err error)
 
 // identify the client.
 func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
+	ctx := v.ctx
+
 	err = v.read(IdentifyTimeout, func(m *RtmpMessage) (loop bool, err error) {
 		var p RtmpPacket
 		if p, err = v.stack.DecodeMessage(m); err != nil {
@@ -1557,7 +1607,7 @@ func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 
 		// when parse got empty packet.
 		if p == nil {
-			core.Warn.Println("ignore empty packet.")
+			core.Warn.Println(ctx, "ignore empty packet.")
 			return true, nil
 		}
 
@@ -1570,7 +1620,7 @@ func (v *RtmpConnection) identify(fn rtmpIdentifyHandler) (err error) {
 			break
 		// ignore with warning.
 		default:
-			core.Trace.Println("ignore rtmp message", mt)
+			core.Trace.Println(ctx, "ignore rtmp message", mt)
 			return true, nil
 		}
 
@@ -1603,6 +1653,8 @@ type rtmpReadHandler func(m *RtmpMessage) (loop bool, err error)
 
 // read from cache and process by handler.
 func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err error) {
+	ctx := v.ctx
+
 	for {
 		select {
 		case m := <-v.in:
@@ -1611,7 +1663,7 @@ func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err er
 				return
 			}
 		case <-time.After(timeout):
-			core.Error.Println("timeout for", timeout)
+			core.Error.Println(ctx, "timeout for", timeout)
 			return core.TimeoutError
 		case <-v.closing.QC():
 			return v.closing.Quit()
@@ -1639,6 +1691,8 @@ func (v *RtmpConnection) write(p RtmpPacket, sid uint32) (err error) {
 
 // receiver goroutine.
 func (v *RtmpConnection) receiver() (err error) {
+	ctx := v.ctx
+
 	// read c0c2
 	if err = v.handshake.readC0C1(v.transport); err != nil {
 		return
@@ -1673,7 +1727,7 @@ func (v *RtmpConnection) receiver() (err error) {
 			return v.closing.Quit()
 		}
 	}
-	core.Warn.Println("receiver ok.")
+	core.Warn.Println(ctx, "receiver ok.")
 
 	return
 }
@@ -3255,6 +3309,8 @@ func NewRtmpChunk(cid uint32) *RtmpChunk {
 
 // RTMP protocol stack.
 type RtmpStack struct {
+	ctx core.Context
+
 	// the input and output stream.
 	in  *bufio.Reader
 	out io.Writer
@@ -3281,8 +3337,9 @@ const RtmpMaxChunkHeader = 12
 // the preloaded group messages.
 const RtmpDefaultMwMessages = 25
 
-func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
+func NewRtmpStack(ctx core.Context, r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
+		ctx: ctx,
 		in:           bufio.NewReaderSize(r, RtmpMaxChunkHeader),
 		out:          w,
 		chunks:       make(map[uint32]*RtmpChunk),
@@ -3303,6 +3360,7 @@ func NewRtmpStack(r io.Reader, w io.Writer) *RtmpStack {
 }
 
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
+	ctx := v.ctx
 	b := bytes.NewBuffer(m.Payload)
 
 	// decode specified packet type
@@ -3342,7 +3400,7 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 			p = NewRtmpOnStatusCallPacket()
 		// TODO: FIXME: implements it.
 		default:
-			core.Trace.Println("drop command message, name is", c)
+			core.Trace.Println(ctx, "drop command message, name is", c)
 		}
 	} else if m.MessageType.isUserControlMessage() {
 		p = NewRtmpUserControlPacket()
@@ -3352,7 +3410,7 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 		p = NewRtmpSetChunkSizePacket()
 	} else {
 		if !m.MessageType.isSetPeerBandwidth() && !m.MessageType.isAckledgement() {
-			core.Trace.Println("drop unknown message, type is", m.MessageType)
+			core.Trace.Println(ctx, "drop unknown message, type is", m.MessageType)
 		}
 	}
 
@@ -3367,13 +3425,15 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 }
 
 func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
+	ctx := v.ctx
+
 	for m == nil {
 		// chunk stream basic header.
 		var fmt uint8
 		var cid uint32
 		if fmt, cid, err = rtmpReadBasicHeader(v.in); err != nil {
 			if !core.IsNormalQuit(err) {
-				core.Warn.Println("read basic header failed. err is", err)
+				core.Warn.Println(ctx, "read basic header failed. err is", err)
 			}
 			return
 		}
@@ -3387,12 +3447,12 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		}
 
 		// chunk stream message header
-		if err = rtmpReadMessageHeader(v.in, fmt, chunk); err != nil {
+		if err = rtmpReadMessageHeader(ctx, v.in, fmt, chunk); err != nil {
 			return
 		}
 
 		// read msg payload from chunk stream.
-		if m, err = rtmpReadMessagePayload(v.inChunkSize, v.in, chunk); err != nil {
+		if m, err = rtmpReadMessagePayload(ctx, v.inChunkSize, v.in, chunk); err != nil {
 			return
 		}
 	}
@@ -3405,6 +3465,8 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 }
 
 func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
+	ctx := v.ctx
+
 	// acknowledgement
 	// TODO: FIXME: implements it.
 
@@ -3428,10 +3490,10 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 		// so we just warning the invalid chunk size, and actually use it is ok,
 		// @see: https://github.com/ossrs/srs/issues/160
 		if p.ChunkSize < RtmpMinChunkSize || p.ChunkSize > RtmpMaxChunkSize {
-			core.Warn.Println("accept invalid chunk size", p.ChunkSize)
+			core.Warn.Println(ctx, "accept invalid chunk size", p.ChunkSize)
 		}
 		v.inChunkSize = uint32(p.ChunkSize)
-		core.Trace.Println("input chunk size to", v.inChunkSize)
+		core.Trace.Println(ctx, "input chunk size to", v.inChunkSize)
 	case *RtmpUserControlPacket:
 		// TODO: FIXME: implements it.
 	}
@@ -3440,6 +3502,8 @@ func (v *RtmpStack) onRecvMessage(m *RtmpMessage) (err error) {
 }
 
 func (v *RtmpStack) onSendMessage(m *RtmpMessage) (err error) {
+	ctx := v.ctx
+
 	switch m.MessageType {
 	case RtmpMsgSetChunkSize:
 		// we will handle these packet.
@@ -3458,10 +3522,10 @@ func (v *RtmpStack) onSendMessage(m *RtmpMessage) (err error) {
 		// so we just warning the invalid chunk size, and actually use it is ok,
 		// @see: https://github.com/ossrs/srs/issues/160
 		if p.ChunkSize < RtmpMinChunkSize || p.ChunkSize > RtmpMaxChunkSize {
-			core.Warn.Println("accept invalid chunk size", p.ChunkSize)
+			core.Warn.Println(ctx, "accept invalid chunk size", p.ChunkSize)
 		}
 		v.outChunkSize = uint32(p.ChunkSize)
-		core.Trace.Println("output chunk size to", v.outChunkSize)
+		core.Trace.Println(ctx, "output chunk size to", v.outChunkSize)
 	}
 
 	return
@@ -3581,7 +3645,7 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 		}
 	}
 
-	//fmt.Println(fmt.Sprintf("fast send %v messages to %v iovecs", len(msgs), len(iovs)))
+	//fmt.Println(ctx, fmt.Sprintf("fast send %v messages to %v iovecs", len(msgs), len(iovs)))
 	return v.fastSendMessages(iovs...)
 }
 
@@ -3611,7 +3675,7 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 
 // read the RTMP message from buffer inb which load from reader in.
 // return the completed message from chunk partial message.
-func rtmpReadMessagePayload(chunkSize uint32, in *bufio.Reader, chunk *RtmpChunk) (m *RtmpMessage, err error) {
+func rtmpReadMessagePayload(ctx core.Context, chunkSize uint32, in *bufio.Reader, chunk *RtmpChunk) (m *RtmpMessage, err error) {
 	m = chunk.partialMessage
 	if m == nil {
 		panic("chunk message should never be nil")
@@ -3632,7 +3696,7 @@ func rtmpReadMessagePayload(chunkSize uint32, in *bufio.Reader, chunk *RtmpChunk
 
 	// read payload to buffer
 	if _, err = io.CopyN(chunk.payload, in, int64(left)); err != nil {
-		core.Error.Println("read body failed. err is", err)
+		core.Error.Println(ctx, "read body failed. err is", err)
 		return
 	}
 
@@ -3661,7 +3725,7 @@ func rtmpReadMessagePayload(chunkSize uint32, in *bufio.Reader, chunk *RtmpChunk
 // @remark we return the b which indicates the body read in this process,
 // 		for the c3 header, we try to read more bytes which maybe header
 // 		or the body.
-func rtmpReadMessageHeader(in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err error) {
+func rtmpReadMessageHeader(ctx core.Context, in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err error) {
 	// we should not assert anything about fmt, for the first packet.
 	// (when first packet, the chunk->msg is NULL).
 	// the fmt maybe 0/1/2/3, the FMLE will send a 0xC4 for some audio packet.
@@ -3698,10 +3762,10 @@ func rtmpReadMessageHeader(in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err e
 		// 0x00 0x00 0x0d 0x0f  where: event data 4bytes ping timestamp.
 		// @see: https://github.com/ossrs/srs/issues/98
 		if chunk.cid == RtmpCidProtocolControl && fmt == RtmpFmtType1 {
-			core.Warn.Println("accept cid=2,fmt=1 to make librtmp happy.")
+			core.Warn.Println(ctx, "accept cid=2,fmt=1 to make librtmp happy.")
 		} else {
 			// must be a RTMP protocol level error.
-			core.Error.Println("fresh chunk fmt must be", RtmpFmtType0, "actual is", fmt)
+			core.Error.Println(ctx, "fresh chunk fmt must be", RtmpFmtType0, "actual is", fmt)
 			return RtmpChunkError
 		}
 	}
@@ -3709,7 +3773,7 @@ func rtmpReadMessageHeader(in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err e
 	// when exists cache msg, means got an partial message,
 	// the fmt must not be type0 which means new message.
 	if !isFirstMsgOfChunk && fmt == RtmpFmtType0 {
-		core.Error.Println("chunk partial msg, fmt must be", RtmpFmtType0, "actual is", fmt)
+		core.Error.Println(ctx, "chunk partial msg, fmt must be", RtmpFmtType0, "actual is", fmt)
 		return RtmpChunkError
 	}
 
@@ -3748,7 +3812,7 @@ func rtmpReadMessageHeader(in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err e
 
 		// for a message, if msg exists in cache, the delta must not changed.
 		if !isFirstMsgOfChunk && chunk.timestampDelta != delta {
-			core.Error.Println("chunk msg exists, should not change the delta.")
+			core.Error.Println(ctx, "chunk msg exists, should not change the delta.")
 			return RtmpChunkError
 		}
 
@@ -3800,12 +3864,12 @@ func rtmpReadMessageHeader(in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err e
 
 			// for a message, if msg exists in cache, the size must not changed.
 			if !isFirstMsgOfChunk && chunk.payloadLength != payloadLength {
-				core.Error.Println("chunk msg exists, payload length should not be changed.")
+				core.Error.Println(ctx, "chunk msg exists, payload length should not be changed.")
 				return RtmpChunkError
 			}
 			// for a message, if msg exists in cache, the type must not changed.
 			if !isFirstMsgOfChunk && chunk.messageType != mtype {
-				core.Error.Println("chunk msg exists, type should not be changed.")
+				core.Error.Println(ctx, "chunk msg exists, type should not be changed.")
 				return RtmpChunkError
 			}
 			chunk.payloadLength = payloadLength

@@ -35,34 +35,35 @@ import (
 	"fmt"
 	"github.com/ossrs/go-oryx/app"
 	"github.com/ossrs/go-oryx/core"
+	"github.com/ossrs/go-oryx/agent"
 	"os"
 )
 
-func serve(svr *app.Server) int {
+func serve(svr *app.Server, ctx core.Context) int {
 	if err := svr.PrepareLogger(); err != nil {
-		core.Error.Println("prepare logger failed, err is", err)
+		core.Error.Println(ctx, "prepare logger failed, err is", err)
 		return -1
 	}
 
-	oryxMain(svr)
+	oryxMain(svr, ctx)
 
-	core.Trace.Println(core.OryxSigServer(), core.OryxSigCopyright)
-	core.Trace.Println(core.OryxSigProduct)
+	core.Trace.Println(ctx, core.OryxSigServer(), core.OryxSigCopyright)
+	core.Trace.Println(ctx, core.OryxSigProduct)
 
 	if err := svr.Initialize(); err != nil {
-		core.Error.Println("initialize server failed, err is", err)
+		core.Error.Println(ctx, "initialize server failed, err is", err)
 		return -1
 	}
 
 	if err := svr.Run(); err != nil {
-		core.Error.Println("run server failed, err is", err)
+		core.Error.Println(ctx, "run server failed, err is", err)
 		return -1
 	}
 
 	return 0
 }
 
-func parseArgv() (confFile string) {
+func parseArgv(ctx core.Context) (confFile string) {
 	// the args format:
 	//          -c conf/oryx.json
 	//          --c conf/oryx.json
@@ -124,19 +125,24 @@ func parseArgv() (confFile string) {
 }
 
 func main() {
-	confFile := parseArgv()
+	// the main context.
+	ctx := core.NewContext()
+	core.Conf = core.NewConfig(ctx)
+	agent.Manager = agent.NewManager(ctx)
+
+	confFile := parseArgv(ctx)
 	fmt.Println(fmt.Sprintf("%v signature is %v", core.OryxSigName, core.OryxSigServer()))
 
 	ret := func() int {
-		svr := app.NewServer()
+		svr := app.NewServer(ctx)
 		defer svr.Close()
 
 		if err := svr.ParseConfig(confFile); err != nil {
-			core.Error.Println("parse config from", confFile, "failed, err is", err)
+			core.Error.Println(ctx, "parse config from", confFile, "failed, err is", err)
 			return -1
 		}
 
-		return run(svr)
+		return run(svr, ctx)
 	}()
 
 	os.Exit(ret)

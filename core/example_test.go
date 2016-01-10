@@ -29,7 +29,8 @@ import (
 )
 
 func ExampleConfig_Loads() {
-	c := core.NewConfig()
+	ctx := core.NewContext()
+	c := core.NewConfig(ctx)
 	c.SetDefaults()
 
 	//if err := c.Loads("config.json"); err != nil {

@@ -29,7 +29,8 @@ import (
 )
 
 func TestConfigBasic(t *testing.T) {
-	c := NewConfig()
+	ctx := NewContext()
+	c := NewConfig(ctx)
 	c.SetDefaults()
 
 	if c.Workers != 0 {
@@ -82,8 +83,9 @@ func TestConfigBasic(t *testing.T) {
 }
 
 func BenchmarkConfigBasic(b *testing.B) {
-	pc := NewConfig()
-	cc := NewConfig()
+	ctx := NewContext()
+	pc := NewConfig(ctx)
+	cc := NewConfig(ctx)
 	if err := pc.Reload(cc); err != nil {
 		b.Error("reload failed.")
 	}
@@ -256,7 +258,8 @@ func TestSrsConfStyle(t *testing.T) {
 	f := func(vs []string, eh func(string, *Config, error)) {
 		for _, v := range vs {
 			p := NewSrsConfParser(strings.NewReader(v))
-			c := NewConfig()
+			ctx := NewContext()
+			c := NewConfig(ctx)
 			err := p.Decode(c)
 			eh(v, c, err)
 		}

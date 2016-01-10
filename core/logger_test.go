@@ -42,12 +42,13 @@ func TestBasicLogger(t *testing.T) {
 		return len(tank), nil
 	}
 
-	Info = log.New(WriterFunc(writer), LogInfoLabel, log.LstdFlags)
-	Trace = log.New(WriterFunc(writer), LogTraceLabel, log.LstdFlags)
-	Warn = log.New(WriterFunc(writer), LogWarnLabel, log.LstdFlags)
-	Error = log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags)
+	ctx := NewContext()
+	Info = NewLogPlus(log.New(WriterFunc(writer), LogInfoLabel, log.LstdFlags))
+	Trace = NewLogPlus(log.New(WriterFunc(writer), LogTraceLabel, log.LstdFlags))
+	Warn = NewLogPlus(log.New(WriterFunc(writer), LogWarnLabel, log.LstdFlags))
+	Error = NewLogPlus(log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags))
 
-	Info.Println("test logger.")
+	Info.Println(ctx, "test logger.")
 	if !strings.HasPrefix(tank, "[oryx][info]") {
 		t.Error("logger format failed.")
 	}
@@ -55,7 +56,7 @@ func TestBasicLogger(t *testing.T) {
 		t.Error("logger format failed. tank is", tank)
 	}
 
-	Trace.Println("test logger.")
+	Trace.Println(ctx, "test logger.")
 	if !strings.HasPrefix(tank, "[oryx][trace]") {
 		t.Error("logger format failed.")
 	}
@@ -63,7 +64,7 @@ func TestBasicLogger(t *testing.T) {
 		t.Error("logger format failed. tank is", tank)
 	}
 
-	Warn.Println("test logger.")
+	Warn.Println(ctx, "test logger.")
 	if !strings.HasPrefix(tank, "[oryx][warn]") {
 		t.Error("logger format failed.")
 	}
@@ -71,7 +72,7 @@ func TestBasicLogger(t *testing.T) {
 		t.Error("logger format failed. tank is", tank)
 	}
 
-	Error.Println("test logger.")
+	Error.Println(ctx, "test logger.")
 	if !strings.HasPrefix(tank, "[oryx][error]") {
 		t.Error("logger format failed.")
 	}

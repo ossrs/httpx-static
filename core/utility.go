@@ -63,24 +63,24 @@ func RandomFill(b []byte) {
 
 // invoke the f with recover.
 // the name of goroutine, use empty to ignore.
-func Recover(name string, f func() error) {
+func Recover(ctx Context, name string, f func() error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if name != "" {
-				Warn.Println(name, "abort with", r)
+				Warn.Println(ctx, name, "abort with", r)
 			} else {
-				Warn.Println("goroutine abort with", r)
+				Warn.Println(ctx, "goroutine abort with", r)
 			}
 
-			Error.Println(string(debug.Stack()))
+			Error.Println(ctx, string(debug.Stack()))
 		}
 	}()
 
 	if err := f(); err != nil && !IsNormalQuit(err) {
 		if name != "" {
-			Warn.Println(name, "terminated with", err)
+			Warn.Println(ctx, name, "terminated with", err)
 		} else {
-			Warn.Println("terminated abort with", err)
+			Warn.Println(ctx, "terminated abort with", err)
 		}
 	}
 }
