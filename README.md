@@ -55,13 +55,13 @@ Why rewrite the SRS to go-oryx:
 1. v0.1.0 Supports Multiple Processes.
 1. v0.1.0 Supports Linux, Unix-like and Windows.
 1. v0.1.1 Supports JSON style config file.
-1. v0.1.2 Supports Reload config file.
+1. v0.1.2 [#41](../../issues/41) Supports Reload config file.
 1. v0.1.3 Standard godoc, gofmt, gotest and TravisCI.
 1. v0.1.4 Support daemon over [ossrs/go-daemon][go-daemon](fork from [sevlyar/go-daemon][fork-go-daemon]).
 1. v0.1.5 Extend JSON with c++ style comments.
 1. v0.1.6 Support heartbeat to report for ARM.
 1. v0.1.7 Use agent(source+channel+sink) to build complex stream river.
-1. v0.1.8 Supports Publish and Play VP6 RTMP stream.
+1. v0.1.8 [#37](../../issues/37) Supports Publish and Play VP6 RTMP stream.
 1. v0.1.9 Supports Delivery VP6/H.264 and Speex/AAC/MP3/Nellymoser codec.
 1. v0.1.10 Supports 10k(8CPUs) for RTMP players.
 1. v0.1.11 Supports 10k(4CPUs) for RTMP players.
@@ -71,6 +71,15 @@ Why rewrite the SRS to go-oryx:
 1. v0.1.15 Supports LOG+, the connection-based tracable log.
 1. [dev] Supports gop-cache and drop frame strategy.
 1. [plan] [#45](../../issues/45) HLS: Support audio only HLS stream. 
+1. [plan] [#44](../../issues/44) DASH: Support remux stream to MPEG-DASH
+1. [plan] [#43](../../issues/43) RTSP: Support push RTSP to server.
+1. [plan] [#42](../../issues/42) UDP: Support push MPEG-TS over UDP to server.
+1. [plan] [#40](../../issues/40) HDS: Support remux stream to HDS. 
+1. [plan] [#39](../../issues/39) API: Support HTTP callbacks
+1. [plan] [#38](../../issues/38) API: Support HTTP API for client to access. 
+1. [plan] [#36](../../issues/36) FLV: Remux stream to HTTP-FLV streaming.
+1. [plan] [#35](../../issues/35) HLS: Support HLS+ Edge Cluster.
+1. [plan] [#24](../../issues/24) RTMP: Support standard uri like http. 
 
 Winlin 2015.10
 
