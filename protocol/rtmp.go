@@ -3788,10 +3788,8 @@ func rtmpReadMessageHeader(ctx core.Context, in *bufio.Reader, fmt uint8, chunk 
 
 	var bh []byte
 	if nbh > 0 {
-		if bh, err = in.Peek(nbh); err != nil {
-			return
-		}
-		if _, err = in.Discard(nbh); err != nil {
+		bh = make([]byte, nbh)
+		if _, err = in.Read(bh); err != nil {
 			return
 		}
 	}
@@ -3925,7 +3923,7 @@ func rtmpReadMessageHeader(ctx core.Context, in *bufio.Reader, fmt uint8, chunk 
 		if isFirstMsgOfChunk || ctimestamp <= 0 || ctimestamp == timestamp {
 			chunk.timestamp = uint64(timestamp)
 			// consume from buffer.
-			if _, err = in.Discard(4); err != nil {
+			if _, err = in.Read(b); err != nil {
 				return
 			}
 		}
