@@ -29,7 +29,7 @@ const (
 	ConnectAppTimeout  = 5000 * time.Millisecond
 	IdentifyTimeout    = ConnectAppTimeout
 	FmlePublishTimeout = IdentifyTimeout
-	PublishRecvTimeout = FmlePublishTimeout
+	PublishRecvTimeout = 10 * time.Second
 
 	// the input cache, to read from network and put in it.
 	RtmpInCache = 16
