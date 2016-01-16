@@ -67,13 +67,13 @@ type Server struct {
 
 func NewServer(ctx core.Context) *Server {
 	v := &Server{
-		ctx: ctx,
+		ctx:     ctx,
 		sigs:    make(chan os.Signal, 1),
 		closed:  StateInit,
 		closing: make(chan bool, 1),
 		quit:    make(chan bool, 1),
 		htbt:    NewHeartbeat(ctx),
-		logger:  &simpleLogger{ ctx: ctx, },
+		logger:  &simpleLogger{ctx: ctx},
 	}
 	v.rtmp = agent.NewRtmp(ctx, v)
 

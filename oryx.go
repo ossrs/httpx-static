@@ -33,9 +33,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/ossrs/go-oryx/agent"
 	"github.com/ossrs/go-oryx/app"
 	"github.com/ossrs/go-oryx/core"
-	"github.com/ossrs/go-oryx/agent"
 	"os"
 )
 

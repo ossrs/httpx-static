@@ -33,7 +33,7 @@ import (
 )
 
 type Heartbeat struct {
-	ctx core.Context
+	ctx      core.Context
 	ips      []string
 	exportIp string
 	lock     sync.Mutex

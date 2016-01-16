@@ -22,10 +22,10 @@
 package core
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
-	"fmt"
 )
 
 const (
@@ -44,6 +44,7 @@ type Context interface {
 type context int
 
 var __cid int = 100
+
 func NewContext() Context {
 	v := context(__cid)
 	__cid++
@@ -60,7 +61,7 @@ type LogPlus struct {
 }
 
 func NewLogPlus(l *log.Logger) Logger {
-	return &LogPlus{ logger: l, }
+	return &LogPlus{logger: l}
 }
 
 func (v *LogPlus) Println(ctx Context, a ...interface{}) {

@@ -32,6 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
+	"github.com/winlinvip/go/src/io/ioutil"
 	"io"
 	"net"
 	"net/url"
@@ -594,7 +595,7 @@ type RtmpRequest struct {
 
 func NewRtmpRequest(ctx core.Context) *RtmpRequest {
 	return &RtmpRequest{
-		ctx: ctx,
+		ctx:  ctx,
 		Type: RtmpUnknown,
 		Url:  &url.URL{},
 	}
@@ -819,7 +820,7 @@ type RtmpConnection struct {
 
 func NewRtmpConnection(ctx core.Context, transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
-		ctx: ctx,
+		ctx:           ctx,
 		sid:           0,
 		Req:           NewRtmpRequest(ctx),
 		wc:            wc,
@@ -3326,15 +3327,15 @@ func NewReaderSize(ctx core.Context, r io.Reader, size int) bufferedReader {
 	}
 }
 
-func (v *debugBufferedReader) Peek(n int) (b[]byte, err error) {
-	b,err = v.imp.Peek(n)
+func (v *debugBufferedReader) Peek(n int) (b []byte, err error) {
+	b, err = v.imp.Peek(n)
 	return
 }
 
 func (v *debugBufferedReader) Read(p []byte) (n int, err error) {
 	ctx := v.ctx
 
-	if n,err = v.imp.Read(p); err != nil {
+	if n, err = v.imp.Read(p); err != nil {
 		return
 	}
 
@@ -3343,7 +3344,7 @@ func (v *debugBufferedReader) Read(p []byte) (n int, err error) {
 		first16B = n
 	}
 
-	last16B := n-16
+	last16B := n - 16
 	if last16B < 0 {
 		last16B = 0
 	}
@@ -3355,7 +3356,7 @@ func (v *debugBufferedReader) Read(p []byte) (n int, err error) {
 func (v *debugBufferedReader) ReadByte() (c byte, err error) {
 	ctx := v.ctx
 
-	if c,err = v.imp.ReadByte(); err != nil {
+	if c, err = v.imp.ReadByte(); err != nil {
 		return
 	}
 
@@ -3395,7 +3396,7 @@ const RtmpDefaultMwMessages = 25
 
 func NewRtmpStack(ctx core.Context, r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
-		ctx: ctx,
+		ctx:          ctx,
 		out:          w,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
@@ -3492,7 +3493,7 @@ func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 		// chunk stream basic header.
 		var fmt uint8
 		var cid uint32
-		if fmt, cid, err = rtmpReadBasicHeader(v.in); err != nil {
+		if fmt, cid, err = rtmpReadBasicHeader(ctx, v.in); err != nil {
 			if !core.IsNormalQuit(err) {
 				core.Warn.Println(ctx, "read basic header failed. err is", err)
 			}
@@ -3787,6 +3788,10 @@ func rtmpReadMessagePayload(ctx core.Context, chunkSize uint32, in bufferedReade
 // 		for the c3 header, we try to read more bytes which maybe header
 // 		or the body.
 func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk *RtmpChunk) (err error) {
+	if core.Conf.Debug.RtmpDumpRecv {
+		core.Trace.Println(ctx, "start read message header.")
+	}
+
 	// we should not assert anything about fmt, for the first packet.
 	// (when first packet, the chunk->msg is NULL).
 	// the fmt maybe 0/1/2/3, the FMLE will send a 0xC4 for some audio packet.
@@ -3849,8 +3854,10 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 
 	var bh []byte
 	if nbh > 0 {
-		bh = make([]byte, nbh)
-		if _, err = in.Read(bh); err != nil {
+		if bh, err = in.Peek(nbh); err != nil {
+			return
+		}
+		if _, err = io.CopyN(ioutil.Discard, in, int64(nbh)); err != nil {
 			return
 		}
 	}
@@ -3983,8 +3990,11 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 		// @remark for the first chunk of message, always use the extended timestamp.
 		if isFirstMsgOfChunk || ctimestamp <= 0 || ctimestamp == timestamp {
 			chunk.timestamp = uint64(timestamp)
+			if core.Conf.Debug.RtmpDumpRecv {
+				core.Trace.Println(ctx, "read matched extended-timestamp.")
+			}
 			// consume from buffer.
-			if _, err = in.Read(b); err != nil {
+			if _, err = io.CopyN(ioutil.Discard, in, 4); err != nil {
 				return
 			}
 		}
@@ -4067,7 +4077,11 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 // Chunk stream IDs with values 64-319 could be represented by both 2-
 // byte version and 3-byte version of this field.
 // @remark use inb to parse and read from in to inb if no data.
-func rtmpReadBasicHeader(in bufferedReader) (fmt uint8, cid uint32, err error) {
+func rtmpReadBasicHeader(ctx core.Context, in bufferedReader) (fmt uint8, cid uint32, err error) {
+	if core.Conf.Debug.RtmpDumpRecv {
+		core.Trace.Println(ctx, "start read basic header.")
+	}
+
 	var vb byte
 	if vb, err = in.ReadByte(); err != nil {
 		return

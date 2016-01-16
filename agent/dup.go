@@ -28,7 +28,7 @@ import (
 )
 
 type DupAgent struct {
-	ctx core.Context
+	ctx      core.Context
 	upstream core.Agent
 	sources  []core.Agent
 
@@ -47,7 +47,7 @@ type DupAgent struct {
 
 func NewDupAgent(ctx core.Context) core.Agent {
 	return &DupAgent{
-		ctx: ctx,
+		ctx:     ctx,
 		sources: make([]core.Agent, 0),
 	}
 }

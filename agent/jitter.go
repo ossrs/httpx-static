@@ -41,14 +41,14 @@ const (
 // time jitter detect and correct,
 // to ensure the stream is monotonically.
 type Jitter struct {
-	ctx core.Context
+	ctx                        core.Context
 	lastPacketTimestamp        int64
 	lastPacketCorrectTimestamp int64
 }
 
 func NewJitter(ctx core.Context) *Jitter {
 	return &Jitter{
-		ctx: ctx,
+		ctx:                        ctx,
 		lastPacketTimestamp:        -1,
 		lastPacketCorrectTimestamp: -1,
 	}

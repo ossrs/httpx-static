@@ -148,7 +148,7 @@ type Config struct {
 	// the vhosts section.
 	Vhosts []*Vhost `json:"vhosts"`
 
-	ctx Context `json:"-"`
+	ctx            Context           `json:"-"`
 	conf           string            `json:"-"` // the config file path.
 	reloadHandlers []ReloadHandler   `json:"-"`
 	vhosts         map[string]*Vhost `json:"-"`
@@ -159,7 +159,7 @@ var Conf *Config
 
 func NewConfig(ctx Context) *Config {
 	c := &Config{
-		ctx: ctx,
+		ctx:            ctx,
 		reloadHandlers: []ReloadHandler{},
 		Vhosts:         make([]*Vhost, 0),
 		vhosts:         make(map[string]*Vhost),

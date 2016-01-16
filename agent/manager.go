@@ -39,7 +39,7 @@ var Manager *AgentManager
 
 func NewManager(ctx core.Context) *AgentManager {
 	return &AgentManager{
-		ctx: ctx,
+		ctx:     ctx,
 		sources: make(map[string]core.Agent),
 	}
 }

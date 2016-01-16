@@ -30,7 +30,7 @@ import (
 // the simple logger which implements the interface
 // and log to console or file.
 type simpleLogger struct {
-	ctx core.Context
+	ctx  core.Context
 	file *os.File
 }
 

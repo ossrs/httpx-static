@@ -62,9 +62,9 @@ func TestBytesBuffer(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
-	Info =  NewLogPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
+	Info = NewLogPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
 	Trace = NewLogPlus(log.New(ioutil.Discard, LogTraceLabel, log.LstdFlags))
-	Warn =  NewLogPlus(log.New(ioutil.Discard, LogWarnLabel, log.LstdFlags))
+	Warn = NewLogPlus(log.New(ioutil.Discard, LogWarnLabel, log.LstdFlags))
 	Error = NewLogPlus(log.New(ioutil.Discard, LogErrorLabel, log.LstdFlags))
 
 	os.Exit(m.Run())

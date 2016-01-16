@@ -33,7 +33,7 @@ import (
 // to listen at RTMP(tcp://1935) and recv data from RTMP publisher or player,
 // when identified the client type, redirect to the specified agent.
 type Rtmp struct {
-	ctx core.Context
+	ctx      core.Context
 	endpoint string
 	wc       core.WorkerContainer
 	l        net.Listener
@@ -42,7 +42,7 @@ type Rtmp struct {
 func NewRtmp(ctx core.Context, wc core.WorkerContainer) (agent core.OpenCloser) {
 	v := &Rtmp{
 		ctx: ctx,
-		wc: wc,
+		wc:  wc,
 	}
 
 	core.Conf.Subscribe(v)
@@ -338,7 +338,7 @@ func (v *Rtmp) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err 
 
 // rtmp play agent, to serve the player or edge.
 type RtmpPlayAgent struct {
-	ctx core.Context
+	ctx       core.Context
 	conn      *protocol.RtmpConnection
 	wc        core.WorkerContainer
 	upstream  core.Agent
@@ -348,7 +348,7 @@ type RtmpPlayAgent struct {
 
 func NewRtmpPlayAgent(ctx core.Context, conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPlayAgent {
 	return &RtmpPlayAgent{
-		ctx: ctx,
+		ctx:    ctx,
 		conn:   conn,
 		wc:     wc,
 		jitter: NewJitter(ctx),
@@ -436,7 +436,7 @@ func (v *RtmpPlayAgent) TiedSink() (sink core.Agent) {
 
 // rtmp publish agent, to serve the FMLE or flash publisher/encoder.
 type RtmpPublishAgent struct {
-	ctx core.Context
+	ctx  core.Context
 	conn *protocol.RtmpConnection
 	wc   core.WorkerContainer
 	flow core.Agent
@@ -444,9 +444,9 @@ type RtmpPublishAgent struct {
 
 func NewRtmpPublishAgent(ctx core.Context, conn *protocol.RtmpConnection, wc core.WorkerContainer) *RtmpPublishAgent {
 	return &RtmpPublishAgent{
-		ctx: ctx,
+		ctx:  ctx,
 		conn: conn,
-		wc: wc,
+		wc:   wc,
 	}
 }
 
