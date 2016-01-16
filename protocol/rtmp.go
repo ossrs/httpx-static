@@ -32,7 +32,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
-	"github.com/winlinvip/go/src/io/ioutil"
+	"io/ioutil"
 	"io"
 	"net"
 	"net/url"
