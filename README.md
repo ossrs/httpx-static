@@ -70,6 +70,7 @@ Why rewrite the SRS to go-oryx:
 1. v0.1.14 Supports SRS style config file.
 1. v0.1.15 Supports LOG+, the connection-based tracable log.
 1. v0.1.16 Supports debug rtmp recv by config debug.rtmp_dump_recv.
+1. v0.1.17 Supports force to realtime mode by config vhost.min_latency.
 1. [dev] Supports gop-cache and drop frame strategy.
 1. [plan] [#45](../../issues/45) HLS: Support audio only HLS stream. 
 1. [plan] [#44](../../issues/44) DASH: Support remux stream to MPEG-DASH

@@ -113,6 +113,13 @@
     // for which cannot identify the required vhost.
     {
       "name": "__defaultVhost__",
+      // whether enable min delay mode for vhost.
+      // for min latence mode:
+      // 1. disable the publish.mr for vhost.
+      // 2. use timeout for cond wait for consumer queue.
+      // @see https://github.com/ossrs/srs/issues/257
+      // default: false
+      "min_latency": false,
       // for play client, both RTMP and other stream clients,
       // for instance, the HTTP FLV stream clients.
       "play": {

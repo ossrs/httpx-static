@@ -78,8 +78,9 @@ func NewReader(r io.Reader) io.Reader {
 
 // the vhost section in config.
 type Vhost struct {
-	Name string `json:"name"`
-	Play *Play  `json:"play,ommit-empty"`
+	Name     string `json:"name"`
+	Realtime bool   `json:"min_latency"`
+	Play     *Play  `json:"play,ommit-empty"`
 }
 
 func NewConfVhost() *Vhost {
@@ -473,4 +474,13 @@ func (v *Config) VhostGroupMessages(vhost string) (n int, err error) {
 		return defaultMwLatency / 14, nil
 	}
 	return p.Play.MwLatency / 14, nil
+}
+
+func (v *Config) VhostRealtime(vhost string) (r bool, err error) {
+	var p *Vhost
+	if p, err = v.Vhost(vhost); err != nil {
+		return
+	}
+
+	return p.Realtime, nil
 }

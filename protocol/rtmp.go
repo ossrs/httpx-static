@@ -32,8 +32,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ossrs/go-oryx/core"
-	"io/ioutil"
 	"io"
+	"io/ioutil"
 	"net"
 	"net/url"
 	"reflect"
@@ -1217,7 +1217,20 @@ func (v *RtmpConnection) OnUrlParsed() (err error) {
 	return v.updateNbGroupMessages()
 }
 func (v *RtmpConnection) updateNbGroupMessages() (err error) {
-	v.nbGroupMessages, err = core.Conf.VhostGroupMessages(v.Req.Vhost)
+	ctx := v.ctx
+
+	if v.nbGroupMessages, err = core.Conf.VhostGroupMessages(v.Req.Vhost); err != nil {
+		return
+	}
+
+	var r bool
+	if r, err = core.Conf.VhostRealtime(v.Req.Vhost); err != nil {
+		return
+	} else if r {
+		core.Trace.Println(ctx, "enter realtime mode, message group", v.nbGroupMessages, "=>", 1)
+		v.nbGroupMessages = 1
+	}
+
 	return
 }
 
