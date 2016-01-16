@@ -3307,12 +3307,68 @@ func NewRtmpChunk(cid uint32) *RtmpChunk {
 	}
 }
 
+// the interface for *bufio.Reader
+type bufferedReader interface {
+	io.Reader
+	Peek(n int) ([]byte, error)
+	ReadByte() (c byte, err error)
+}
+
+type debugBufferedReader struct {
+	ctx core.Context
+	imp *bufio.Reader
+}
+
+func NewReaderSize(ctx core.Context, r io.Reader, size int) bufferedReader {
+	return &debugBufferedReader{
+		ctx: ctx,
+		imp: bufio.NewReaderSize(r, size),
+	}
+}
+
+func (v *debugBufferedReader) Peek(n int) (b[]byte, err error) {
+	b,err = v.imp.Peek(n)
+	return
+}
+
+func (v *debugBufferedReader) Read(p []byte) (n int, err error) {
+	ctx := v.ctx
+
+	if n,err = v.imp.Read(p); err != nil {
+		return
+	}
+
+	first16B := 16
+	if n < first16B {
+		first16B = n
+	}
+
+	last16B := n-16
+	if last16B < 0 {
+		last16B = 0
+	}
+
+	core.Trace.Println(ctx, fmt.Sprintf("Read p[%d] got %d, %#x, %#x", len(p), n, p[:first16B], p[last16B:n]))
+	return
+}
+
+func (v *debugBufferedReader) ReadByte() (c byte, err error) {
+	ctx := v.ctx
+
+	if c,err = v.imp.ReadByte(); err != nil {
+		return
+	}
+
+	core.Trace.Println(ctx, fmt.Sprintf("ReadByte got %#x", []byte{c}))
+	return
+}
+
 // RTMP protocol stack.
 type RtmpStack struct {
 	ctx core.Context
 
 	// the input and output stream.
-	in  *bufio.Reader
+	in  bufferedReader
 	out io.Writer
 	// the chunks for RTMP,
 	// key is the cid from basic header.
@@ -3340,11 +3396,16 @@ const RtmpDefaultMwMessages = 25
 func NewRtmpStack(ctx core.Context, r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
 		ctx: ctx,
-		in:           bufio.NewReaderSize(r, RtmpMaxChunkHeader),
 		out:          w,
 		chunks:       make(map[uint32]*RtmpChunk),
 		inChunkSize:  RtmpProtocolChunkSize,
 		outChunkSize: RtmpProtocolChunkSize,
+	}
+
+	if core.Conf.Debug.RtmpDumpRecv {
+		v.in = NewReaderSize(ctx, r, RtmpMaxChunkHeader)
+	} else {
+		v.in = bufio.NewReaderSize(r, RtmpMaxChunkHeader)
 	}
 
 	// assume each message contains 10 chunks,
@@ -3675,7 +3736,7 @@ func (v *RtmpStack) slowSendMessages(iovs ...[]byte) (err error) {
 
 // read the RTMP message from buffer inb which load from reader in.
 // return the completed message from chunk partial message.
-func rtmpReadMessagePayload(ctx core.Context, chunkSize uint32, in *bufio.Reader, chunk *RtmpChunk) (m *RtmpMessage, err error) {
+func rtmpReadMessagePayload(ctx core.Context, chunkSize uint32, in bufferedReader, chunk *RtmpChunk) (m *RtmpMessage, err error) {
 	m = chunk.partialMessage
 	if m == nil {
 		panic("chunk message should never be nil")
@@ -3725,7 +3786,7 @@ func rtmpReadMessagePayload(ctx core.Context, chunkSize uint32, in *bufio.Reader
 // @remark we return the b which indicates the body read in this process,
 // 		for the c3 header, we try to read more bytes which maybe header
 // 		or the body.
-func rtmpReadMessageHeader(ctx core.Context, in *bufio.Reader, fmt uint8, chunk *RtmpChunk) (err error) {
+func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk *RtmpChunk) (err error) {
 	// we should not assert anything about fmt, for the first packet.
 	// (when first packet, the chunk->msg is NULL).
 	// the fmt maybe 0/1/2/3, the FMLE will send a 0xC4 for some audio packet.
@@ -4006,7 +4067,7 @@ func rtmpReadMessageHeader(ctx core.Context, in *bufio.Reader, fmt uint8, chunk 
 // Chunk stream IDs with values 64-319 could be represented by both 2-
 // byte version and 3-byte version of this field.
 // @remark use inb to parse and read from in to inb if no data.
-func rtmpReadBasicHeader(in *bufio.Reader) (fmt uint8, cid uint32, err error) {
+func rtmpReadBasicHeader(in bufferedReader) (fmt uint8, cid uint32, err error) {
 	var vb byte
 	if vb, err = in.ReadByte(); err != nil {
 		return

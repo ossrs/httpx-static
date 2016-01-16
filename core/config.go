@@ -79,7 +79,7 @@ func NewReader(r io.Reader) io.Reader {
 // the vhost section in config.
 type Vhost struct {
 	Name string `json:"name"`
-	Play *Play  `json:"play"`
+	Play *Play  `json:"play,ommit-empty"`
 }
 
 func NewConfVhost() *Vhost {
@@ -140,6 +140,10 @@ type Config struct {
 		Network int      `json:"network"` // the network device index to use as exported ip.
 		Disks   []string `json:"disk"`    // the disks to stat.
 	} `json:"stats"`
+
+	Debug struct {
+		RtmpDumpRecv bool `json:"rtmp_dump_recv"`
+	} `json:"debug"`
 
 	// the vhosts section.
 	Vhosts []*Vhost `json:"vhosts"`
