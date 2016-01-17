@@ -1217,20 +1217,9 @@ func (v *RtmpConnection) OnUrlParsed() (err error) {
 	return v.updateNbGroupMessages()
 }
 func (v *RtmpConnection) updateNbGroupMessages() (err error) {
-	ctx := v.ctx
-
 	if v.nbGroupMessages, err = core.Conf.VhostGroupMessages(v.Req.Vhost); err != nil {
 		return
 	}
-
-	var r bool
-	if r, err = core.Conf.VhostRealtime(v.Req.Vhost); err != nil {
-		return
-	} else if r {
-		core.Trace.Println(ctx, "enter realtime mode, message group", v.nbGroupMessages, "=>", 1)
-		v.nbGroupMessages = 1
-	}
-
 	return
 }
 
@@ -1348,6 +1337,8 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 
 // for Flash player or edge, response the start play event.
 func (v *RtmpConnection) FlashStartPlay() (err error) {
+	ctx := v.ctx
+
 	// StreamBegin
 	if p, ok := NewRtmpUserControlPacket().(*RtmpUserControlPacket); ok {
 		p.EventType = RtmpUint16(RtmpPcucStreamBegin)
@@ -1401,7 +1392,15 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	}
 
 	// ok, we enter group message mode.
-	v.groupMessages = true
+	var r bool
+	if r,err = core.Conf.VhostRealtime(v.Req.Vhost); err != nil {
+		return
+	} else if !r {
+		v.groupMessages = true
+	} else {
+		v.groupMessages = false
+		core.Trace.Println(ctx, "enter realtime mode, disable message group")
+	}
 
 	return
 }
