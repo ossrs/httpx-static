@@ -142,9 +142,10 @@ func TestRtmpStack(t *testing.T) {
 }
 
 func TestRtmpStack_RtmpReadBasicHeader(t *testing.T) {
+	ctx := core.NewContext()
 	fn := func(b []byte, fmt uint8, cid uint32, ef func(error)) {
 		r := bufio.NewReader(bytes.NewReader(b))
-		if f, c, err := rtmpReadBasicHeader(r); err != nil || f != fmt || c != cid {
+		if f, c, err := rtmpReadBasicHeader(ctx, r); err != nil || f != fmt || c != cid {
 			t.Error("invalid chunk,", b, "fmt", fmt, "!=", f, "and cid", cid, "!=", c)
 			ef(err)
 		}

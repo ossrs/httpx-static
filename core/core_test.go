@@ -62,6 +62,9 @@ func TestBytesBuffer(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
+	ctx := NewContext()
+	Conf = NewConfig(ctx)
+
 	Info = NewLogPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
 	Trace = NewLogPlus(log.New(ioutil.Discard, LogTraceLabel, log.LstdFlags))
 	Warn = NewLogPlus(log.New(ioutil.Discard, LogWarnLabel, log.LstdFlags))

@@ -30,6 +30,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	ctx := core.NewContext()
+	core.Conf = core.NewConfig(ctx)
+
 	core.Info = core.NewLogPlus(log.New(ioutil.Discard, core.LogInfoLabel, log.LstdFlags))
 	core.Trace = core.NewLogPlus(log.New(ioutil.Discard, core.LogTraceLabel, log.LstdFlags))
 	core.Warn = core.NewLogPlus(log.New(ioutil.Discard, core.LogWarnLabel, log.LstdFlags))
