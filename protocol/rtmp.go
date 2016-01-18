@@ -1393,7 +1393,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 
 	// ok, we enter group message mode.
 	var r bool
-	if r,err = core.Conf.VhostRealtime(v.Req.Vhost); err != nil {
+	if r, err = core.Conf.VhostRealtime(v.Req.Vhost); err != nil {
 		return
 	} else if !r {
 		v.groupMessages = true
