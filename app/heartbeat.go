@@ -31,6 +31,7 @@ import (
 	"reflect"
 	"sync"
 	"time"
+	"io/ioutil"
 )
 
 type IfaceType uint8
@@ -70,6 +71,7 @@ func (v *NetworkIface) String() string {
 type Heartbeat struct {
 	ctx      core.Context
 	ips      []*NetworkIface
+	devices  map[string]interface{}
 	exportIp *NetworkIface
 	lock     sync.Mutex
 }
@@ -78,8 +80,95 @@ func NewHeartbeat(ctx core.Context) *Heartbeat {
 	return &Heartbeat{
 		ctx:      ctx,
 		ips:      make([]*NetworkIface, 0),
+		devices: make(map[string]interface{}),
 		exportIp: nil,
 	}
+}
+
+func (v *Heartbeat) Initialize(w core.WorkerContainer) (err error) {
+	ctx := v.ctx
+	c := &core.Conf.Heartbeat
+
+	if !c.Enabled {
+		return
+	}
+
+	var l net.Listener
+	ep := fmt.Sprintf(":%v", c.Listen)
+	if l, err = net.Listen("tcp", ep); err != nil {
+		core.Error.Println(ctx, "htbt listen at", ep, "failed. err is", err)
+		return
+	}
+	core.Trace.Println(ctx, "htbt(api) listen at", fmt.Sprintf("tcp://%v", c.Listen))
+
+	isListenerClosed := false
+	w.GFork("htbt(api)", func(w core.WorkerContainer){
+		var err error
+
+		h := http.NewServeMux()
+		h.HandleFunc("/", func(w http.ResponseWriter, r *http.Request){
+			w.Header().Set("Content-Type", core.HttpJson)
+			w.Header().Set("Server", core.OryxSigServer())
+
+			p := struct {
+				Urls map[string]string      `json:"urls"`
+			}{}
+			p.Urls = map[string]string{
+				"/api/v1/htbt/devices": "each device is object(id:string,data:object).",
+			}
+
+			if b,err := json.Marshal(p); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			} else {
+				w.Write(b)
+			}
+		})
+		h.HandleFunc("/api/v1/htbt/devices", func(w http.ResponseWriter, r *http.Request){
+			w.Header().Set("Content-Type", core.HttpJson)
+			w.Header().Set("Server", core.OryxSigServer())
+
+			var b []byte
+			var err error
+			if r.Method == "GET" {
+				b,err = json.Marshal(v.devices)
+			} else {
+				if b,err = ioutil.ReadAll(r.Body); err == nil {
+					obj := struct {
+						Id string `json:"id"`
+						Data interface{} `json:"data"`
+					}{}
+					if err = json.Unmarshal(b, &obj); err == nil {
+						v.devices[obj.Id] = obj.Data
+					}
+				}
+			}
+
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			} else {
+				w.Write(b)
+			}
+		})
+		if err = http.Serve(l, h); err != nil {
+			if !core.IsNormalQuit(err) && !isListenerClosed {
+				core.Error.Println(ctx, "htbt(api) serve failed. err is", err)
+			}
+			return
+		}
+		core.Trace.Println(ctx, "htbt(api) terminated.")
+	})
+
+	// should quit?
+	w.GFork("", func(wc core.WorkerContainer) {
+		<-wc.QC()
+		defer wc.Quit()
+		isListenerClosed = true
+		_ = l.Close()
+	})
+
+	return
 }
 
 const (
@@ -258,11 +347,15 @@ func (v *Heartbeat) beat() (err error) {
 		DeviceId string      `json:"device_id"`
 		Ip       string      `json:"ip"`
 		Summary  interface{} `json:"summaries,omitempty"`
+		Devices  interface{} `json:"devices,omitempty"`
 	}{}
 
 	c := &core.Conf.Heartbeat
 	p.DeviceId = c.DeviceId
 	p.Ip = v.exportIp.Ip
+	if len(v.devices) > 0 {
+		p.Devices = v.devices
+	}
 
 	if c.Summary {
 		s := NewSummary()

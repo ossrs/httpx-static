@@ -2,7 +2,6 @@
 *.o
 *.a
 *.so
-*.json
 go-oryx
 
 # Folders

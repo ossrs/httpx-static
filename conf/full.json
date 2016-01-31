@@ -83,7 +83,13 @@
     //   }
     // @remark: optional config.
     // default: false
-    "summaries": false
+    "summaries": false,
+    // the api listen port for heartbeat.
+    // user can post to this api and the heartbeat will carry
+    // the information to report to server.
+    // @remark the default listen to 2015 for SRS.
+    // default: 2015
+    "listen": 2015
   },
   // system statistics section.
   // the main cycle will retrieve the system stat,

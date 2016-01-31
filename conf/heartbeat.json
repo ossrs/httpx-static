@@ -1,0 +1,21 @@
+{
+  "listen": 1935,
+  "daemon": false,
+  "workers": 1,
+  "log": {
+    "tank": "console",
+    "level": "trace"
+  },
+  "heartbeat": {
+    "enabled": true,
+    "interval": 9.3,
+    "url": "http://127.0.0.1:8085/api/v1/servers",
+    "device_id": "my-oryx-device",
+    "listen": 2015
+  },
+  "vhosts": [
+    {
+      "name": "__defaultVhost__"
+    }
+  ]
+}

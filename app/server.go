@@ -242,6 +242,11 @@ func (v *Server) Initialize() (err error) {
 	// use worker container to fork.
 	var wc core.WorkerContainer = v
 
+	// heartbeat with http api.
+	if err = v.htbt.Initialize(wc); err != nil {
+		return
+	}
+
 	// reload goroutine
 	wc.GFork("reload", core.Conf.ReloadCycle)
 	// heartbeat goroutine

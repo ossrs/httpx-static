@@ -134,6 +134,7 @@ type Config struct {
 		Url      string  `json:"url"`       // the url to report.
 		DeviceId string  `json:"device_id"` // the device id to report.
 		Summary  bool    `json:"summaries"` // whether enable the detail summary.
+		Listen   int `json:"listen"` // the heartbeat http api listen port.
 	} `json:"heartbeat"`
 
 	// the stat section.
