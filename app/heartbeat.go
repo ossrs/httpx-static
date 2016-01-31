@@ -134,7 +134,10 @@ func (v *Heartbeat) Initialize(w core.WorkerContainer) (err error) {
 			var b []byte
 			var err error
 			if r.Method == "GET" {
-				b, err = json.Marshal(v.devices)
+				b, err = json.Marshal(map[string]interface{}{
+					"code":0,
+					"devices":v.devices,
+				})
 			} else {
 				if b, err = ioutil.ReadAll(r.Body); err == nil {
 					obj := struct {
