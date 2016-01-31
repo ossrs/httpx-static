@@ -24,6 +24,7 @@ package app
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"github.com/ossrs/go-oryx/core"
 	"net"
 	"net/http"
@@ -32,17 +33,52 @@ import (
 	"time"
 )
 
+type IfaceType uint8
+
+const (
+	IfaceInternet IfaceType = iota
+	IfaceIntranet
+	IfaceUnknown
+)
+
+func (v IfaceType) String() string {
+	switch v {
+	case IfaceInternet:
+		return "Internet"
+	case IfaceIntranet:
+		return "Intranet"
+	default:
+		return "Unknown"
+	}
+}
+
+type NetworkIface struct {
+	// interface name.
+	Ifname string
+	// the ip address of interface.
+	Ip string
+	// the mac address of interface.
+	Mac string
+	// whether the interface ip is public.
+	Internet IfaceType
+}
+
+func (v *NetworkIface) String() string {
+	return fmt.Sprintf("%v/%v/%v/%v", v.Ifname, v.Ip, v.Mac, v.Internet)
+}
+
 type Heartbeat struct {
 	ctx      core.Context
-	ips      []string
-	exportIp string
+	ips      []*NetworkIface
+	exportIp *NetworkIface
 	lock     sync.Mutex
 }
 
 func NewHeartbeat(ctx core.Context) *Heartbeat {
 	return &Heartbeat{
-		ctx: ctx,
-		ips: []string{},
+		ctx:      ctx,
+		ips:      make([]*NetworkIface, 0),
+		exportIp: nil,
 	}
 }
 
@@ -65,14 +101,15 @@ func (v *Heartbeat) discoveryCycle(w core.WorkerContainer) {
 
 			if err := v.discovery(); err != nil {
 				core.Warn.Println(ctx, "heartbeat discovery failed, err is", err)
-			} else {
-				if len(v.ips) <= 0 {
-					interval = discoveryEmptyInterval
-					continue
-				}
-				core.Trace.Println(ctx, "local ip is", v.ips, "exported", v.exportIp)
-				interval = discoveryRefreshInterval
+				continue
 			}
+
+			if len(v.ips) <= 0 {
+				interval = discoveryEmptyInterval
+				continue
+			}
+			core.Trace.Println(ctx, "local ip is", v.ips, "exported", v.exportIp)
+			interval = discoveryRefreshInterval
 		}
 	}
 
@@ -116,14 +153,43 @@ func (v *Heartbeat) discovery() (err error) {
 		return ip != nil && ip.To4() != nil && !ip.IsLoopback()
 	}
 
+	// whether address is internet.
+	is_internet := func(ipv4 net.IP) IfaceType {
+		ipv4 = ipv4.To4()
+		core.Info.Println(ctx, "addr is", []byte(ipv4))
+		addr := (uint32(ipv4[0]) << 24) | (uint32(ipv4[1]) << 16) | (uint32(ipv4[2]) << 8) | uint32(ipv4[3])
+
+		// lo, 127.0.0.0-127.0.0.1
+		if addr >= 0x7f000000 && addr <= 0x7f000001 {
+			return IfaceIntranet
+		}
+
+		// Class A 10.0.0.0-10.255.255.255
+		if addr >= 0x0a000000 && addr <= 0x0affffff {
+			return IfaceIntranet
+		}
+
+		// Class B 172.16.0.0-172.31.255.255
+		if addr >= 0xac100000 && addr <= 0xac1fffff {
+			return IfaceIntranet
+		}
+
+		// Class C 192.168.0.0-192.168.255.255
+		if addr >= 0xc0a80000 && addr <= 0xc0a8ffff {
+			return IfaceIntranet
+		}
+
+		return IfaceInternet
+	}
+
 	// fetch the ip from addr interface.
-	ipf := func(addr net.Addr) (string, bool) {
+	ipf := func(addr net.Addr) (string, bool, IfaceType) {
 		if v, ok := addr.(*net.IPNet); ok && vf(v.IP) {
-			return v.IP.String(), true
+			return v.IP.String(), true, is_internet(v.IP)
 		} else if v, ok := addr.(*net.IPAddr); ok && vf(v.IP) {
-			return v.IP.String(), true
+			return v.IP.String(), true, is_internet(v.IP)
 		} else {
-			return "", false
+			return "", false, IfaceUnknown
 		}
 	}
 
@@ -132,25 +198,45 @@ func (v *Heartbeat) discovery() (err error) {
 		return
 	}
 
-	v.ips = []string{}
+	v.exportIp = nil
+	v.ips = make([]*NetworkIface, 0)
 	for _, iface := range ifaces {
+		// ignore any loopback interface.
+		if (iface.Flags & net.FlagLoopback) == net.FlagLoopback {
+			continue
+		}
+
 		var addrs []net.Addr
 		if addrs, err = iface.Addrs(); err != nil {
 			return
 		}
+		if len(addrs) == 0 {
+			continue
+		}
+		core.Info.Println(ctx, "scan iface", iface.Name, "flags", iface.Flags, "addrs", addrs, "hwaddr", iface.HardwareAddr)
 
 		// dumps all network interfaces.
 		for _, addr := range addrs {
-			if p, ok := ipf(addr); ok {
-				core.Trace.Println(ctx, "iface", iface.Name, "ip is", p)
-				v.ips = append(v.ips, p)
+			if p, ok, pub := ipf(addr); ok {
+				core.Trace.Println(ctx, fmt.Sprintf("match iface=%v, ip=%v, hwaddr=%v, pub=%v", iface.Name, p, iface.HardwareAddr, pub))
+				v.ips = append(v.ips, &NetworkIface{
+					Ifname: iface.Name, Ip: p, Mac: iface.HardwareAddr.String(), Internet: pub,
+				})
 			} else {
 				core.Info.Println(ctx, "iface", iface.Name, addr, reflect.TypeOf(addr))
 			}
 		}
 	}
 
-	// choose one as exported network address.
+	// find the best match public address.
+	for _, ip := range v.ips {
+		if ip.Internet == IfaceInternet {
+			v.exportIp = ip
+			return
+		}
+	}
+
+	// no public address, use private address.
 	if len(v.ips) > 0 {
 		v.exportIp = v.ips[core.Conf.Stat.Network%len(v.ips)]
 	}
@@ -163,7 +249,7 @@ func (v *Heartbeat) beat() (err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	if len(v.exportIp) <= 0 {
+	if v.exportIp == nil {
 		core.Info.Println(ctx, "heartbeat not ready.")
 		return
 	}
@@ -176,7 +262,7 @@ func (v *Heartbeat) beat() (err error) {
 
 	c := &core.Conf.Heartbeat
 	p.DeviceId = c.DeviceId
-	p.Ip = v.exportIp
+	p.Ip = v.exportIp.Ip
 
 	if c.Summary {
 		s := NewSummary()
