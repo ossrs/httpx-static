@@ -23,6 +23,7 @@ package core
 
 import (
 	"encoding/json"
+	ocore "github.com/ossrs/go-oryx-lib/json"
 	"io/ioutil"
 	"strings"
 	"testing"
@@ -92,7 +93,7 @@ func BenchmarkConfigBasic(b *testing.B) {
 }
 
 func TestJsonCommentReader(t *testing.T) {
-	r := NewReader(strings.NewReader("winlin//comment\nyang/*abc*/2015'str/*//*/'"))
+	r := ocore.NewJsonPlusReader(strings.NewReader("winlin//comment\nyang/*abc*/2015'str/*//*/'"))
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		t.Error("failed, err is", err)
@@ -108,7 +109,7 @@ func TestConfigReader(t *testing.T) {
 			o := vs[i]
 			e := vs[i+1]
 
-			if b, err := ioutil.ReadAll(NewReader(strings.NewReader(o))); err != nil {
+			if b, err := ioutil.ReadAll(ocore.NewJsonPlusReader(strings.NewReader(o))); err != nil {
 				t.Error("read", o, "failed, err is", err)
 				ef(err)
 			} else {
@@ -137,7 +138,7 @@ func TestConfigReader(t *testing.T) {
 func TestConfigComments(t *testing.T) {
 	f := func(vs []string, eh func(string, interface{}, error)) {
 		for _, v := range vs {
-			j := json.NewDecoder(NewReader(strings.NewReader(v)))
+			j := json.NewDecoder(ocore.NewJsonPlusReader(strings.NewReader(v)))
 			var o interface{}
 			err := j.Decode(&o)
 			eh(v, o, err)
