@@ -24,11 +24,11 @@ package core
 import (
 	"errors"
 	"fmt"
+	ocore "github.com/ossrs/go-oryx-lib/json"
 	"io"
 	"io/ioutil"
 	"os"
 	"strings"
-	ocore "github.com/ossrs/go-oryx-lib/json"
 )
 
 // the scope for reload.

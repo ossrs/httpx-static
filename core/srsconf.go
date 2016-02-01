@@ -25,10 +25,10 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
+	ocore "github.com/ossrs/go-oryx-lib/json"
 	"io"
 	"strconv"
 	"strings"
-	ocore "github.com/ossrs/go-oryx-lib/json"
 )
 
 type srsConfDirective struct {

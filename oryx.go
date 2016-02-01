@@ -32,10 +32,10 @@ package main
 
 import (
 	"fmt"
+	ocore "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/agent"
 	"github.com/ossrs/go-oryx/app"
 	"github.com/ossrs/go-oryx/core"
-	ocore "github.com/ossrs/go-oryx-lib/options"
 	"os"
 )
 
