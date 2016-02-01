@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 Oryx(ossrs)
+// Copyright (c) 2013-2016 Oryx(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -43,10 +43,10 @@ func TestBasicLogger(t *testing.T) {
 	}
 
 	ctx := NewContext()
-	Info = NewLogPlus(log.New(WriterFunc(writer), LogInfoLabel, log.LstdFlags))
-	Trace = NewLogPlus(log.New(WriterFunc(writer), LogTraceLabel, log.LstdFlags))
-	Warn = NewLogPlus(log.New(WriterFunc(writer), LogWarnLabel, log.LstdFlags))
-	Error = NewLogPlus(log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags))
+	Info = NewLoggerPlus(log.New(WriterFunc(writer), LogInfoLabel, log.LstdFlags))
+	Trace = NewLoggerPlus(log.New(WriterFunc(writer), LogTraceLabel, log.LstdFlags))
+	Warn = NewLoggerPlus(log.New(WriterFunc(writer), LogWarnLabel, log.LstdFlags))
+	Error = NewLoggerPlus(log.New(WriterFunc(writer), LogErrorLabel, log.LstdFlags))
 
 	Info.Println(ctx, "test logger.")
 	if !strings.HasPrefix(tank, "[oryx][info]") {

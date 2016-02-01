@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 Oryx(ossrs)
+// Copyright (c) 2013-2016 Oryx(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -28,6 +28,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	ocore "github.com/ossrs/go-oryx-lib/json"
 )
 
 type srsConfDirective struct {
@@ -205,7 +206,7 @@ func NewSrsConfCommentReader(r io.Reader) io.Reader {
 	endMatches := [][]byte{[]byte("'"), []byte("\""), []byte("\n")}
 	isComments := []bool{false, false, true}
 	requiredMatches := []bool{true, true, false}
-	return NewCommendReader(r, startMatches, endMatches, isComments, requiredMatches)
+	return ocore.NewCommentReader(r, startMatches, endMatches, isComments, requiredMatches)
 }
 
 // parse the srs style config.

@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 Oryx(ossrs)
+// Copyright (c) 2013-2016 Oryx(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -22,13 +22,13 @@
 package core
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"strings"
+	ocore "github.com/ossrs/go-oryx-lib/json"
 )
 
 // the scope for reload.
@@ -63,17 +63,6 @@ type ReloadHandler interface {
 	// @param cc the current loaded config, GsConfig.
 	// @param pc the previous old config.
 	OnReloadVhost(vhost string, scope int, cc, pc *Config) (err error)
-}
-
-// the reader support c++-style comment,
-//      block: /* comments */
-//      line: // comments
-func NewReader(r io.Reader) io.Reader {
-	startMatches := [][]byte{[]byte("'"), []byte("\""), []byte("//"), []byte("/*")}
-	endMatches := [][]byte{[]byte("'"), []byte("\""), []byte("\n"), []byte("*/")}
-	isComments := []bool{false, false, true, true}
-	requiredMatches := []bool{true, true, false, true}
-	return NewCommendReader(r, startMatches, endMatches, isComments, requiredMatches)
 }
 
 // the vhost section in config.
@@ -204,18 +193,14 @@ func (v *Config) Loads(conf string) error {
 	// json style should not be *.conf
 	if !strings.HasSuffix(conf, ".conf") {
 		// read the whole config to []byte.
-		var d *json.Decoder
 		if f, err := os.Open(conf); err != nil {
 			return err
 		} else {
 			defer f.Close()
 
-			d = json.NewDecoder(NewReader(f))
-			//d = json.NewDecoder(f)
-		}
-
-		if err := d.Decode(v); err != nil {
-			return err
+			if err := ocore.Unmarshal(f, v); err != nil {
+				return err
+			}
 		}
 	} else {
 		// srs-style config.

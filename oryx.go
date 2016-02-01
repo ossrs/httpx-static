@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 Oryx(ossrs)
+// Copyright (c) 2013-2016 Oryx(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -31,11 +31,11 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"github.com/ossrs/go-oryx/agent"
 	"github.com/ossrs/go-oryx/app"
 	"github.com/ossrs/go-oryx/core"
+	ocore "github.com/ossrs/go-oryx-lib/options"
 	"os"
 )
 
@@ -63,74 +63,14 @@ func serve(svr *app.Server, ctx core.Context) int {
 	return 0
 }
 
-func parseArgv(ctx core.Context) (confFile string) {
-	// the args format:
-	//          -c conf/oryx.json
-	//          --c conf/oryx.json
-	//          -c=conf/oryx.json
-	//          --c=conf/oryx.json
-	//          --conf=conf/oryx.json
-	if true {
-		dv := ""
-		ua := "the config file"
-		flag.StringVar(&confFile, "c", dv, ua)
-		flag.StringVar(&confFile, "conf", dv, ua)
-	}
-
-	var showHelp bool
-	if true {
-		dv := false
-		ua := "print version"
-		flag.BoolVar(&showHelp, "v", dv, ua)
-		flag.BoolVar(&showHelp, "V", dv, ua)
-		flag.BoolVar(&showHelp, "version", dv, ua)
-	}
-
-	var showSignature bool
-	if true {
-		dv := false
-		ua := "print signature"
-		flag.BoolVar(&showSignature, "g", dv, ua)
-		flag.BoolVar(&showSignature, "signature", dv, ua)
-	}
-
-	flag.Usage = func() {
-		fmt.Println(core.OryxSigProduct)
-		fmt.Println(fmt.Sprintf("Usage: %v [-c|--conf <filename>] [-?|-h|--help] [-v|-V|--version] [-g|--signature]", os.Args[0]))
-		fmt.Println(fmt.Sprintf("	    -c, --conf filename     : the config file path"))
-		fmt.Println(fmt.Sprintf("	    -?, -h, --help          : show this help and exit"))
-		fmt.Println(fmt.Sprintf("	    -v, -V, --version       : print version and exit"))
-		fmt.Println(fmt.Sprintf("	    -g, --signature         : print server signature and exit"))
-		fmt.Println(fmt.Sprintf("For example:"))
-		fmt.Println(fmt.Sprintf("	    %v -c conf/oryx.json", os.Args[0]))
-	}
-	flag.Parse()
-
-	if showHelp {
-		fmt.Fprintln(os.Stderr, core.Version())
-		os.Exit(0)
-	}
-
-	if showSignature {
-		fmt.Fprintln(os.Stderr, core.OryxSigServer())
-		os.Exit(0)
-	}
-
-	if len(confFile) == 0 {
-		flag.Usage()
-		os.Exit(-1)
-	}
-
-	return
-}
-
 func main() {
 	// the main context.
+	core.RewriteLogger()
 	ctx := core.NewContext()
 	core.Conf = core.NewConfig(ctx)
 	agent.Manager = agent.NewManager(ctx)
 
-	confFile := parseArgv(ctx)
+	confFile := ocore.ParseArgv("oryx.json", core.Version(), core.OryxSigServer())
 	fmt.Println(fmt.Sprintf("%v signature is %v", core.OryxSigName, core.OryxSigServer()))
 
 	ret := func() int {

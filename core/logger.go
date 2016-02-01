@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 Oryx(ossrs)
+// Copyright (c) 2013-2016 Oryx(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -22,25 +22,20 @@
 package core
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	ocore "github.com/ossrs/go-oryx-lib/logger"
 )
 
-const (
-	logLabel      = "[oryx]"
-	LogInfoLabel  = logLabel + "[info] "
-	LogTraceLabel = logLabel + "[trace] "
-	LogWarnLabel  = logLabel + "[warn] "
-	LogErrorLabel = logLabel + "[error] "
-)
-
-// the context for current goroutine.
+// alias the Context interface.
+// @remark user can directly use ocore Context.
 type Context interface {
-	// get current goroutine cid.
-	Cid() int
+	ocore.Context
 }
+
+// implements the context.
+// @remark user can use nil context.
 type context int
 
 var __cid int = 100
@@ -55,34 +50,50 @@ func (v context) Cid() int {
 	return int(v)
 }
 
-// the LOG+ which provides connection-based log.
-type LogPlus struct {
-	logger *log.Logger
+// alias the Logger interface.
+// @remark user can directly use ocore Logger.
+type Logger interface {
+	ocore.Logger
 }
 
-func NewLogPlus(l *log.Logger) Logger {
-	return &LogPlus{logger: l}
-}
-
-func (v *LogPlus) Println(ctx Context, a ...interface{}) {
-	a = append([]interface{}{fmt.Sprintf("[%v][%v]", os.Getpid(), ctx.Cid())}, a...)
-	v.logger.Println(a...)
+// alias for log plus.
+func NewLoggerPlus(l *log.Logger) Logger {
+	return Logger(ocore.NewLoggerPlus(l))
 }
 
 // the application loggers
 // info, the verbose info level, very detail log, the lowest level, to discard.
-var Info Logger = NewLogPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
+var Info Logger = nil
 
 // trace, the trace level, something important, the default log level, to stdout.
-var Trace Logger = NewLogPlus(log.New(os.Stdout, LogTraceLabel, log.LstdFlags))
+var Trace Logger = nil
 
 // warn, the warning level, dangerous information, to stderr.
-var Warn Logger = NewLogPlus(log.New(os.Stderr, LogWarnLabel, log.LstdFlags))
+var Warn Logger = nil
 
 // error, the error level, fatal error things, ot stderr.
-var Error Logger = NewLogPlus(log.New(os.Stderr, LogErrorLabel, log.LstdFlags))
+var Error Logger = nil
 
-// the logger for gsrs.
-type Logger interface {
-	Println(ctx Context, a ...interface{})
+const (
+	logLabel      = "[oryx]"
+	LogInfoLabel  = logLabel + "[info] "
+	LogTraceLabel = logLabel + "[trace] "
+	LogWarnLabel  = logLabel + "[warn] "
+	LogErrorLabel = logLabel + "[error] "
+)
+
+// rewrite the label and set alias for logger.
+// @remark for normal application, use the ocore directly.
+func RewriteLogger() {
+	// rewrite the label for ocore.
+	ocore.Info = ocore.NewLoggerPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
+	ocore.Trace = ocore.NewLoggerPlus(log.New(os.Stdout, LogTraceLabel, log.LstdFlags))
+	ocore.Warn = ocore.NewLoggerPlus(log.New(os.Stderr, LogWarnLabel, log.LstdFlags))
+	ocore.Error = ocore.NewLoggerPlus(log.New(os.Stderr, LogErrorLabel, log.LstdFlags))
+
+	// alias core logger to ocore.
+	Info = ocore.Info
+	Trace = ocore.Trace
+	Warn = ocore.Warn
+	Error = ocore.Error
 }

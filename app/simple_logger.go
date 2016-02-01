@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 Oryx(ossrs)
+// Copyright (c) 2013-2016 Oryx(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -49,18 +49,18 @@ func (v *simpleLogger) open(c *core.Config) (err error) {
 			core.Error.Println(ctx, "open log file", c.Log.File, "failed, err is", err)
 			return
 		} else {
-			core.Info = core.NewLogPlus(log.New(c.LogTank("info", v.file), core.LogInfoLabel, log.LstdFlags))
-			core.Trace = core.NewLogPlus(log.New(c.LogTank("trace", v.file), core.LogTraceLabel, log.LstdFlags))
-			core.Warn = core.NewLogPlus(log.New(c.LogTank("warn", v.file), core.LogWarnLabel, log.LstdFlags))
-			core.Error = core.NewLogPlus(log.New(c.LogTank("error", v.file), core.LogErrorLabel, log.LstdFlags))
+			core.Info = core.NewLoggerPlus(log.New(c.LogTank("info", v.file), core.LogInfoLabel, log.LstdFlags))
+			core.Trace = core.NewLoggerPlus(log.New(c.LogTank("trace", v.file), core.LogTraceLabel, log.LstdFlags))
+			core.Warn = core.NewLoggerPlus(log.New(c.LogTank("warn", v.file), core.LogWarnLabel, log.LstdFlags))
+			core.Error = core.NewLoggerPlus(log.New(c.LogTank("error", v.file), core.LogErrorLabel, log.LstdFlags))
 		}
 	} else {
 		core.Trace.Println(ctx, "apply log", c.Log.Tank, c.Log.Level)
 
-		core.Info = core.NewLogPlus(log.New(c.LogTank("info", os.Stdout), core.LogInfoLabel, log.LstdFlags))
-		core.Trace = core.NewLogPlus(log.New(c.LogTank("trace", os.Stdout), core.LogTraceLabel, log.LstdFlags))
-		core.Warn = core.NewLogPlus(log.New(c.LogTank("warn", os.Stderr), core.LogWarnLabel, log.LstdFlags))
-		core.Error = core.NewLogPlus(log.New(c.LogTank("error", os.Stderr), core.LogErrorLabel, log.LstdFlags))
+		core.Info = core.NewLoggerPlus(log.New(c.LogTank("info", os.Stdout), core.LogInfoLabel, log.LstdFlags))
+		core.Trace = core.NewLoggerPlus(log.New(c.LogTank("trace", os.Stdout), core.LogTraceLabel, log.LstdFlags))
+		core.Warn = core.NewLoggerPlus(log.New(c.LogTank("warn", os.Stderr), core.LogWarnLabel, log.LstdFlags))
+		core.Error = core.NewLoggerPlus(log.New(c.LogTank("error", os.Stderr), core.LogErrorLabel, log.LstdFlags))
 	}
 
 	return
@@ -74,7 +74,7 @@ func (v *simpleLogger) close(c *core.Config) (err error) {
 	}
 
 	// when log closed, set the logger warn to stderr for file closed.
-	core.Warn = core.NewLogPlus(log.New(os.Stderr, core.LogWarnLabel, log.LstdFlags))
+	core.Warn = core.NewLoggerPlus(log.New(os.Stderr, core.LogWarnLabel, log.LstdFlags))
 
 	// try to close the log file.
 	if err = v.file.Close(); err != nil {

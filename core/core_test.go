@@ -1,6 +1,6 @@
 // The MIT License (MIT)
 //
-// Copyright (c) 2013-2015 Oryx(ossrs)
+// Copyright (c) 2013-2016 Oryx(ossrs)
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy of
 // this software and associated documentation files (the "Software"), to deal in
@@ -65,10 +65,10 @@ func TestMain(m *testing.M) {
 	ctx := NewContext()
 	Conf = NewConfig(ctx)
 
-	Info = NewLogPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
-	Trace = NewLogPlus(log.New(ioutil.Discard, LogTraceLabel, log.LstdFlags))
-	Warn = NewLogPlus(log.New(ioutil.Discard, LogWarnLabel, log.LstdFlags))
-	Error = NewLogPlus(log.New(ioutil.Discard, LogErrorLabel, log.LstdFlags))
+	Info = NewLoggerPlus(log.New(ioutil.Discard, LogInfoLabel, log.LstdFlags))
+	Trace = NewLoggerPlus(log.New(ioutil.Discard, LogTraceLabel, log.LstdFlags))
+	Warn = NewLoggerPlus(log.New(ioutil.Discard, LogWarnLabel, log.LstdFlags))
+	Error = NewLoggerPlus(log.New(ioutil.Discard, LogErrorLabel, log.LstdFlags))
 
 	os.Exit(m.Run())
 }
