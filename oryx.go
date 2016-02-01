@@ -32,7 +32,8 @@ package main
 
 import (
 	"fmt"
-	ocore "github.com/ossrs/go-oryx-lib/options"
+	ohttp "github.com/ossrs/go-oryx-lib/http"
+	ooptions "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/agent"
 	"github.com/ossrs/go-oryx/app"
 	"github.com/ossrs/go-oryx/core"
@@ -64,13 +65,17 @@ func serve(svr *app.Server, ctx core.Context) int {
 }
 
 func main() {
-	// the main context.
+	// initialize global varialbes.
 	core.RewriteLogger()
+	ohttp.Server = core.OryxSigServer()
+
+	// create application objects.
 	ctx := core.NewContext()
 	core.Conf = core.NewConfig(ctx)
 	agent.Manager = agent.NewManager(ctx)
 
-	confFile := ocore.ParseArgv("oryx.json", core.Version(), core.OryxSigServer())
+	// parse options and config.
+	confFile := ooptions.ParseArgv("oryx.json", core.Version(), core.OryxSigServer())
 	fmt.Println(fmt.Sprintf("%v signature is %v", core.OryxSigName, core.OryxSigServer()))
 
 	ret := func() int {

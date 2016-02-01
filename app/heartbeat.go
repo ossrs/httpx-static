@@ -25,6 +25,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	ocore "github.com/ossrs/go-oryx-lib/http"
 	"github.com/ossrs/go-oryx/core"
 	"io/ioutil"
 	"net"
@@ -110,54 +111,44 @@ func (v *Heartbeat) Initialize(w core.WorkerContainer) (err error) {
 
 		h := http.NewServeMux()
 		h.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", core.HttpJson)
-			w.Header().Set("Server", core.OryxSigServer())
-
 			p := struct {
 				Urls map[string]string `json:"urls"`
-			}{}
-			p.Urls = map[string]string{
-				"/api/v1/htbt/devices": "each device is object(id:string,data:object).",
+			}{
+				Urls: map[string]string{
+					"/api/v1/htbt/devices": "each device is object(id:string,data:object).",
+				},
 			}
 
-			if b, err := json.Marshal(p); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			} else {
-				w.Write(b)
-			}
+			ocore.Data(ctx, p).ServeHTTP(w, r)
 		})
 		h.HandleFunc("/api/v1/htbt/devices", func(w http.ResponseWriter, r *http.Request) {
-			w.Header().Set("Content-Type", core.HttpJson)
-			w.Header().Set("Server", core.OryxSigServer())
-
-			var b []byte
+			var b interface{}
 			var err error
 			if r.Method == "GET" {
-				b, err = json.Marshal(map[string]interface{}{
+				b = map[string]interface{}{
 					"code":    0,
 					"devices": v.devices,
-				})
+				}
 			} else {
-				if b, err = ioutil.ReadAll(r.Body); err == nil {
+				var o []byte
+				if o, err = ioutil.ReadAll(r.Body); err == nil {
 					obj := struct {
 						Id   string      `json:"id"`
 						Data interface{} `json:"data"`
 					}{}
-					if err = json.Unmarshal(b, &obj); err == nil {
+					if err = json.Unmarshal(o, &obj); err == nil {
 						v.devices[obj.Id] = obj.Data
-						b, err = json.Marshal(map[string]int{
+						b = map[string]int{
 							"code": 0,
-						})
+						}
 					}
 				}
 			}
 
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
+				ocore.Error(ctx, err).ServeHTTP(w, r)
 			} else {
-				w.Write(b)
+				ocore.Data(ctx, b).ServeHTTP(w, r)
 			}
 		})
 		if err = http.Serve(l, h); err != nil {
@@ -386,7 +377,7 @@ func (v *Heartbeat) beat() (err error) {
 	core.Info.Println(ctx, "heartbeat info is", string(b))
 
 	var resp *http.Response
-	if resp, err = http.Post(c.Url, core.HttpJson, bytes.NewReader(b)); err != nil {
+	if resp, err = http.Post(c.Url, ocore.HttpJson, bytes.NewReader(b)); err != nil {
 		return
 	}
 	defer resp.Body.Close()
