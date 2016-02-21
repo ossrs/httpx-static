@@ -6,9 +6,21 @@ import (
 	ocore "github.com/ossrs/go-oryx-lib/logger"
 	"net"
 	"os"
+	"bufio"
+	"encoding/json"
+	"time"
 )
 
-func serve(transport string, port int) (err error) {
+type Msg struct {
+	Id uint32 `json:"id"`
+	Timestamp uint64 `json:"ts"`
+	Diff int `json:"diff"`
+	Interval int `json:"interval"`
+	Size int `json:"size"`
+	Data string `json:"data"`
+}
+
+func serve_recv(transport string, port int) (err error) {
 	if transport == "tcp" {
 		var addr *net.TCPAddr
 		if addr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf(":%v", port)); err != nil {
@@ -30,6 +42,30 @@ func serve(transport string, port int) (err error) {
 
 			go func(c *net.TCPConn) {
 				defer c.Close()
+
+				c.SetNoDelay(true)
+
+				br := bufio.NewReader(c)
+				d := json.NewDecoder(br)
+
+				var prets int64
+				for {
+					msg := &Msg{}
+					if err = d.Decode(msg); err != nil {
+						return
+					}
+
+					ts := time.Now().UnixNano()
+
+					var rdiff int
+					if prets != 0 {
+						rdiff = (int)(ts - prets) / 1000 / 1000 - msg.Interval
+					}
+					prets = ts
+
+					ocore.Trace.Println(nil, "recv", msg.Size, "bytes", msg.Id, msg.Timestamp,
+						fmt.Sprintf("%v/%v", msg.Diff, rdiff), msg.Interval, msg.Size)
+				}
 			}(c)
 		}
 	}
@@ -57,7 +93,7 @@ func main() {
 	ocore.Trace.Println(nil, fmt.Sprintf("receiver over %v://:%v.", transport, port))
 
 	var err error
-	if err = serve(transport, port); err != nil {
+	if err = serve_recv(transport, port); err != nil {
 		ocore.Error.Println(nil, "serve failed. err is", err)
 		os.Exit(1)
 	}
