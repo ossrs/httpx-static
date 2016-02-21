@@ -11,7 +11,7 @@ if [[ $# -lt 1 ]]; then
 fi
 
 url=$1
-variant=yes && echo $url| grep "shp_identify=variant" >/dev/null 2>&1 && variant=yes
+variant=no && echo $url| grep "shp_identify=variant" >/dev/null 2>&1 && variant=yes
 echo "Download the $url, variant:$variant"
 
 stream=`echo $url| awk -F '?' '{print $1}'` && dir=`dirname $stream` && stream=`basename $stream`
