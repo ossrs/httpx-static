@@ -272,6 +272,20 @@ func (v *Server) Initialize() (err error) {
 	return
 }
 
+func (v *Server) onSignal(signal syscall.Signal) {
+	ctx := v.ctx
+	wc := v
+
+	core.Trace.Println(ctx, "got signal", signal)
+	switch signal {
+	case SIGUSR1, SIGUSR2:
+		panic("panic by SIGUSR1/2")
+	case os.Interrupt, syscall.SIGTERM:
+		// SIGINT, SIGTERM
+		wc.Quit()
+	}
+}
+
 func (v *Server) Run() (err error) {
 	ctx := v.ctx
 
@@ -307,16 +321,17 @@ func (v *Server) Run() (err error) {
 
 		select {
 		case signal := <-v.sigs:
-			core.Trace.Println(ctx, "got signal", signal)
-			switch signal {
-			case SIGUSR1, SIGUSR2:
-				panic("panic by SIGUSR1/2")
-			case os.Interrupt, syscall.SIGTERM:
-				// SIGINT, SIGTERM
-				wc.Quit()
-			}
+			v.onSignal(signal)
 		case <-wc.QC():
 			wc.Quit()
+
+			// for the following quit will block all signal process,
+			// we start new goroutine to process the panic signal only.
+			go func() {
+				for s := range v.sigs {
+					v.onSignal(s)
+				}
+			}()
 
 			// wait for all goroutines quit.
 			v.wg.Wait()
