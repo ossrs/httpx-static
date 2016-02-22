@@ -272,7 +272,7 @@ func (v *Server) Initialize() (err error) {
 	return
 }
 
-func (v *Server) onSignal(signal syscall.Signal) {
+func (v *Server) onSignal(signal os.Signal) {
 	ctx := v.ctx
 	wc := v
 
