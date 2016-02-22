@@ -1417,7 +1417,7 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	v.out = append(v.out, m)
 
 	// notify when messages is enough and sender is not working.
-	if len(v.out) >= v.requiredMessages() && !v.isFlusherWorking {
+	if !v.isFlusherWorking && len(v.out) >= v.nbGroupMessages {
 		v.needNotifyFlusher = true
 	}
 
