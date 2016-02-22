@@ -1475,6 +1475,7 @@ func (v *RtmpConnection) flush() (err error) {
 				return
 			}
 		}
+		return
 	}
 
 	// group messages, for high efficient send.
