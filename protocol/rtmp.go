@@ -1397,6 +1397,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		return
 	} else if !r {
 		v.groupMessages = true
+		core.Trace.Println(ctx, "use message group", v.nbGroupMessages)
 	} else {
 		v.groupMessages = false
 		core.Trace.Println(ctx, "enter realtime mode, disable message group")
@@ -1453,13 +1454,6 @@ func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
 	return
 }
 
-func (v *RtmpConnection) requiredMessages() int {
-	if v.groupMessages && v.nbGroupMessages > 0 {
-		return v.nbGroupMessages
-	}
-	return 1
-}
-
 func (v *RtmpConnection) toggleNotify() bool {
 	nn := v.needNotifyFlusher
 	v.needNotifyFlusher = false
@@ -1468,15 +1462,28 @@ func (v *RtmpConnection) toggleNotify() bool {
 
 // to push message to send queue.
 func (v *RtmpConnection) flush() (err error) {
+	// send one by one, for without group messages.
+	if !v.groupMessages {
+		v.writeLock.Lock()
+		defer v.writeLock.Unlock()
+
+		out := v.out[:]
+		v.out = v.out[0:0]
+
+		for _, m := range out {
+			if err = v.stack.SendMessage(m); err != nil {
+				return
+			}
+		}
+	}
+
+	// group messages, for high efficient send.
 	v.isFlusherWorking = true
 	defer func() {
 		v.isFlusherWorking = false
 	}()
 
 	for {
-		// cache the required messages.
-		required := v.requiredMessages()
-
 		// force to ignore small pieces for group message.
 		if v.groupMessages && len(v.out) < v.nbGroupMessages/2 {
 			break
@@ -1493,27 +1500,8 @@ func (v *RtmpConnection) flush() (err error) {
 		}()
 
 		// sendout all messages.
-		for {
-			// nothing, ingore.
-			if len(out) == 0 {
-				return
-			}
-
-			// send one by one.
-			if required <= 1 {
-				for _, m := range out {
-					if err = v.stack.SendMessage(m); err != nil {
-						return
-					}
-				}
-				break
-			}
-
-			// last group and left messages.
-			if err = v.stack.SendMessage(out...); err != nil {
-				return
-			}
-			break
+		if err = v.stack.SendMessage(out...); err != nil {
+			return
 		}
 	}
 

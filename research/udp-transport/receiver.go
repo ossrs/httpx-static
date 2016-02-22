@@ -1,23 +1,23 @@
 package main
 
 import (
+	"bufio"
+	"encoding/json"
 	"flag"
 	"fmt"
 	ocore "github.com/ossrs/go-oryx-lib/logger"
 	"net"
 	"os"
-	"bufio"
-	"encoding/json"
 	"time"
 )
 
 type Msg struct {
-	Id uint32 `json:"id"`
+	Id        uint32 `json:"id"`
 	Timestamp uint64 `json:"ts"`
-	Diff int `json:"diff"`
-	Interval int `json:"interval"`
-	Size int `json:"size"`
-	Data string `json:"data"`
+	Diff      int    `json:"diff"`
+	Interval  int    `json:"interval"`
+	Size      int    `json:"size"`
+	Data      string `json:"data"`
 }
 
 func serve_recv(transport string, port int) (err error) {
@@ -59,7 +59,7 @@ func serve_recv(transport string, port int) (err error) {
 
 					var rdiff int
 					if prets != 0 {
-						rdiff = (int)(ts - prets) / 1000 / 1000 - msg.Interval
+						rdiff = (int)(ts-prets)/1000/1000 - msg.Interval
 					}
 					prets = ts
 

@@ -1,22 +1,22 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	ocore "github.com/ossrs/go-oryx-lib/logger"
 	"net"
 	"os"
 	"time"
-	"encoding/json"
 )
 
 type Msg struct {
-	Id uint32 `json:"id"`
+	Id        uint32 `json:"id"`
 	Timestamp uint64 `json:"ts"`
-	Diff int `json:"diff"`
-	Interval int `json:"interval"`
-	Size int `json:"size"`
-	Data string `json:"data"`
+	Diff      int    `json:"diff"`
+	Interval  int    `json:"interval"`
+	Size      int    `json:"size"`
+	Data      string `json:"data"`
 }
 
 func fill_string(size int) (str string) {
@@ -45,23 +45,23 @@ func serve_send(host, transport string, port, interval, size int) (err error) {
 		var prets uint64
 		for {
 			msg := &Msg{
-				Id: id,
+				Id:        id,
 				Timestamp: uint64(time.Now().UnixNano()),
-				Diff: 0,
-				Interval: interval,
-				Size: size,
-				Data: "",
+				Diff:      0,
+				Interval:  interval,
+				Size:      size,
+				Data:      "",
 			}
 			id++
 
 			if prets != 0 {
-				msg.Diff = (int)(msg.Timestamp - prets) / 1000 / 1000 - interval
+				msg.Diff = (int)(msg.Timestamp-prets)/1000/1000 - interval
 			}
 			prets = msg.Timestamp
 
 			var buf []byte
 			for {
-				if buf,err = json.Marshal(msg); err != nil {
+				if buf, err = json.Marshal(msg); err != nil {
 					return
 				}
 				if len(buf) == size {
@@ -72,7 +72,7 @@ func serve_send(host, transport string, port, interval, size int) (err error) {
 				msg.Data = fill_string(psize)
 			}
 
-			if _,err = c.Write(buf); err != nil {
+			if _, err = c.Write(buf); err != nil {
 				return
 			}
 			ocore.Trace.Println(nil, "send", len(buf), "bytes", msg.Id, msg.Timestamp, msg.Diff, msg.Interval, msg.Size)
