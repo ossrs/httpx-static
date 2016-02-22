@@ -1244,7 +1244,6 @@ func (v *RtmpConnection) FlashStartPublish() (err error) {
 func (v *RtmpConnection) FmleStartPublish() (err error) {
 	ctx := v.ctx
 
-	ready := false
 	return v.read(FmlePublishTimeout, func(m *RtmpMessage) (loop bool, err error) {
 		var p RtmpPacket
 		if p, err = v.stack.DecodeMessage(m); err != nil {
@@ -1280,7 +1279,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			if err = v.write(res, v.sid); err != nil {
 				return
 			}
-			core.Trace.Println(ctx, "FcPublish ok.")
+			core.Info.Println(ctx, "FcPublish ok.")
 
 			res = NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
 			res.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
@@ -1290,11 +1289,10 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			if err = v.write(res, v.sid); err != nil {
 				return
 			}
-			core.Trace.Println(ctx, "onStatus Publish.Start ok.")
+			core.Info.Println(ctx, "onStatus Publish.Start ok.")
 
-			ready = true
-
-			return true, nil
+			// when already publish ready, ok. to make obs happy.
+			return false, nil
 		case *RtmpOnStatusCallPacket:
 			if p.Name == "onFCPublish" {
 				core.Trace.Println(ctx, "FMLE start publish ok.")
@@ -1303,11 +1301,6 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			core.Info.Println(ctx, "drop FMLE command", p.Name)
 			return true, nil
 		default:
-			// when already publish ready, ok. to make obs happy.
-			if ready {
-				return false, nil
-			}
-
 			return true, nil
 		}
 	})
