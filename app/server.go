@@ -309,8 +309,8 @@ func (v *Server) Run() (err error) {
 		case signal := <-v.sigs:
 			core.Trace.Println(ctx, "got signal", signal)
 			switch signal {
-			case syscall.Signal(30), syscall.Signal(31):
-				panic("quit by SIGUSR1")
+			case SIGUSR1, SIGUSR2:
+				panic("panic by SIGUSR1/2")
 			case os.Interrupt, syscall.SIGTERM:
 				// SIGINT, SIGTERM
 				wc.Quit()
