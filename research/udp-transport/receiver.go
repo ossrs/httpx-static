@@ -11,13 +11,33 @@ import (
 	"time"
 )
 
+type MsgType uint8
+
+const (
+	MsgTypeRaw MsgType = iota
+	MsgTypeReport
+	MsgTypeUnknown
+)
+
+func (v MsgType) String() string {
+	switch v {
+	case MsgTypeRaw:
+		return "Raw"
+	case MsgTypeReport:
+		return "Report"
+	default:
+		return "Unknown"
+	}
+}
+
 type Msg struct {
-	Id        uint32 `json:"id"`
-	Timestamp uint64 `json:"ts"`
-	Diff      int    `json:"diff"`
-	Interval  int    `json:"interval"`
-	Size      int    `json:"size"`
-	Data      string `json:"data"`
+	Id        uint32  `json:"id"`
+	Timestamp uint64  `json:"ts"`
+	Diff      int32   `json:"diff"`
+	Interval  uint32  `json:"interval"`
+	Size      uint32  `json:"size"`
+	Type      MsgType `json:"type"`
+	Data      string  `json:"data"`
 }
 
 func serve_recv(transport string, port int) (err error) {
@@ -55,16 +75,28 @@ func serve_recv(transport string, port int) (err error) {
 						return
 					}
 
+					if msg.Type == MsgTypeReport {
+						var buf []byte
+						if buf, err = json.Marshal(msg); err != nil {
+							return
+						}
+						if _, err = c.Write(buf); err != nil {
+							return
+						}
+					}
+
 					ts := time.Now().UnixNano()
 
-					var rdiff int
+					var rdiff int32
 					if prets != 0 {
-						rdiff = (int)(ts-prets)/1000/1000 - msg.Interval
+						rdiff = (int32)(ts-prets)/1000/1000 - int32(msg.Interval)
 					}
 					prets = ts
 
-					ocore.Trace.Println(nil, "recv", msg.Size, "bytes", msg.Id, msg.Timestamp,
-						fmt.Sprintf("%v/%v", msg.Diff, rdiff), msg.Interval, msg.Size)
+					ocore.Trace.Println(nil, "recv", msg.Size, "bytes",
+						fmt.Sprintf("%v/%v", msg.Id, msg.Timestamp),
+						fmt.Sprintf("%v/%v", msg.Diff, rdiff),
+						fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
 				}
 			}(c)
 		}
