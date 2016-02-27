@@ -24,7 +24,6 @@ package protocol
 import (
 	"bufio"
 	"bytes"
-	"crypto"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding"
@@ -286,9 +285,12 @@ var RtmpGenuineFPKey []byte = []byte{
 //       hashlib.sha256(data).digest().
 func opensslHmacSha256(key []byte, data []byte) (digest []byte, err error) {
 	if key == nil {
-		return crypto.SHA256.New().Sum(data), nil
+		// without key, directly use sha256 to get the hash.
+		b := sha256.Sum256(data)
+		return b[:], nil
 	}
 
+	// when specified key, use HMAC to get the hash for key&message.
 	h := hmac.New(sha256.New, key)
 	if _, err = h.Write(data); err != nil {
 		return
