@@ -89,7 +89,7 @@ func create_raw_message(interval, size int, id uint32, prets uint64) (uint32, ui
 	return id, prets, msg, buf, nil
 }
 
-func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func()) (err error) {
+func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func(), ef func(error) error) (err error) {
 	br := bufio.NewReader(c)
 	d := json.NewDecoder(br)
 
@@ -110,7 +110,7 @@ func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func()) (
 			fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
 
 		// requires report every some messages.
-		if (id % report) == 0 {
+		for (id % report) == 0 {
 			msg.Type = MsgTypeReport
 			msg.Data = ""
 			if buf, err = json.Marshal(msg); err != nil {
@@ -125,6 +125,11 @@ func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func()) (
 			}
 
 			if err = d.Decode(msg); err != nil {
+				if ef != nil {
+					if err = ef(err); err == nil {
+						continue
+					}
+				}
 				return
 			}
 
@@ -134,6 +139,7 @@ func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func()) (
 			}
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("Report start:%v duration:%v total:%v drop:%v latency:%v",
 				m.Starttime/1000/1000, m.Duration, msg.Id, m.DropFrames, m.Latency))
+			break
 		}
 
 		time.Sleep(time.Millisecond * time.Duration(interval))
@@ -155,7 +161,7 @@ func serve_send(host, transport string, port, interval, size int, report uint32)
 
 		c.SetNoDelay(true)
 
-		return serve_msgs(c, interval, size, report, nil)
+		return serve_msgs(c, interval, size, report, nil, nil)
 	}
 
 	if transport == "udp" {
@@ -180,6 +186,12 @@ func serve_send(host, transport string, port, interval, size int, report uint32)
 		return serve_msgs(c, interval, size, report, func() {
 			// udp maybe drop packets, which cause the timeout.
 			c.SetReadDeadline(time.Now().Add(1 * time.Second))
+		}, func(err error) error {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				ocore.Warn.Println(nil, "ignore timeout for read report.")
+				return nil
+			}
+			return err
 		})
 	}
 	return

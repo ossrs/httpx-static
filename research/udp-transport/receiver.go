@@ -53,14 +53,9 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 	var preid uint32
 	missing := map[uint32]bool{}
 	var metric *Metric
+	var doResetMetric bool
 	for {
 		ts := time.Now().UnixNano()
-
-		if metric == nil {
-			metric = &Metric{
-				Starttime: ts,
-			}
-		}
 
 		var msg *Msg
 		if msg, err = rmsg(); err != nil {
@@ -72,13 +67,6 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 		}
 		delete(missing, msg.Id)
 
-		if msg.Id > preid+1 {
-			metric.JumpFrames += int32(msg.Id - (preid + 1))
-		}
-		if preid < msg.Id {
-			preid = msg.Id
-		}
-
 		if msg.Type == MsgTypeReport {
 			metric.Duration = int32((ts - metric.Starttime) / 1000)
 
@@ -86,7 +74,7 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 			if buf, err = json.Marshal(metric); err != nil {
 				return
 			}
-			metric = nil
+			doResetMetric = true
 
 			msg.Data = string(buf)
 			if buf, err = json.Marshal(msg); err != nil {
@@ -96,6 +84,19 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 				return
 			}
 			continue
+		}
+
+		if msg.Id > preid+1 {
+			metric.JumpFrames += int32(msg.Id - (preid + 1))
+		}
+		if preid < msg.Id {
+			preid = msg.Id
+		}
+
+		if doResetMetric {
+			metric = &Metric{
+				Starttime: ts,
+			}
 		}
 
 		var rdiff int32
