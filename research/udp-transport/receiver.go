@@ -48,6 +48,77 @@ type Metric struct {
 	JumpFrames int32 `json:"jump"`
 }
 
+func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) {
+	var prets int64
+	var preid uint32
+	missing := map[uint32]bool{}
+	var metric *Metric
+	for {
+		ts := time.Now().UnixNano()
+
+		if metric == nil {
+			metric = &Metric{
+				Starttime: ts,
+			}
+		}
+
+		var msg *Msg
+		if msg, err = rmsg(); err != nil {
+			return
+		}
+
+		for i := preid + 1; i < msg.Id; i++ {
+			missing[i] = true
+		}
+		delete(missing, msg.Id)
+
+		if msg.Id > preid+1 {
+			metric.JumpFrames += int32(msg.Id - (preid + 1))
+		}
+		if preid < msg.Id {
+			preid = msg.Id
+		}
+
+		if msg.Type == MsgTypeReport {
+			metric.Duration = int32((ts - metric.Starttime) / 1000)
+
+			var buf []byte
+			if buf, err = json.Marshal(metric); err != nil {
+				return
+			}
+			metric = nil
+
+			msg.Data = string(buf)
+			if buf, err = json.Marshal(msg); err != nil {
+				return
+			}
+			if err = wbuf(buf); err != nil {
+				return
+			}
+			continue
+		}
+
+		var rdiff int32
+		if prets != 0 {
+			rdiff = (int32)(ts-prets)/1000/1000 - int32(msg.Interval)
+		}
+		prets = ts
+
+		// update metric for raw message.
+		if prets > 0 && rdiff > 0 {
+			metric.Latency += rdiff
+		}
+		metric.DropFrames = int32(len(missing))
+
+		ocore.Info.Println(nil, "recv", msg.Size, "bytes",
+			fmt.Sprintf("%v/%v", msg.Id, msg.Timestamp),
+			fmt.Sprintf("%v/%v", msg.Diff, rdiff),
+			fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
+	}
+
+	return
+}
+
 func serve_recv(transport string, port int) (err error) {
 	if transport == "tcp" {
 		var addr *net.TCPAddr
@@ -76,74 +147,54 @@ func serve_recv(transport string, port int) (err error) {
 				br := bufio.NewReader(c)
 				d := json.NewDecoder(br)
 
-				var prets int64
-				var preid uint32
-				missing := map[uint32]bool{}
-				var metric *Metric
-				for {
-					ts := time.Now().UnixNano()
-
-					if metric == nil {
-						metric = &Metric{
-							Starttime: ts,
-						}
-					}
-
-					msg := &Msg{}
+				_ = serve_msgs(func() (msg *Msg, err error) {
+					msg = &Msg{}
 					if err = d.Decode(msg); err != nil {
 						return
 					}
-
-					for i := preid + 1; i < msg.Id; i++ {
-						missing[i] = true
+					return
+				}, func(buf []byte) (err error) {
+					if _, err = c.Write(buf); err != nil {
+						return
 					}
-					delete(missing, msg.Id)
-
-					if msg.Id > preid+1 {
-						metric.JumpFrames += int32(msg.Id - (preid + 1))
-					}
-					if preid < msg.Id {
-						preid = msg.Id
-					}
-
-					if msg.Type == MsgTypeReport {
-						metric.Duration = int32((ts - metric.Starttime) / 1000)
-
-						var buf []byte
-						if buf, err = json.Marshal(metric); err != nil {
-							return
-						}
-						metric = nil
-
-						msg.Data = string(buf)
-						if buf, err = json.Marshal(msg); err != nil {
-							return
-						}
-						if _, err = c.Write(buf); err != nil {
-							return
-						}
-						continue
-					}
-
-					var rdiff int32
-					if prets != 0 {
-						rdiff = (int32)(ts-prets)/1000/1000 - int32(msg.Interval)
-					}
-					prets = ts
-
-					// update metric for raw message.
-					if prets > 0 && rdiff > 0 {
-						metric.Latency += rdiff
-					}
-					metric.DropFrames = int32(len(missing))
-
-					ocore.Info.Println(nil, "recv", msg.Size, "bytes",
-						fmt.Sprintf("%v/%v", msg.Id, msg.Timestamp),
-						fmt.Sprintf("%v/%v", msg.Diff, rdiff),
-						fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
-				}
+					return
+				})
 			}(c)
 		}
+	}
+
+	if transport == "udp" {
+		var addr *net.UDPAddr
+		if addr, err = net.ResolveUDPAddr("udp", fmt.Sprintf(":%v", port)); err != nil {
+			return
+		}
+
+		var c *net.UDPConn
+		if c, err = net.ListenUDP("udp", addr); err != nil {
+			return
+		}
+		ocore.Trace.Println(nil, "listen ok.")
+
+		rbuf := make([]byte, 32*1024)
+		var from *net.UDPAddr
+		return serve_msgs(func() (msg *Msg, err error) {
+			var n int
+			if n, from, err = c.ReadFromUDP(rbuf); err != nil {
+				return
+			}
+
+			msg = &Msg{}
+			if err = json.Unmarshal(rbuf[:n], msg); err != nil {
+				return
+			}
+
+			return
+		}, func(buf []byte) (err error) {
+			if _, err = c.WriteToUDP(buf, from); err != nil {
+				return
+			}
+			return
+		})
 	}
 	return
 }

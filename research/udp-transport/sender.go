@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	ocore "github.com/ossrs/go-oryx-lib/logger"
+	"io"
 	"net"
 	"os"
 	"time"
@@ -88,6 +89,57 @@ func create_raw_message(interval, size int, id uint32, prets uint64) (uint32, ui
 	return id, prets, msg, buf, nil
 }
 
+func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func()) (err error) {
+	br := bufio.NewReader(c)
+	d := json.NewDecoder(br)
+
+	var id uint32
+	var prets uint64
+	for {
+		var msg *Msg
+		var buf []byte
+		if id, prets, msg, buf, err = create_raw_message(interval, size, id, prets); err != nil {
+			return
+		}
+
+		if _, err = c.Write(buf); err != nil {
+			return
+		}
+		ocore.Info.Println(nil, "send", len(buf), "bytes",
+			fmt.Sprintf("%v/%v/%v", msg.Id, msg.Timestamp, msg.Diff),
+			fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
+
+		// requires report every some messages.
+		if (id % report) == 0 {
+			msg.Type = MsgTypeReport
+			msg.Data = ""
+			if buf, err = json.Marshal(msg); err != nil {
+				return
+			}
+			if _, err = c.Write(buf); err != nil {
+				return
+			}
+
+			if fn != nil {
+				fn()
+			}
+
+			if err = d.Decode(msg); err != nil {
+				return
+			}
+
+			m := &Metric{}
+			if err = json.Unmarshal([]byte(msg.Data), m); err != nil {
+				return
+			}
+			fmt.Fprintln(os.Stderr, fmt.Sprintf("Report start:%v duration:%v total:%v drop:%v latency:%v",
+				m.Starttime/1000/1000, m.Duration, msg.Id, m.DropFrames, m.Latency))
+		}
+
+		time.Sleep(time.Millisecond * time.Duration(interval))
+	}
+}
+
 func serve_send(host, transport string, port, interval, size int, report uint32) (err error) {
 	if transport == "tcp" {
 		var addr *net.TCPAddr
@@ -103,49 +155,32 @@ func serve_send(host, transport string, port, interval, size int, report uint32)
 
 		c.SetNoDelay(true)
 
-		br := bufio.NewReader(c)
-		d := json.NewDecoder(br)
+		return serve_msgs(c, interval, size, report, nil)
+	}
 
-		var id uint32
-		var prets uint64
-		for {
-			var msg *Msg
-			var buf []byte
-			if id, prets, msg, buf, err = create_raw_message(interval, size, id, prets); err != nil {
-				return
-			}
-
-			if _, err = c.Write(buf); err != nil {
-				return
-			}
-			ocore.Info.Println(nil, "send", len(buf), "bytes",
-				fmt.Sprintf("%v/%v/%v", msg.Id, msg.Timestamp, msg.Diff),
-				fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
-
-			// requires report every some messages.
-			if (id % report) == 0 {
-				msg.Type = MsgTypeReport
-				msg.Data = ""
-				if buf, err = json.Marshal(msg); err != nil {
-					return
-				}
-				if _, err = c.Write(buf); err != nil {
-					return
-				}
-				if err = d.Decode(msg); err != nil {
-					return
-				}
-
-				m := &Metric{}
-				if err = json.Unmarshal([]byte(msg.Data), m); err != nil {
-					return
-				}
-				fmt.Fprintln(os.Stderr, fmt.Sprintf("Report start:%v duration:%v total:%v drop:%v latency:%v",
-					m.Starttime/1000/1000, m.Duration, msg.Id, m.DropFrames, m.Latency))
-			}
-
-			time.Sleep(time.Millisecond * time.Duration(interval))
+	if transport == "udp" {
+		var laddr *net.UDPAddr
+		if laddr, err = net.ResolveUDPAddr("udp", ":0"); err != nil {
+			return
 		}
+		var raddr *net.UDPAddr
+		if raddr, err = net.ResolveUDPAddr("udp", fmt.Sprintf("%v:%v", host, port)); err != nil {
+			return
+		}
+
+		// we can use the:
+		//		DialUDP, then read and write the udp connection.
+		// 		ListenUDP, then use read from and write to remote addr.
+		var c *net.UDPConn
+		if c, err = net.DialUDP("udp", laddr, raddr); err != nil {
+			return
+		}
+		ocore.Trace.Println(nil, "connected at", c.RemoteAddr())
+
+		return serve_msgs(c, interval, size, report, func() {
+			// udp maybe drop packets, which cause the timeout.
+			c.SetReadDeadline(time.Now().Add(1 * time.Second))
+		})
 	}
 	return
 }
