@@ -93,7 +93,7 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 			preid = msg.Id
 		}
 
-		if doResetMetric {
+		if doResetMetric || metric == nil {
 			metric = &Metric{
 				Starttime: ts,
 			}
