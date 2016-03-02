@@ -40,6 +40,14 @@ type Msg struct {
 	Data      string  `json:"data"`
 }
 
+type Metric struct {
+	Starttime  int64 `json:"start"`
+	Duration   int32 `json:"duration"` // in ms.
+	DropFrames int32 `json:"drop"`
+	Latency    int32 `json:"latency"`
+	JumpFrames int32 `json:"jump"`
+}
+
 func fill_string(size int) (str string) {
 	for len(str) < size {
 		str += "F"
@@ -110,7 +118,7 @@ func serve_send(host, transport string, port, interval, size int, report uint32)
 			if _, err = c.Write(buf); err != nil {
 				return
 			}
-			ocore.Trace.Println(nil, "send", len(buf), "bytes",
+			ocore.Info.Println(nil, "send", len(buf), "bytes",
 				fmt.Sprintf("%v/%v/%v", msg.Id, msg.Timestamp, msg.Diff),
 				fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
 
@@ -127,7 +135,13 @@ func serve_send(host, transport string, port, interval, size int, report uint32)
 				if err = d.Decode(msg); err != nil {
 					return
 				}
-				fmt.Fprintln(os.Stderr, "Report:", id)
+
+				m := &Metric{}
+				if err = json.Unmarshal([]byte(msg.Data), m); err != nil {
+					return
+				}
+				fmt.Fprintln(os.Stderr, fmt.Sprintf("Report start:%v duration:%v total:%v drop:%v latency:%v",
+					m.Starttime/1000/1000, m.Duration, msg.Id, m.DropFrames, m.Latency))
 			}
 
 			time.Sleep(time.Millisecond * time.Duration(interval))

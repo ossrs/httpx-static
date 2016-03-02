@@ -40,6 +40,14 @@ type Msg struct {
 	Data      string  `json:"data"`
 }
 
+type Metric struct {
+	Starttime  int64 `json:"start"`
+	Duration   int32 `json:"duration"` // in ms.
+	DropFrames int32 `json:"drop"`
+	Latency    int32 `json:"latency"`
+	JumpFrames int32 `json:"jump"`
+}
+
 func serve_recv(transport string, port int) (err error) {
 	if transport == "tcp" {
 		var addr *net.TCPAddr
@@ -69,23 +77,53 @@ func serve_recv(transport string, port int) (err error) {
 				d := json.NewDecoder(br)
 
 				var prets int64
+				var preid uint32
+				missing := map[uint32]bool{}
+				var metric *Metric
 				for {
+					ts := time.Now().UnixNano()
+
+					if metric == nil {
+						metric = &Metric{
+							Starttime: ts,
+						}
+					}
+
 					msg := &Msg{}
 					if err = d.Decode(msg); err != nil {
 						return
 					}
 
+					for i := preid + 1; i < msg.Id; i++ {
+						missing[i] = true
+					}
+					delete(missing, msg.Id)
+
+					if msg.Id > preid+1 {
+						metric.JumpFrames += int32(msg.Id - (preid + 1))
+					}
+					if preid < msg.Id {
+						preid = msg.Id
+					}
+
 					if msg.Type == MsgTypeReport {
+						metric.Duration = int32((ts - metric.Starttime) / 1000)
+
 						var buf []byte
+						if buf, err = json.Marshal(metric); err != nil {
+							return
+						}
+						metric = nil
+
+						msg.Data = string(buf)
 						if buf, err = json.Marshal(msg); err != nil {
 							return
 						}
 						if _, err = c.Write(buf); err != nil {
 							return
 						}
+						continue
 					}
-
-					ts := time.Now().UnixNano()
 
 					var rdiff int32
 					if prets != 0 {
@@ -93,7 +131,13 @@ func serve_recv(transport string, port int) (err error) {
 					}
 					prets = ts
 
-					ocore.Trace.Println(nil, "recv", msg.Size, "bytes",
+					// update metric for raw message.
+					if prets > 0 && rdiff > 0 {
+						metric.Latency += rdiff
+					}
+					metric.DropFrames = int32(len(missing))
+
+					ocore.Info.Println(nil, "recv", msg.Size, "bytes",
 						fmt.Sprintf("%v/%v", msg.Id, msg.Timestamp),
 						fmt.Sprintf("%v/%v", msg.Diff, rdiff),
 						fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
