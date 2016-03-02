@@ -215,7 +215,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "        size, the size of each packet data.")
 		fmt.Fprintln(os.Stderr, "        report, report when got these packets.")
 		fmt.Fprintln(os.Stderr, "For example:")
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("        %s --host=127.0.0.1 --port=1935 --transport=tcp", os.Args[0]))
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("        %s --host=127.0.0.1 --port=1935 --transport=udp", os.Args[0]))
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("        %s --host=127.0.0.1 --port=1935 --transport=tcp --interval=30 --size=188 --report=100", os.Args[0]))
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("        %s --host=127.0.0.1 --port=1935 --transport=udp --interval=30 --size=188 --report=100", os.Args[0]))
 	}
 	flag.Parse()
 

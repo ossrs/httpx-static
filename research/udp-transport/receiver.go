@@ -94,6 +94,7 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 		}
 
 		if doResetMetric || metric == nil {
+			doResetMetric = false
 			metric = &Metric{
 				Starttime: ts,
 			}
@@ -211,6 +212,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "        transport, the underlayer transport, tcp or udp.")
 		fmt.Fprintln(os.Stderr, "For example:")
 		fmt.Fprintln(os.Stderr, fmt.Sprintf("        %s --port=1935 --transport=tcp", os.Args[0]))
+		fmt.Fprintln(os.Stderr, fmt.Sprintf("        %s --port=1935 --transport=udp", os.Args[0]))
 	}
 	flag.Parse()
 
