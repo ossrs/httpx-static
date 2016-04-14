@@ -52,7 +52,7 @@ const (
 	MarkerAmf0TypedObject = 0x10
 	// AVM+ object is the AMF3 object.
 	MarkerAmf0AVMplusObject = 0x11
-	// origin array whos data takes the same form as LengthValueBytes
+	// origin array whose data takes the same form as LengthValueBytes
 	MarkerAmf0OriginStrictArray = 0x20
 
 	// User defined
