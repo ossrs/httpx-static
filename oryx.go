@@ -66,7 +66,7 @@ func serve(svr *app.Server, ctx core.Context) int {
 }
 
 func main() {
-	// initialize global varialbes.
+	// initialize global variables.
 	core.RewriteLogger()
 	ohttp.Server = core.OryxSigServer()
 

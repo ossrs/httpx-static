@@ -76,7 +76,7 @@ func NewHsBytes(ctx core.Context) *hsBytes {
 
 		c0c1c2: make([]byte, 3073),
 		s0s1s2: make([]byte, 3073),
-		// use buffer size 2 for we atmost got 2 messages to in/out.
+		// use buffer size 2 for we at most got 2 messages to in/out.
 		in:  make(chan []byte, 2),
 		out: make(chan []byte, 2),
 	}

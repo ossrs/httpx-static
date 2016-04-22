@@ -90,7 +90,7 @@ func NewConfPlay() *Play {
 // the config for this application,
 // which can load from file in json style,
 // and convert to json string.
-// @remark user can user the GsConfig object.
+// @remark user can use the GsConfig object.
 type Config struct {
 	// the global section.
 	Workers int `json:"workers"` // the number of cpus to use
