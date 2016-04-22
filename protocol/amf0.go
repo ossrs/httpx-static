@@ -26,9 +26,10 @@ import (
 	"encoding"
 	"encoding/binary"
 	"fmt"
-	"github.com/ossrs/go-oryx/core"
 	"strconv"
 	"time"
+
+	"github.com/ossrs/go-oryx/core"
 )
 
 // AMF0 marker

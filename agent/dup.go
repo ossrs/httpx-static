@@ -22,9 +22,10 @@
 package agent
 
 import (
+	"runtime"
+
 	"github.com/ossrs/go-oryx/core"
 	"github.com/ossrs/go-oryx/protocol"
-	"runtime"
 )
 
 type DupAgent struct {

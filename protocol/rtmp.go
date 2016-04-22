@@ -30,7 +30,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/ossrs/go-oryx/core"
 	"io"
 	"io/ioutil"
 	"net"
@@ -40,6 +39,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ossrs/go-oryx/core"
 )
 
 // error when create stream.

@@ -24,8 +24,9 @@ package core_test
 import (
 	"bytes"
 	"fmt"
-	"github.com/ossrs/go-oryx/core"
 	"time"
+
+	"github.com/ossrs/go-oryx/core"
 )
 
 func ExampleConfig_Loads() {

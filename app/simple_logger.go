@@ -22,9 +22,10 @@
 package app
 
 import (
-	"github.com/ossrs/go-oryx/core"
 	"log"
 	"os"
+
+	"github.com/ossrs/go-oryx/core"
 )
 
 // the simple logger which implements the interface

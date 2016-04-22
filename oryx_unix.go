@@ -24,10 +24,11 @@
 package main
 
 import (
+	"os"
+
 	"github.com/ossrs/go-daemon"
 	"github.com/ossrs/go-oryx/app"
 	"github.com/ossrs/go-oryx/core"
-	"os"
 )
 
 func run(svr *app.Server, ctx core.Context) int {

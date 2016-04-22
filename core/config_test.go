@@ -23,10 +23,11 @@ package core
 
 import (
 	"encoding/json"
-	ocore "github.com/ossrs/go-oryx-lib/json"
 	"io/ioutil"
 	"strings"
 	"testing"
+
+	ocore "github.com/ossrs/go-oryx-lib/json"
 )
 
 func TestConfigBasic(t *testing.T) {

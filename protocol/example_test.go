@@ -24,9 +24,10 @@ package protocol_test
 import (
 	"bytes"
 	"fmt"
+	"time"
+
 	"github.com/ossrs/go-oryx/core"
 	"github.com/ossrs/go-oryx/protocol"
-	"time"
 )
 
 func Example_Amf0Discovery() {
