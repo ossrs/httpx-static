@@ -52,7 +52,7 @@ const (
 	MarkerAmf0TypedObject = 0x10
 	// AVM+ object is the AMF3 object.
 	MarkerAmf0AVMplusObject = 0x11
-	// origin array whos data takes the same form as LengthValueBytes
+	// origin array whose data takes the same form as LengthValueBytes
 	MarkerAmf0OriginStrictArray = 0x20
 
 	// User defined
@@ -752,7 +752,7 @@ func (s *amf0Utf8) UnmarshalBinary(data []byte) (err error) {
 // the amf0 property for object and array.
 // to ensure in inserted order.
 // for the FMLE will crash when AMF0Object is not ordered by inserted,
-// if ordered in map, the string compare order, the FMLE will creash when
+// if ordered in map, the string compare order, the FMLE will crash when
 // get the response of connect app.
 type amf0Properties struct {
 	properties []*amf0Property
