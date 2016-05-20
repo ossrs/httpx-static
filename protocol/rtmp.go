@@ -1563,6 +1563,10 @@ func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (c
 
 			connType, streamName, duration, err = v.identifyCreateStream(current, p)
 			return
+		default :
+			connType, streamName, duration, err = v.Identify()
+			return
+
 		}
 		return
 	})
