@@ -207,7 +207,7 @@ func NewSrsConfCommentReader(r io.Reader) io.Reader {
 	endMatches := [][]byte{[]byte("'"), []byte("\""), []byte("\n")}
 	isComments := []bool{false, false, true}
 	requiredMatches := []bool{true, true, false}
-	return ocore.NewTagReader(r, startMatches, endMatches, isComments, requiredMatches)
+	return ocore.NewCommentReader(r, startMatches, endMatches, isComments, requiredMatches)
 }
 
 // parse the srs style config.
