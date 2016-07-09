@@ -138,10 +138,10 @@ type Config struct {
 	// the vhosts section.
 	Vhosts []*Vhost `json:"vhosts"`
 
-	ctx            Context           `json:"ctx"`
-	conf           string            `json:"conf"` // the config file path.
-	reloadHandlers []ReloadHandler   `json:"reloadHandlers"`
-	vhosts         map[string]*Vhost `json:"vhosts"`
+	ctx            Context           `json:"-"`
+	conf           string            `json:"-"` // the config file path.
+	reloadHandlers []ReloadHandler   `json:"-"`
+	vhosts         map[string]*Vhost `json:"-"`
 }
 
 // Conf represents the current global configuration
@@ -235,7 +235,7 @@ func (v *Config) reparse() (err error) {
 	// check vhost, never dup name.
 	for _, p := range v.Vhosts {
 		if _, ok := v.vhosts[p.Name]; ok {
-			return fmt.Errorf("dup vhost name is", p.Name)
+			return fmt.Errorf("dup vhost name is %s", p.Name)
 		}
 
 		v.vhosts[p.Name] = p
