@@ -20,7 +20,7 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /*
-The agent package provides the agent level feature for oryx,
+Package agent provides the agent level feature for oryx,
 for example, the rtmp agent to publish and play.
 */
 package agent
