@@ -908,7 +908,7 @@ create process by specifies command.
 '''
 def create_process(command, stdout_fd, stderr_fd):
     # log the original command
-    msg = "process start command: %s"%(command);
+    print "process start command: %s" % (command)
 
     # to avoid shell injection, directly use the command, no need to filter.
     args = shlex.split(str(command));
