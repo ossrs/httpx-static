@@ -23,22 +23,22 @@ if [[ $variant == yes ]]; then
     master="master-${stream}"
     echo "Discovery the key in variant $master"
     curl "$url" -o $master -s
-    if [[ $? -ne 0 ]]; then 
-        echo "Discovery variant HLS failed."; exit 1; 
+    if [[ $? -ne 0 ]]; then
+        echo "Discovery variant HLS failed."; exit 1;
     fi
 else
     master="master-${stream%.*}.txt"
     echo "Discovery the key in 302 in $master"
     curl "$url" -v 2>&1 |grep Location|awk '{print $3}' > $master &&
     dos2unix $master
-    if [[ $? -ne 0 ]]; then 
-        echo "Discovery 302 HLS failed."; exit 1; 
+    if [[ $? -ne 0 ]]; then
+        echo "Discovery 302 HLS failed."; exit 1;
     fi
 fi
 m3u8=`cat $master |grep m3u8|awk -F '?' '{print $1}'` &&
 key=`cat $master |grep m3u8|awk -F '?' '{print $2}'`
-if [[ $? -ne 0 ]]; then 
-    echo "Failed."; exit 1; 
+if [[ $? -ne 0 ]]; then
+    echo "Failed."; exit 1;
 fi
 echo "Key is $key";
 echo "M3u8 is $m3u8";
@@ -51,18 +51,18 @@ for ((;;)); do
         echo "Download $m3u8_url failed."
         exit 1
     fi
-    
-    for file in $files; do 
-        filename=`echo $file| awk -F '.ts' '{print $1}'`.ts && 
-        if [[ ! -f $filename ]]; then 
+
+    for file in $files; do
+        filename=`echo $file| awk -F '.ts' '{print $1}'`.ts &&
+        if [[ ! -f $filename ]]; then
             tsfile="${dir}/${file}"
-            echo "Download $tsfile to $filename" && 
+            echo "Download $tsfile to $filename" &&
             curl "$tsfile" -o ${filename} -s
-        fi 
+        fi
         if [[ $? -ne 0 ]]; then
             echo "Download $filename failed."
             exit 1
         fi
     done
-    sleep 3 
+    sleep 3
 done

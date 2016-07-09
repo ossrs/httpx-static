@@ -72,16 +72,16 @@ Why rewrite the SRS to go-oryx:
 1. v0.1.16 Supports debug rtmp recv by config debug.rtmp_dump_recv.
 1. v0.1.17 Supports force to realtime mode by config vhost.min_latency.
 1. [dev] Supports gop-cache and drop frame strategy.
-1. [plan] [#45](../../issues/45) HLS: Support audio only HLS stream. 
+1. [plan] [#45](../../issues/45) HLS: Support audio only HLS stream.
 1. [plan] [#44](../../issues/44) DASH: Support remux stream to MPEG-DASH
 1. [plan] [#43](../../issues/43) RTSP: Support push RTSP to server.
 1. [plan] [#42](../../issues/42) UDP: Support push MPEG-TS over UDP to server.
-1. [plan] [#40](../../issues/40) HDS: Support remux stream to HDS. 
+1. [plan] [#40](../../issues/40) HDS: Support remux stream to HDS.
 1. [plan] [#39](../../issues/39) API: Support HTTP callbacks
-1. [plan] [#38](../../issues/38) API: Support HTTP API for client to access. 
+1. [plan] [#38](../../issues/38) API: Support HTTP API for client to access.
 1. [plan] [#36](../../issues/36) FLV: Remux stream to HTTP-FLV streaming.
 1. [plan] [#35](../../issues/35) HLS: Support HLS+ Edge Cluster.
-1. [plan] [#24](../../issues/24) RTMP: Support standard uri like http. 
+1. [plan] [#24](../../issues/24) RTMP: Support standard uri like http.
 1. [plan] [#46](../../issues/46) Codec: Support encode the audio and video device to stream.
 1. [plan] [#47](../../issues/47) System: Support copy stream to another vhost.
 

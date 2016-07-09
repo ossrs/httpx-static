@@ -330,10 +330,10 @@ class RESTProxy(object):
     '''
     def GET(self, *args, **kwargs):
         enable_crossdomain()
-        
+
         url = "http://" + "/".join(args);
         print "start to proxy url: %s"%url
-        
+
         f = None
         try:
             f = urllib2.urlopen(url)
@@ -379,8 +379,8 @@ class RESTHls(object):
               {
                   "action": "on_dvr",
                   "client_id": 1985,
-                  "ip": "192.168.1.10", 
-                  "vhost": "video.test.com", 
+                  "ip": "192.168.1.10",
+                  "vhost": "video.test.com",
                   "app": "live",
                   "stream": "livestream",
                   "duration": 9.68, // in seconds
@@ -524,23 +524,23 @@ class ArmServer:
     def __init__(self):
         global global_arm_server_id
         global_arm_server_id += 1
-        
+
         self.id = str(global_arm_server_id)
         self.ip = None
         self.device_id = None
         self.summaries = None
-        
+
         self.public_ip = cherrypy.request.remote.ip
         self.heartbeat = time.time()
-        
+
         self.clients = 0
-    
+
     def dead(self):
         dead_time_seconds = 20
         if time.time() - self.heartbeat > dead_time_seconds:
             return True
         return False
-    
+
     def json_dump(self):
         data = {}
         data["id"] = self.id
@@ -553,26 +553,26 @@ class ArmServer:
         data["api"] = "http://%s:1985/api/v1/summaries"%(self.ip)
         data["console"] = "http://ossrs.net/console/ng_index.html#/summaries?host=%s&port=1985"%(self.ip)
         return data
-        
+
 '''
 the server list
 '''
 class RESTServers(object):
     exposed = True
-    
+
     def __init__(self):
         self.__nodes = []
-        
+
         self.__last_update = datetime.datetime.now();
-        
+
         self.__lock = threading.Lock()
-        
+
     def __get_node(self, device_id):
         for node in self.__nodes:
             if node.device_id == device_id:
                 return node
         return None
-        
+
     def __refresh_nodes(self):
         while len(self.__nodes) > 0:
             has_dead_node = False
@@ -589,7 +589,7 @@ class RESTServers(object):
     '''
     def POST(self):
         enable_crossdomain()
-        
+
         try:
             self.__lock.acquire()
 
@@ -601,40 +601,40 @@ class RESTServers(object):
                 code = Error.system_parse_json
                 trace("parse the request to json failed, req=%s, ex=%s, code=%s"%(req, ex, code))
                 return json.dumps({"code":code, "data": None})
-                
+
             device_id = json_req["device_id"]
             node = self.__get_node(device_id)
             if node is None:
                 node = ArmServer()
                 self.__nodes.append(node)
-                
+
             node.ip = json_req["ip"]
             if "summaries" in json_req:
                 node.summaries = json_req["summaries"]
             node.device_id = device_id
             node.public_ip = cherrypy.request.remote.ip
             node.heartbeat = time.time()
-            
+
             return json.dumps({"code":Error.success, "data": {"id":node.id}})
         finally:
             self.__lock.release()
-    
+
     '''
     get all servers which report to this api-server.
     '''
     def GET(self, id=None):
         enable_crossdomain()
-        
+
         try:
             self.__lock.acquire()
-        
+
             self.__refresh_nodes()
-            
+
             data = []
             for node in self.__nodes:
                 if id == None or node.id == str(id) or node.device_id == str(id):
                     data.append(node.json_dump())
-            
+
             return json.dumps(data)
         finally:
             self.__lock.release()
@@ -657,7 +657,7 @@ the chat streams, public chat room.
 class RESTChats(object):
     exposed = True
     global_id = 100
-    
+
     def __init__(self):
         # object fields:
         # id: an int value indicates the id of user.
@@ -674,7 +674,7 @@ class RESTChats(object):
 
         # dead time in seconds, if exceed, remove the chat.
         self.__dead_time = 15;
-    
+
     '''
     get the rtmp url of chat object. None if overflow.
     '''
@@ -706,12 +706,12 @@ class RESTChats(object):
                 });
         finally:
             self.__chat_lock.release();
-            
+
         return json.dumps({"code":0, "data": {"now": time.time(), "chats": chats}})
-        
+
     def POST(self):
         enable_crossdomain()
-        
+
         req = cherrypy.request.body.read()
         chat = json.loads(req)
 
@@ -731,7 +731,7 @@ class RESTChats(object):
             self.__chat_lock.release();
 
         trace("create chat success, id=%s"%(chat["id"]))
-        
+
         return json.dumps({"code":0, "data": chat["id"]})
 
     def DELETE(self, id):
@@ -782,7 +782,7 @@ stop the snapshot worker when stream finished.
 '''
 class RESTSnapshots(object):
     exposed = True
-    
+
     def __init__(self):
         pass
 
@@ -834,7 +834,7 @@ class Api(object):
         self.v1 = V1()
     def GET(self):
         enable_crossdomain();
-        return json.dumps({"code":Error.success, 
+        return json.dumps({"code":Error.success,
             "urls": {
                 "v1": "the api version 1.0"
             }
@@ -859,7 +859,7 @@ class V1(object):
     def GET(self):
         enable_crossdomain();
         return json.dumps({"code":Error.success, "urls":{
-            "clients": "for srs http callback, to handle the clients requests: connect/disconnect vhost/app.", 
+            "clients": "for srs http callback, to handle the clients requests: connect/disconnect vhost/app.",
             "streams": "for srs http callback, to handle the streams requests: publish/unpublish stream.",
             "sessions": "for srs http callback, to handle the sessions requests: client play/stop stream",
             "dvrs": "for srs http callback, to handle the dvr requests: dvr stream.",
@@ -933,10 +933,10 @@ class SrsWorker(cherrypy.process.plugins.SimplePlugin):
     def main(self):
         for url in self.__snapshots:
             snapshot = self.__snapshots[url]
-            
+
             diff = time.time() - snapshot['timestamp']
             process = snapshot['process']
-            
+
             # aborted.
             if process is not None and snapshot['abort']:
                 process.kill()
@@ -961,11 +961,11 @@ class SrsWorker(cherrypy.process.plugins.SimplePlugin):
             output = os.path.join(static_dir, "%s/%s-%%03d.png"%(snapshot['app'], snapshot['stream']))
             # the ffmepg command to snapshot
             cmd = '%s -i %s -vf fps=1 -vcodec png -f image2 -an -y -vframes %s -y %s'%(ffmpeg, url, vframes, output)
-            
+
             # already snapshoted and not expired.
             if process is not None and diff < expire:
                 continue
-            
+
             # terminate the active process
             if process is not None:
                 # the poll will set the process.returncode
@@ -996,16 +996,16 @@ class SrsWorker(cherrypy.process.plugins.SimplePlugin):
                     else:
                         process.kill()
                         print 'kill the process %s'%snapshot['cmd']
-                
+
             # create new process to snapshot.
             print 'snapshot by: %s'%cmd
-            
+
             process = create_process(cmd, discard.fileno(), discard.fileno())
             snapshot['process'] = process
             snapshot['cmd'] = cmd
             snapshot['timestamp'] = time.time()
         pass;
-        
+
     # {"action":"on_publish","client_id":108,"ip":"127.0.0.1","vhost":"__defaultVhost__","app":"live","stream":"livestream"}
     # ffmpeg -i rtmp://127.0.0.1:1935/live?vhost=dev/stream -vf fps=1 -vcodec png -f image2 -an -y -vframes 3 -y static-dir/live/livestream-%03d.png
     def snapshot_create(self, req):
@@ -1013,13 +1013,13 @@ class SrsWorker(cherrypy.process.plugins.SimplePlugin):
         if url in self.__snapshots:
             print 'ignore exists %s'%url
             return Error.success
-            
+
         req['process'] = None
         req['abort'] = False
         req['timestamp'] = time.time()
         self.__snapshots[url] = req
         return Error.success
-        
+
     # {"action":"on_unpublish","client_id":108,"ip":"127.0.0.1","vhost":"__defaultVhost__","app":"live","stream":"livestream"}
     def snapshot_destroy(self, req):
         url = "rtmp://127.0.0.1/%s...vhost...%s/%s"%(req['app'], req['vhost'], req['stream'])
@@ -1058,4 +1058,3 @@ conf = {
 trace("start cherrypy server")
 root = Root()
 cherrypy.quickstart(root, '/', conf)
-
