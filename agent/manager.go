@@ -93,7 +93,7 @@ func (v *AgentManager) NewRtmpPublishAgent(ctx core.Context, conn *protocol.Rtmp
 
 	// when dup source not nil, then the source is using.
 	if dup.TiedSink() != nil {
-		err = AgentBusyError
+		err = ErrorAgentBusy
 		core.Error.Println(ctx, "source busy. err is", err)
 		return
 	}
