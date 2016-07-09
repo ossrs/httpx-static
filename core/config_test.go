@@ -337,8 +337,8 @@ func TestSrsConfStyle(t *testing.T) {
 		if c.Heartbeat.Interval != 9.3 {
 			t.Error("failed", v, "for interval", c.Heartbeat.Interval, "!= 9.3")
 		}
-		if c.Heartbeat.DeviceId != "my-srs-device" {
-			t.Error("failed", v, "for device_id", c.Heartbeat.DeviceId, "!= my-srs-device")
+		if c.Heartbeat.DeviceID != "my-srs-device" {
+			t.Error("failed", v, "for device_id", c.Heartbeat.DeviceID, "!= my-srs-device")
 		}
 	})
 }

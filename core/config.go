@@ -37,7 +37,7 @@ const (
 	ReloadWorkers = iota
 	ReloadLog
 	ReloadListen
-	ReloadCpuProfile
+	ReloadCPUProfile
 	ReloadGcPercent
 	// vhost specified.
 	ReloadMwLatency
@@ -46,10 +46,8 @@ const (
 // merged write latency, the group messages to send.
 const defaultMwLatency = 350
 
-// the reload handler,
-// the client which care about the reload event,
-// must implements this interface and then register itself
-// to the config.
+// ReloadHandler is used when the client cares about the reload event,
+// it can implement this interface and then register itself to the config.
 type ReloadHandler interface {
 	// when reload the global scopes,
 	// for example, the workers, listen and log.
@@ -65,7 +63,7 @@ type ReloadHandler interface {
 	OnReloadVhost(vhost string, scope int, cc, pc *Config) (err error)
 }
 
-// the vhost section in config.
+// Vhost section in the configuration
 type Vhost struct {
 	Name     string `json:"name"`
 	Realtime bool   `json:"min_latency"`
@@ -78,15 +76,16 @@ func NewConfVhost() *Vhost {
 	}
 }
 
+// Play section in the configuration
 type Play struct {
-	MwLatency int `json:"mw_latency`
+	MwLatency int `json:"mw_latency"`
 }
 
 func NewConfPlay() *Play {
 	return &Play{}
 }
 
-// the config for this application,
+// Config for this application,
 // which can load from file in json style,
 // and convert to json string.
 // @remark user can use the GsConfig object.
@@ -105,7 +104,7 @@ type Config struct {
 		GcTrace    int    `json:"gc_trace"`    // the gc trace interval in seconds.
 		GcInterval int    `json:"gc_interval"` // the gc interval in seconds.
 		GcPercent  int    `json:"gc_percent"`  // the gc percent.
-		CpuProfile string `json:"cpu_profile"` // the cpu profile file.
+		CPUProfile string `json:"cpu_profile"` // the cpu profile file.
 		MemProfile string `json:"mem_profile"` // the memory profile file.
 	}
 
@@ -120,8 +119,8 @@ type Config struct {
 	Heartbeat struct {
 		Enabled  bool    `json:"enabled"`   // whether enable the heartbeat.
 		Interval float64 `json:"interval"`  // the heartbeat interval in seconds.
-		Url      string  `json:"url"`       // the url to report.
-		DeviceId string  `json:"device_id"` // the device id to report.
+		URL      string  `json:"url"`       // the url to report.
+		DeviceID string  `json:"device_id"` // the device id to report.
 		Summary  bool    `json:"summaries"` // whether enable the detail summary.
 		Listen   int     `json:"listen"`    // the heartbeat http api listen port.
 	} `json:"heartbeat"`
@@ -139,13 +138,13 @@ type Config struct {
 	// the vhosts section.
 	Vhosts []*Vhost `json:"vhosts"`
 
-	ctx            Context           `json:"-"`
-	conf           string            `json:"-"` // the config file path.
-	reloadHandlers []ReloadHandler   `json:"-"`
-	vhosts         map[string]*Vhost `json:"-"`
+	ctx            Context           `json:"ctx"`
+	conf           string            `json:"conf"` // the config file path.
+	reloadHandlers []ReloadHandler   `json:"reloadHandlers"`
+	vhosts         map[string]*Vhost `json:"vhosts"`
 }
 
-// the current global config.
+// Conf represents the current global configuration
 var Conf *Config
 
 func NewConfig(ctx Context) *Config {
@@ -159,7 +158,7 @@ func NewConfig(ctx Context) *Config {
 	return c
 }
 
-// get the config file path.
+// Conf returns the config file path.
 func (v *Config) Conf() string {
 	return v.conf
 }
@@ -173,7 +172,7 @@ func (c *Config) SetDefaults() {
 
 	c.Heartbeat.Enabled = false
 	c.Heartbeat.Interval = 9.3
-	c.Heartbeat.Url = "http://127.0.0.1:8085/api/v1/servers"
+	c.Heartbeat.URL = "http://127.0.0.1:8085/api/v1/servers"
 	c.Heartbeat.Summary = false
 
 	c.Stat.Network = 0
@@ -399,9 +398,9 @@ func (v *Config) Reload(cc *Config) (err error) {
 		Info.Println(ctx, "reload ignore listen")
 	}
 
-	if cc.Go.CpuProfile != pc.Go.CpuProfile {
+	if cc.Go.CPUProfile != pc.Go.CPUProfile {
 		for _, h := range cc.reloadHandlers {
-			if err = h.OnReloadGlobal(ReloadCpuProfile, cc, pc); err != nil {
+			if err = h.OnReloadGlobal(ReloadCPUProfile, cc, pc); err != nil {
 				return
 			}
 		}

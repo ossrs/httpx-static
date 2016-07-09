@@ -58,7 +58,7 @@ type NetworkIface struct {
 	// interface name.
 	Ifname string
 	// the ip address of interface.
-	Ip string
+	IP string
 	// the mac address of interface.
 	Mac string
 	// whether the interface ip is public.
@@ -66,14 +66,14 @@ type NetworkIface struct {
 }
 
 func (v *NetworkIface) String() string {
-	return fmt.Sprintf("%v/%v/%v/%v", v.Ifname, v.Ip, v.Mac, v.Internet)
+	return fmt.Sprintf("%v/%v/%v/%v", v.Ifname, v.IP, v.Mac, v.Internet)
 }
 
 type Heartbeat struct {
 	ctx      core.Context
 	ips      []*NetworkIface
 	devices  map[string]interface{}
-	exportIp *NetworkIface
+	exportIP *NetworkIface
 	lock     sync.Mutex
 }
 
@@ -82,7 +82,7 @@ func NewHeartbeat(ctx core.Context) *Heartbeat {
 		ctx:      ctx,
 		ips:      make([]*NetworkIface, 0),
 		devices:  make(map[string]interface{}),
-		exportIp: nil,
+		exportIP: nil,
 	}
 }
 
@@ -133,11 +133,11 @@ func (v *Heartbeat) Initialize(w core.WorkerContainer) (err error) {
 				var o []byte
 				if o, err = ioutil.ReadAll(r.Body); err == nil {
 					obj := struct {
-						Id   string      `json:"id"`
+						ID   string      `json:"id"`
 						Data interface{} `json:"data"`
 					}{}
 					if err = json.Unmarshal(o, &obj); err == nil {
-						v.devices[obj.Id] = obj.Data
+						v.devices[obj.ID] = obj.Data
 						b = map[string]int{
 							"code": 0,
 						}
@@ -197,11 +197,12 @@ func (v *Heartbeat) discoveryCycle(w core.WorkerContainer) {
 				interval = discoveryEmptyInterval
 				continue
 			}
-			core.Trace.Println(ctx, "local ip is", v.ips, "exported", v.exportIp)
+			core.Trace.Println(ctx, "local ip is", v.ips, "exported", v.exportIP)
 			interval = discoveryRefreshInterval
 		}
 	}
 
+	// This is unreachable
 	return
 }
 
@@ -287,7 +288,7 @@ func (v *Heartbeat) discovery() (err error) {
 		return
 	}
 
-	v.exportIp = nil
+	v.exportIP = nil
 	v.ips = make([]*NetworkIface, 0)
 	for _, iface := range ifaces {
 		// ignore any loopback interface.
@@ -309,7 +310,7 @@ func (v *Heartbeat) discovery() (err error) {
 			if p, ok, pub := ipf(addr); ok {
 				core.Trace.Println(ctx, fmt.Sprintf("match iface=%v, ip=%v, hwaddr=%v, pub=%v", iface.Name, p, iface.HardwareAddr, pub))
 				v.ips = append(v.ips, &NetworkIface{
-					Ifname: iface.Name, Ip: p, Mac: iface.HardwareAddr.String(), Internet: pub,
+					Ifname: iface.Name, IP: p, Mac: iface.HardwareAddr.String(), Internet: pub,
 				})
 			} else {
 				core.Info.Println(ctx, "iface", iface.Name, addr, reflect.TypeOf(addr))
@@ -320,14 +321,14 @@ func (v *Heartbeat) discovery() (err error) {
 	// find the best match public address.
 	for _, ip := range v.ips {
 		if ip.Internet == IfaceInternet {
-			v.exportIp = ip
+			v.exportIP = ip
 			return
 		}
 	}
 
 	// no public address, use private address.
 	if len(v.ips) > 0 {
-		v.exportIp = v.ips[core.Conf.Stat.Network%len(v.ips)]
+		v.exportIP = v.ips[core.Conf.Stat.Network%len(v.ips)]
 	}
 	return
 }
@@ -338,21 +339,21 @@ func (v *Heartbeat) beat() (err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	if v.exportIp == nil {
+	if v.exportIP == nil {
 		core.Info.Println(ctx, "heartbeat not ready.")
 		return
 	}
 
 	p := struct {
-		DeviceId string      `json:"device_id"`
-		Ip       string      `json:"ip"`
+		DeviceID string      `json:"device_id"`
+		IP       string      `json:"ip"`
 		Summary  interface{} `json:"summaries,omitempty"`
 		Devices  interface{} `json:"devices,omitempty"`
 	}{}
 
 	c := &core.Conf.Heartbeat
-	p.DeviceId = c.DeviceId
-	p.Ip = v.exportIp.Ip
+	p.DeviceID = c.DeviceID
+	p.IP = v.exportIP.IP
 	if len(v.devices) > 0 {
 		p.Devices = v.devices
 	}

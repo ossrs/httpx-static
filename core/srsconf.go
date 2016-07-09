@@ -270,7 +270,7 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 			}
 		}
 		if d := d.Get("device_id"); d != nil {
-			c.Heartbeat.DeviceId = d.Arg0()
+			c.Heartbeat.DeviceID = d.Arg0()
 		}
 		if d := d.Get("url"); d != nil {
 			c.Heartbeat.Url = d.Arg0()

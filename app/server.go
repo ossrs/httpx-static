@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-// the state of server, state graph:
+// ServerState represents the state of server, state graph:
 //      Init => Normal(Ready => Running)
 //      Init/Normal => Closed
 type ServerState int
@@ -82,7 +82,7 @@ func NewServer(ctx core.Context) *Server {
 	return v
 }
 
-// notify server to stop and wait for cleanup.
+// Close notifies the server to stop and wait for cleanup.
 func (v *Server) Close() {
 	ctx := v.ctx
 
@@ -127,9 +127,9 @@ func (v *Server) Close() {
 	agent.Manager.Close()
 
 	// when cpu profile is enabled, close it.
-	if core.Conf.Go.CpuProfile != "" {
+	if core.Conf.Go.CPUProfile != "" {
 		pprof.StopCPUProfile()
-		core.Trace.Println(ctx, "cpu profile ok, file is", core.Conf.Go.CpuProfile)
+		core.Trace.Println(ctx, "cpu profile ok, file is", core.Conf.Go.CPUProfile)
 	}
 
 	// when memory profile enabled, write heap info.
@@ -191,7 +191,7 @@ func (v *Server) initializeRuntime() (err error) {
 	signal.Notify(v.sigs)
 
 	// apply the cpu profile.
-	if err = v.applyCpuProfile(core.Conf); err != nil {
+	if err = v.applyCPUProfile(core.Conf); err != nil {
 		return
 	}
 
@@ -343,10 +343,11 @@ func (v *Server) Run() (err error) {
 		}
 	}
 
+	// This is unreachable
 	return
 }
 
-// interface WorkContainer
+// QC interface WorkContainer
 func (v *Server) QC() <-chan bool {
 	return v.quit
 }
@@ -418,17 +419,17 @@ func (v *Server) applyLogger(c *core.Config) (err error) {
 	return
 }
 
-func (v *Server) applyCpuProfile(c *core.Config) (err error) {
+func (v *Server) applyCPUProfile(c *core.Config) (err error) {
 	ctx := v.ctx
 
 	pprof.StopCPUProfile()
 
-	if c.Go.CpuProfile == "" {
+	if c.Go.CPUProfile == "" {
 		return
 	}
 
 	var f *os.File
-	if f, err = os.Create(c.Go.CpuProfile); err != nil {
+	if f, err = os.Create(c.Go.CPUProfile); err != nil {
 		core.Error.Println(ctx, "open cpu profile file failed. err is", err)
 		return
 	}
@@ -452,14 +453,14 @@ func (v *Server) applyGcPercent(c *core.Config) (err error) {
 	return
 }
 
-// interface ReloadHandler
+// OnReloadGlobal interface ReloadHandler
 func (v *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	if scope == core.ReloadWorkers {
 		v.applyMultipleProcesses(cc.Workers)
 	} else if scope == core.ReloadLog {
 		v.applyLogger(cc)
-	} else if scope == core.ReloadCpuProfile {
-		v.applyCpuProfile(cc)
+	} else if scope == core.ReloadCPUProfile {
+		v.applyCPUProfile(cc)
 	} else if scope == core.ReloadGcPercent {
 		v.applyGcPercent(cc)
 	}
