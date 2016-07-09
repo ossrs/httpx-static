@@ -31,7 +31,7 @@ func (v MsgType) String() string {
 }
 
 type Msg struct {
-	Id        uint32  `json:"id"`
+	ID        uint32  `json:"id"`
 	Timestamp uint64  `json:"ts"`
 	Diff      int32   `json:"diff"`
 	Interval  uint32  `json:"interval"`
@@ -62,10 +62,10 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 			return
 		}
 
-		for i := preid + 1; i < msg.Id; i++ {
+		for i := preid + 1; i < msg.ID; i++ {
 			missing[i] = true
 		}
-		delete(missing, msg.Id)
+		delete(missing, msg.ID)
 
 		if msg.Type == MsgTypeReport {
 			metric.Duration = int32((ts - metric.Starttime) / 1000)
@@ -86,11 +86,11 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 			continue
 		}
 
-		if msg.Id > preid+1 {
-			metric.JumpFrames += int32(msg.Id - (preid + 1))
+		if msg.ID > preid+1 {
+			metric.JumpFrames += int32(msg.ID - (preid + 1))
 		}
-		if preid < msg.Id {
-			preid = msg.Id
+		if preid < msg.ID {
+			preid = msg.ID
 		}
 
 		if doResetMetric || metric == nil {
@@ -113,7 +113,7 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 		metric.DropFrames = int32(len(missing))
 
 		ocore.Info.Println(nil, "recv", msg.Size, "bytes",
-			fmt.Sprintf("%v/%v", msg.Id, msg.Timestamp),
+			fmt.Sprintf("%v/%v", msg.ID, msg.Timestamp),
 			fmt.Sprintf("%v/%v", msg.Diff, rdiff),
 			fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
 	}

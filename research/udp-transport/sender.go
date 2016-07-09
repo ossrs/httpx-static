@@ -32,7 +32,7 @@ func (v MsgType) String() string {
 }
 
 type Msg struct {
-	Id        uint32  `json:"id"`
+	ID        uint32  `json:"id"`
 	Timestamp uint64  `json:"ts"`
 	Diff      int32   `json:"diff"`
 	Interval  uint32  `json:"interval"`
@@ -58,7 +58,7 @@ func fill_string(size int) (str string) {
 
 func create_raw_message(interval, size int, id uint32, prets uint64) (uint32, uint64, *Msg, []byte, error) {
 	msg := &Msg{
-		Id:        id,
+		ID:        id,
 		Timestamp: uint64(time.Now().UnixNano()),
 		Diff:      0,
 		Interval:  uint32(interval),
@@ -106,7 +106,7 @@ func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func(), e
 			return
 		}
 		ocore.Info.Println(nil, "send", len(buf), "bytes",
-			fmt.Sprintf("%v/%v/%v", msg.Id, msg.Timestamp, msg.Diff),
+			fmt.Sprintf("%v/%v/%v", msg.ID, msg.Timestamp, msg.Diff),
 			fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
 
 		// requires report every some messages.
@@ -138,7 +138,7 @@ func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func(), e
 				return
 			}
 			fmt.Fprintln(os.Stderr, fmt.Sprintf("Report start:%v duration:%v total:%v drop:%v latency:%v",
-				m.Starttime/1000/1000, m.Duration, msg.Id, m.DropFrames, m.Latency))
+				m.Starttime/1000/1000, m.Duration, msg.ID, m.DropFrames, m.Latency))
 			break
 		}
 
