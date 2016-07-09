@@ -66,7 +66,7 @@ func TestConfigBasic(t *testing.T) {
 		t.Error("log heartbeat interval failed")
 	}
 
-	if c.Heartbeat.Url != "http://127.0.0.1:8085/api/v1/servers" {
+	if c.Heartbeat.URL != "http://127.0.0.1:8085/api/v1/servers" {
 		t.Error("log heartbeat url failed")
 	}
 

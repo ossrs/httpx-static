@@ -28,7 +28,7 @@ import (
 	"os"
 )
 
-// alias the Context interface.
+// Context alias of the Context interface.
 // @remark user can directly use ocore Context.
 type Context interface {
 	ocore.Context
@@ -38,11 +38,12 @@ type Context interface {
 // @remark user can use nil context.
 type context int
 
-var __cid int = 100
+var _Cid = 100
 
+// NewContext provides a context with current Cid, incrementing Cid, and returning the context
 func NewContext() Context {
-	v := context(__cid)
-	__cid++
+	v := context(_Cid)
+	_Cid++
 	return v
 }
 
@@ -50,39 +51,44 @@ func (v context) Cid() int {
 	return int(v)
 }
 
-// alias the Logger interface.
+// Logger alias the Logger interface.
 // @remark user can directly use ocore Logger.
 type Logger interface {
 	ocore.Logger
 }
 
-// alias for log plus.
+// NewLoggerPlus alias for log plus.
 func NewLoggerPlus(l *log.Logger) Logger {
 	return Logger(ocore.NewLoggerPlus(l))
 }
 
 // the application loggers
-// info, the verbose info level, very detail log, the lowest level, to discard.
-var Info Logger = nil
 
-// trace, the trace level, something important, the default log level, to stdout.
-var Trace Logger = nil
+// Info the verbose info level, very detail log, the lowest level, to discard.
+var Info Logger
 
-// warn, the warning level, dangerous information, to stderr.
-var Warn Logger = nil
+// Trace the trace level, something important, the default log level, to stdout.
+var Trace Logger
 
-// error, the error level, fatal error things, ot stderr.
-var Error Logger = nil
+// Warn the warning level, dangerous information, to stderr.
+var Warn Logger
+
+// Error the error level, fatal error things, ot stderr.
+var Error Logger
 
 const (
-	logLabel      = "[oryx]"
-	LogInfoLabel  = logLabel + "[info] "
+	logLabel = "[oryx]"
+	// LogInfoLabel provides Info labeling for logs
+	LogInfoLabel = logLabel + "[info] "
+	// LogTraceLabel provides Trace labeling for logs
 	LogTraceLabel = logLabel + "[trace] "
-	LogWarnLabel  = logLabel + "[warn] "
+	// LogWarnLabel provides Warn labeling for logs
+	LogWarnLabel = logLabel + "[warn] "
+	// LogErrorLabel provides Error labeling for logs
 	LogErrorLabel = logLabel + "[error] "
 )
 
-// rewrite the label and set alias for logger.
+// RewriteLogger rewrites the label and sets an alias for the logger.
 // @remark for normal application, use the ocore directly.
 func RewriteLogger() {
 	// rewrite the label for ocore.
