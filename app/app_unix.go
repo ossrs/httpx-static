@@ -25,5 +25,8 @@ package app
 
 import "syscall"
 
+// SIGUSR1 for system calls
 var SIGUSR1 = syscall.SIGUSR1
+
+// SIGUSR2 for system calls
 var SIGUSR2 = syscall.SIGUSR2

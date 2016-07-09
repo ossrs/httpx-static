@@ -294,7 +294,7 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 		if len(c.partialMessage.Payload) != 0x0 {
 			t.Error("invalid payload")
 		}
-		if c.payloadLength != 0x0e || c.messageType != 0x0d || c.streamId != 0x0c {
+		if c.payloadLength != 0x0e || c.messageType != 0x0d || c.streamID != 0x0c {
 			t.Error("invalid message")
 		}
 		if c.timestamp != 0x0f || c.timestampDelta != 0x0f {
@@ -327,7 +327,7 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 		0x00, 0x00, 0x0e,
 		0x0d,
 	}, 1, f0, func(b []byte, c *RtmpChunk) {
-		if c.streamId != 0x0c {
+		if c.streamID != 0x0c {
 			t.Error("invalid message")
 		}
 		if c.payloadLength != 0x0e || c.messageType != 0x0d {
@@ -344,7 +344,7 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 	fn([]byte{
 		0x00, 0x00, 0x0f,
 	}, 2, f0, func(b []byte, c *RtmpChunk) {
-		if c.streamId != 0x0c {
+		if c.streamID != 0x0c {
 			t.Error("invalid message")
 		}
 		if c.payloadLength != 0x0e || c.messageType != 0x0d {
@@ -359,7 +359,7 @@ func TestRtmpStack_RtmpReadMessageHeader(t *testing.T) {
 
 	// fmt0=>fmt1=>fmt2=>fm3
 	fn([]byte{}, 3, f0, func(b []byte, c *RtmpChunk) {
-		if c.streamId != 0x0c {
+		if c.streamID != 0x0c {
 			t.Error("invalid message")
 		}
 		if c.payloadLength != 0x0e || c.messageType != 0x0d {
@@ -420,7 +420,7 @@ func TestRtmpChunk_RtmpReadMessagePayload(t *testing.T) {
 
 func TestRtmpConnectAppPacket(t *testing.T) {
 	p := NewRtmpConnectAppPacket().(*RtmpConnectAppPacket)
-	if p.Name != Amf0String("connect") || p.TransactionId != Amf0Number(1.0) || p.Args != nil {
+	if p.Name != Amf0String("connect") || p.TransactionID != Amf0Number(1.0) || p.Args != nil {
 		t.Error("invalid connect app packet.")
 	}
 
@@ -432,7 +432,7 @@ func TestRtmpConnectAppPacket(t *testing.T) {
 		0, 2, 'p', 'j', 2, 0, 4, 'o', 'r', 'y', 'x', // "pj"=string("oryx")
 		0, 6, 'c', 'r', 'e', 'a', 't', 'e', 0, 0x40, 0x9f, 0x7c, 0, 0, 0, 0, 0, // "create"=number(2015)
 		0, 0, 9, // object
-	}); err != nil || p.Name != Amf0String("connect") || p.TransactionId != Amf0Number(1.0) {
+	}); err != nil || p.Name != Amf0String("connect") || p.TransactionID != Amf0Number(1.0) {
 		t.Error("invalid packet, err is", err)
 	}
 	if v, ok := p.CommandObject.Get("pj").(*Amf0String); !ok || *v != Amf0String("oryx") {
@@ -555,7 +555,7 @@ func TestRtmpSetPeerBandwidthPacket(t *testing.T) {
 
 func TestRtmpConnectAppResPacket(t *testing.T) {
 	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
-	if p.TransactionId != 1.0 || p.Name != "_result" {
+	if p.TransactionID != 1.0 || p.Name != "_result" {
 		t.Error("invalid")
 	}
 
@@ -572,7 +572,7 @@ func TestRtmpConnectAppResPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 {
 		t.Error("invalid")
 	}
 	if v, ok := p.Props.Get("pj").(*Amf0String); !ok || *v != "oryx" {
@@ -592,7 +592,7 @@ func TestRtmpConnectAppResPacket(t *testing.T) {
 
 func TestRtmpOnBwDonePacket(t *testing.T) {
 	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
-	if p.Name != "onBWDone" || p.TransactionId != 0 {
+	if p.Name != "onBWDone" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -604,7 +604,7 @@ func TestRtmpOnBwDonePacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 {
 		t.Error("invalid")
 	}
 
@@ -616,7 +616,7 @@ func TestRtmpOnBwDonePacket(t *testing.T) {
 
 func TestRtmpCreateStreamPacket(t *testing.T) {
 	p := NewRtmpCreateStreamPacket().(*RtmpCreateStreamPacket)
-	if p.Name != "createStream" || p.TransactionId != 0 {
+	if p.Name != "createStream" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -628,7 +628,7 @@ func TestRtmpCreateStreamPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 {
 		t.Error("invalid")
 	}
 
@@ -640,7 +640,7 @@ func TestRtmpCreateStreamPacket(t *testing.T) {
 
 func TestRtmpCreateStreamResPacket(t *testing.T) {
 	p := NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket)
-	if p.Name != "_result" || p.TransactionId != 0 {
+	if p.Name != "_result" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -653,7 +653,7 @@ func TestRtmpCreateStreamResPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 || p.StreamId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 || p.StreamID != 1.0 {
 		t.Error("invalid")
 	}
 
@@ -665,7 +665,7 @@ func TestRtmpCreateStreamResPacket(t *testing.T) {
 
 func TestRtmpEmptyPacket(t *testing.T) {
 	p := NewRtmpEmptyPacket().(*RtmpEmptyPacket)
-	if err := p.UnmarshalBinary([]byte{0, 0x40, 0x59, 0, 0, 0, 0, 0, 0}); err != nil || p.Id != 100 {
+	if err := p.UnmarshalBinary([]byte{0, 0x40, 0x59, 0, 0, 0, 0, 0, 0}); err != nil || p.ID != 100 {
 		t.Error("invalid")
 	}
 	if b, err := p.MarshalBinary(); err != nil || len(b) != 9 {
@@ -675,7 +675,7 @@ func TestRtmpEmptyPacket(t *testing.T) {
 
 func TestRtmpFMLEStartPacket(t *testing.T) {
 	p := NewRtmpFMLEStartPacket().(*RtmpFMLEStartPacket)
-	if p.Name != "releaseStream" || p.TransactionId != 0 {
+	if p.Name != "releaseStream" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -688,7 +688,7 @@ func TestRtmpFMLEStartPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 || p.Stream != "oryx" {
+	if p.Name != "_name" || p.TransactionID != 1.0 || p.Stream != "oryx" {
 		t.Error("invalid")
 	}
 
@@ -700,7 +700,7 @@ func TestRtmpFMLEStartPacket(t *testing.T) {
 
 func TestRtmpFMLEStartResPacket(t *testing.T) {
 	p := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
-	if p.Name != "_result" || p.TransactionId != 0 {
+	if p.Name != "_result" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -713,7 +713,7 @@ func TestRtmpFMLEStartResPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 {
 		t.Error("invalid")
 	}
 
@@ -725,7 +725,7 @@ func TestRtmpFMLEStartResPacket(t *testing.T) {
 
 func TestRtmpPlayPacket(t *testing.T) {
 	p := NewRtmpPlayPacket().(*RtmpPlayPacket)
-	if p.Name != "play" || p.TransactionId != 0 {
+	if p.Name != "play" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -741,7 +741,7 @@ func TestRtmpPlayPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 || p.Stream != "oryx" || *p.Start != 1.0 || *p.Duration != 1.0 || *p.Reset != true {
+	if p.Name != "_name" || p.TransactionID != 1.0 || p.Stream != "oryx" || *p.Start != 1.0 || *p.Duration != 1.0 || *p.Reset != true {
 		t.Error("invalid")
 	}
 
@@ -761,7 +761,7 @@ func TestRtmpCallPacket(t *testing.T) {
 	}); err != nil {
 		t.Error("invalid")
 	}
-	if p.Name != "_name" || p.TransactionId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 {
 		t.Error("invalid")
 	}
 	if p, ok := p.Command.(*Amf0String); !ok || *p != "oryx" {
@@ -787,7 +787,7 @@ func TestRtmpCallResPacket(t *testing.T) {
 	}); err != nil {
 		t.Error("invalid")
 	}
-	if p.Name != "_name" || p.TransactionId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 {
 		t.Error("invalid")
 	}
 	if p, ok := p.Command.(*Amf0String); !ok || *p != "oryx" {
@@ -805,7 +805,7 @@ func TestRtmpCallResPacket(t *testing.T) {
 
 func TestRtmpPublishPacket(t *testing.T) {
 	p := NewRtmpPublishPacket().(*RtmpPublishPacket)
-	if p.Name != "publish" || p.TransactionId != 0 {
+	if p.Name != "publish" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -819,7 +819,7 @@ func TestRtmpPublishPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 || p.Stream != "oryx" || *p.Type != "live" {
+	if p.Name != "_name" || p.TransactionID != 1.0 || p.Stream != "oryx" || *p.Type != "live" {
 		t.Error("invalid")
 	}
 
@@ -831,7 +831,7 @@ func TestRtmpPublishPacket(t *testing.T) {
 
 func TestRtmpOnStatusCallPacket(t *testing.T) {
 	p := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket)
-	if p.Name != "onStatus" || p.TransactionId != 0 {
+	if p.Name != "onStatus" || p.TransactionID != 0 {
 		t.Error("invalid")
 	}
 
@@ -844,7 +844,7 @@ func TestRtmpOnStatusCallPacket(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	if p.Name != "_name" || p.TransactionId != 1.0 {
+	if p.Name != "_name" || p.TransactionID != 1.0 {
 		t.Error("invalid")
 	}
 
@@ -904,7 +904,7 @@ func TestRtmpOnStatusDataPacket(t *testing.T) {
 func TestRtmpRequest(t *testing.T) {
 	ctx := core.NewContext()
 	p := NewRtmpRequest(ctx)
-	if p.TcUrl != "" || p.Stream != "" || p.App != "" || p.Type != RtmpUnknown {
+	if p.TcURL != "" || p.Stream != "" || p.App != "" || p.Type != RtmpUnknown {
 		t.Error("invalid")
 	}
 
@@ -912,92 +912,92 @@ func TestRtmpRequest(t *testing.T) {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip"
+	p.TcURL = "rtmp://ip"
 	p.Stream = "xxx"
 	if err := p.Reparse(); err != nil || p.App != "__defaultApp__" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app___vhost=xx"
+	p.TcURL = "rtmp://ip/app___vhost=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app?vhost___xx"
+	p.TcURL = "rtmp://ip/app?vhost___xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app?vhost=xx"
+	p.TcURL = "rtmp://ip/app?vhost=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app...vhost=xx"
+	p.TcURL = "rtmp://ip/app...vhost=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app?vhost...xx"
+	p.TcURL = "rtmp://ip/app?vhost...xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.App != "app" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app"
+	p.TcURL = "rtmp://ip/app"
 	p.Stream = "stream?vhost=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app"
+	p.TcURL = "rtmp://ip/app"
 	p.Stream = "stream?domain=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app"
+	p.TcURL = "rtmp://ip/app"
 	p.Stream = "stream...domain=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app"
+	p.TcURL = "rtmp://ip/app"
 	p.Stream = "stream?domain...xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app"
+	p.TcURL = "rtmp://ip/app"
 	p.Stream = "stream___domain=xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip/app"
+	p.TcURL = "rtmp://ip/app"
 	p.Stream = "stream?domain___xx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xx" || p.Stream != "stream" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://vhost/app"
+	p.TcURL = "rtmp://vhost/app"
 	p.Stream = "stream"
 	if err := p.Reparse(); err != nil || p.Vhost != "vhost" || p.App != "app" || p.Stream != "stream" || p.Port() != 1935 {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip:1936/app"
+	p.TcURL = "rtmp://ip:1936/app"
 	p.Stream = "stream"
 	if err := p.Reparse(); err != nil || p.Vhost != "ip" || p.App != "app" || p.Stream != "stream" || p.Port() != 1936 || p.Host() != "ip" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip:1936/app?vhost=xxx"
+	p.TcURL = "rtmp://ip:1936/app?vhost=xxx"
 	p.Stream = "stream?vhost=xxx"
 	if err := p.Reparse(); err != nil || p.Vhost != "xxx" {
 		t.Error("invalid")
 	}
 
-	p.TcUrl = "rtmp://ip:1936/app/sub"
+	p.TcURL = "rtmp://ip:1936/app/sub"
 	if err := p.Reparse(); err != nil || p.App != "app/sub" {
 		t.Error("invalid")
 	}

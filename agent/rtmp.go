@@ -183,7 +183,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		}
 		return
 	}
-	core.Info.Println(ctx, "rtmp connect app ok, tcUrl is", r.TcUrl)
+	core.Info.Println(ctx, "rtmp connect app ok, tcUrl is", r.TcURL)
 
 	if err = conn.SetWindowAckSize(uint32(2.5 * 1000 * 1000)); err != nil {
 		if !core.IsNormalQuit(err) {
@@ -251,7 +251,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 		core.Error.Println(ctx, "reparse request failed. err is", err)
 		return
 	}
-	if err = conn.OnUrlParsed(); err != nil {
+	if err = conn.OnURLParsed(); err != nil {
 		core.Error.Println(ctx, "notify url parsed failed. err is", err)
 		return
 	}

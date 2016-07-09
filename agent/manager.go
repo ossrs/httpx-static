@@ -60,7 +60,7 @@ func (v *AgentManager) NewRtmpPlayAgent(ctx core.Context, conn *protocol.RtmpCon
 
 	// finger the source agent out, which dup to other agent.
 	var dup core.Agent
-	if dup, err = v.getDupAgent(ctx, conn.Req.Uri()); err != nil {
+	if dup, err = v.getDupAgent(ctx, conn.Req.URI()); err != nil {
 		return
 	}
 
@@ -87,7 +87,7 @@ func (v *AgentManager) NewRtmpPublishAgent(ctx core.Context, conn *protocol.Rtmp
 
 	// finger the source agent out, which dup to other agent.
 	var dup core.Agent
-	if dup, err = v.getDupAgent(ctx, conn.Req.Uri()); err != nil {
+	if dup, err = v.getDupAgent(ctx, conn.Req.URI()); err != nil {
 		return
 	}
 

@@ -70,6 +70,7 @@ type Vhost struct {
 	Play     *Play  `json:"play,ommit-empty"`
 }
 
+// NewConfVhost returns a new Vhost play configuration
 func NewConfVhost() *Vhost {
 	return &Vhost{
 		Play: NewConfPlay(),
@@ -81,6 +82,7 @@ type Play struct {
 	MwLatency int `json:"mw_latency"`
 }
 
+// NewConfPlay returns play
 func NewConfPlay() *Play {
 	return &Play{}
 }
@@ -135,7 +137,7 @@ type Config struct {
 		RtmpDumpRecv bool `json:"rtmp_dump_recv"`
 	} `json:"debug"`
 
-	// the vhosts section.
+	// Vhosts section.
 	Vhosts []*Vhost `json:"vhosts"`
 
 	ctx            Context           `json:"-"`
@@ -147,6 +149,7 @@ type Config struct {
 // Conf represents the current global configuration
 var Conf *Config
 
+// NewConfig returns a new configuration
 func NewConfig(ctx Context) *Config {
 	c := &Config{
 		ctx:            ctx,
@@ -163,26 +166,27 @@ func (v *Config) Conf() string {
 	return v.conf
 }
 
-func (c *Config) SetDefaults() {
-	c.Listen = RtmpListen
-	c.Workers = 0
-	c.Daemon = true
-	c.ChunkSize = 60000
-	c.Go.GcInterval = 0
+// SetDefaults handles setting configuration defaults
+func (v *Config) SetDefaults() {
+	v.Listen = RtmpListen
+	v.Workers = 0
+	v.Daemon = true
+	v.ChunkSize = 60000
+	v.Go.GcInterval = 0
 
-	c.Heartbeat.Enabled = false
-	c.Heartbeat.Interval = 9.3
-	c.Heartbeat.URL = "http://127.0.0.1:8085/api/v1/servers"
-	c.Heartbeat.Summary = false
+	v.Heartbeat.Enabled = false
+	v.Heartbeat.Interval = 9.3
+	v.Heartbeat.URL = "http://127.0.0.1:8085/api/v1/servers"
+	v.Heartbeat.Summary = false
 
-	c.Stat.Network = 0
+	v.Stat.Network = 0
 
-	c.Log.Tank = "file"
-	c.Log.Level = "trace"
-	c.Log.File = "oryx.log"
+	v.Log.Tank = "file"
+	v.Log.Level = "trace"
+	v.Log.File = "oryx.log"
 }
 
-// loads and validate config from config file.
+// Loads and validate config from config file.
 func (v *Config) Loads(conf string) error {
 	v.conf = conf
 
@@ -439,6 +443,7 @@ func (v *Config) Reload(cc *Config) (err error) {
 	return
 }
 
+// Vhost attempts to look up a Vhost by name
 func (v *Config) Vhost(name string) (*Vhost, error) {
 	if v, ok := v.vhosts[name]; ok {
 		return v, nil
@@ -451,6 +456,7 @@ func (v *Config) Vhost(name string) (*Vhost, error) {
 	return nil, ErrVhostNotFound
 }
 
+// VhostGroupMessages returns latency information
 func (v *Config) VhostGroupMessages(vhost string) (n int, err error) {
 	var p *Vhost
 	if p, err = v.Vhost(vhost); err != nil {
@@ -463,6 +469,7 @@ func (v *Config) VhostGroupMessages(vhost string) (n int, err error) {
 	return p.Play.MwLatency / 14, nil
 }
 
+// VhostRealtime returns whether or not the Vhost is realtime
 func (v *Config) VhostRealtime(vhost string) (r bool, err error) {
 	var p *Vhost
 	if p, err = v.Vhost(vhost); err != nil {

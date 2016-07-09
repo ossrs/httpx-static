@@ -24,13 +24,16 @@ package protocol
 import "time"
 
 const (
-	// timeout for rtmp.
-	HandshakeTimeout   = 2100 * time.Millisecond
-	ConnectAppTimeout  = 5000 * time.Millisecond
-	IdentifyTimeout    = ConnectAppTimeout
+	// HandshakeTimeout Handshake Timeout
+	HandshakeTimeout = 2100 * time.Millisecond
+	// ConnectAppTimeout Connection timeout
+	ConnectAppTimeout = 5000 * time.Millisecond
+	// IdentifyTimeout Identification timeout
+	IdentifyTimeout = ConnectAppTimeout
+	// FmlePublishTimeout FMLE Publish timeout
 	FmlePublishTimeout = IdentifyTimeout
+	// PublishRecvTimeout Receive Publish timeout
 	PublishRecvTimeout = 30 * time.Second
-
-	// the input cache, to read from network and put in it.
+	// RtmpInCache the input cache, to read from network and put in it.
 	RtmpInCache = 16
 )

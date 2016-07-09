@@ -42,8 +42,8 @@ import (
 	"time"
 )
 
-// error when create stream.
-var createStreamError error = errors.New("rtmp create stream error")
+// ErrCreateStream error when create stream.
+var ErrCreateStream = errors.New("rtmp create stream error")
 
 // bytes for handshake.
 type hsBytes struct {
@@ -69,6 +69,7 @@ type hsBytes struct {
 	out chan []byte
 }
 
+// NewHsBytes new bytes
 func NewHsBytes(ctx core.Context) *hsBytes {
 	return &hsBytes{
 		ctx: ctx,
@@ -255,8 +256,8 @@ func (v *hsBytes) createS0S1S2() {
 	_ = copy(v.S2(), v.C1())
 }
 
-// 68bytes FMS key which is used to sign the sever packet.
-var RtmpGenuineFMSKey []byte = []byte{
+// RtmpGenuineFMSKey 68bytes FMS key which is used to sign the sever packet.
+var RtmpGenuineFMSKey = []byte{
 	0x47, 0x65, 0x6e, 0x75, 0x69, 0x6e, 0x65, 0x20,
 	0x41, 0x64, 0x6f, 0x62, 0x65, 0x20, 0x46, 0x6c,
 	0x61, 0x73, 0x68, 0x20, 0x4d, 0x65, 0x64, 0x69,
@@ -268,8 +269,8 @@ var RtmpGenuineFMSKey []byte = []byte{
 	0x93, 0xb8, 0xe6, 0x36, 0xcf, 0xeb, 0x31, 0xae,
 } // 68
 
-// 62bytes FP key which is used to sign the client packet.
-var RtmpGenuineFPKey []byte = []byte{
+// RtmpGenuineFPKey 62bytes FP key which is used to sign the client packet.
+var RtmpGenuineFPKey = []byte{
 	0x47, 0x65, 0x6E, 0x75, 0x69, 0x6E, 0x65, 0x20,
 	0x41, 0x64, 0x6F, 0x62, 0x65, 0x20, 0x46, 0x6C,
 	0x61, 0x73, 0x68, 0x20, 0x50, 0x6C, 0x61, 0x79,
@@ -310,11 +311,11 @@ func (v chsSchema) Schema1() bool {
 }
 
 const (
-	// c1s1 schema0
+	// Schema0 c1s1
 	//     key: 764bytes
 	//     digest: 764bytes
 	Schema0 chsSchema = iota
-	// c1s1 schema1
+	// Schema1 c1s1
 	//     digest: 764bytes
 	//     key: 764bytes
 	// @remark FMS only support schema1, please read
@@ -571,12 +572,12 @@ func (v *chsC2S2) S2Create(s2 []byte, c1 *chsC1S1) (err error) {
 	return
 }
 
-// rtmp request.
+// RtmpRequest rtmp request.
 type RtmpRequest struct {
 	ctx core.Context
 
 	// the tcUrl in RTMP connect app request.
-	TcUrl string
+	TcURL string
 	// the required object encoding.
 	ObjectEncoding float64
 
@@ -592,19 +593,20 @@ type RtmpRequest struct {
 	// the app parsed from tcUrl.
 	App string
 	// the url, parsed for tcUrl/stream?params.
-	Url *url.URL
+	URL *url.URL
 }
 
+// NewRtmpRequest sets up a new RTMP request
 func NewRtmpRequest(ctx core.Context) *RtmpRequest {
 	return &RtmpRequest{
 		ctx:  ctx,
 		Type: RtmpUnknown,
-		Url:  &url.URL{},
+		URL:  &url.URL{},
 	}
 }
 
-// the uri to identify the request, vhost/app/stream.
-func (v *RtmpRequest) Uri() string {
+// URI to identify the request, vhost/app/stream.
+func (v *RtmpRequest) URI() string {
 	uri := ""
 	if v.Vhost != core.RtmpDefaultVhost {
 		uri += v.Vhost
@@ -616,33 +618,33 @@ func (v *RtmpRequest) Uri() string {
 	return uri
 }
 
-// the rtmp port, default to 1935.
+// Port is the rtmp port, default to 1935.
 func (v *RtmpRequest) Port() int {
-	if _, p, err := net.SplitHostPort(v.Url.Host); err != nil {
+	_, p, err := net.SplitHostPort(v.URL.Host)
+	if err != nil {
 		return core.RtmpListen
 	} else if p, err := strconv.ParseInt(p, 10, 32); err != nil {
 		return core.RtmpListen
 	} else if p <= 0 {
 		return core.RtmpListen
-	} else {
-		return int(p)
 	}
+	return int(p)
 }
 
-// the host connected at, the ip or domain name(vhost).
+// Host connected at, the ip or domain name(vhost).
 func (v *RtmpRequest) Host() string {
-	if !strings.Contains(v.Url.Host, ":") {
-		return v.Url.Host
+	if !strings.Contains(v.URL.Host, ":") {
+		return v.URL.Host
 	}
 
-	if h, _, err := net.SplitHostPort(v.Url.Host); err != nil {
+	h, _, err := net.SplitHostPort(v.URL.Host)
+	if err != nil {
 		return ""
-	} else {
-		return h
 	}
+	return h
 }
 
-// parse the rtmp request object from tcUrl/stream?params
+// Reparse the rtmp request object from tcUrl/stream?params
 // to finger it out the vhost and url.
 func (v *RtmpRequest) Reparse() (err error) {
 	ctx := v.ctx
@@ -680,13 +682,13 @@ func (v *RtmpRequest) Reparse() (err error) {
 	}
 
 	// format the app and stream.
-	v.TcUrl = ffn(v.TcUrl)
+	v.TcURL = ffn(v.TcURL)
 	v.Stream = ffn(v.Stream)
 
 	// format the tcUrl and stream.
 	var params string
-	if ss := strings.SplitN(v.TcUrl, "?", 2); len(ss) == 2 {
-		v.TcUrl = ss[0]
+	if ss := strings.SplitN(v.TcURL, "?", 2); len(ss) == 2 {
+		v.TcURL = ss[0]
 		params = ss[1]
 	}
 	if ss := strings.SplitN(v.Stream, "?", 2); len(ss) == 2 {
@@ -704,11 +706,11 @@ func (v *RtmpRequest) Reparse() (err error) {
 	// some client use stream to pass the params:
 	//		rtmp://ip/app/stream?params
 	// we will parse all uri to the standard rtmp uri.
-	u := fmt.Sprintf("%v?%v", v.TcUrl, params)
-	if v.Url, err = url.Parse(u); err != nil {
+	u := fmt.Sprintf("%v?%v", v.TcURL, params)
+	if v.URL, err = url.Parse(u); err != nil {
 		return
 	}
-	q := v.Url.Query()
+	q := v.URL.Query()
 
 	// parse result.
 	v.Vhost = v.Host()
@@ -718,7 +720,7 @@ func (v *RtmpRequest) Reparse() (err error) {
 		v.Vhost = p
 	}
 
-	if v.App = strings.TrimLeft(v.Url.Path, "/"); v.App == "" {
+	if v.App = strings.TrimLeft(v.URL.Path, "/"); v.App == "" {
 		v.App = core.RtmpDefaultApp
 	}
 	v.Stream = strings.Trim(v.Stream, "/")
@@ -740,7 +742,7 @@ func (v *RtmpRequest) Reparse() (err error) {
 	return
 }
 
-// the rtmp client type.
+// RtmpConnType the rtmp client type.
 type RtmpConnType uint8
 
 func (v RtmpConnType) String() string {
@@ -756,24 +758,28 @@ func (v RtmpConnType) String() string {
 	}
 }
 
-// whether connection is player
+// IsPlay returns whether the connection is the player
 func (v RtmpConnType) IsPlay() bool {
 	return v == RtmpPlay
 }
 
-// whether connection is flash or fmle publisher.
+// IsPublish returns whether the connection is a flash or fmle publisher.
 func (v RtmpConnType) IsPublish() bool {
 	return v == RtmpFlashPublish || v == RtmpFmlePublish
 }
 
 const (
+	// RtmpUnknown Unknown RTMP Connection type
 	RtmpUnknown RtmpConnType = iota
+	// RtmpPlay Play RTMP Connection type
 	RtmpPlay
+	// RtmpFmlePublish Fmle Publish RTMP Connection type
 	RtmpFmlePublish
+	// RtmpFlashPublish Flash Publish RTMP Connection type
 	RtmpFlashPublish
 )
 
-// rtmp protocol stack.
+// RtmpConnection rtmp protocol stack.
 type RtmpConnection struct {
 	ctx core.Context
 
@@ -820,6 +826,7 @@ type RtmpConnection struct {
 	isFlusherWorking bool
 }
 
+// NewRtmpConnection sets up a new RTMP connection
 func NewRtmpConnection(ctx core.Context, transport io.ReadWriteCloser, wc core.WorkerContainer) *RtmpConnection {
 	v := &RtmpConnection{
 		ctx:           ctx,
@@ -890,12 +897,12 @@ func NewRtmpConnection(ctx core.Context, transport io.ReadWriteCloser, wc core.W
 	return v
 }
 
-// retrieve the context of connection.
+// Ctx retrieves the context of connection.
 func (v *RtmpConnection) Ctx() core.Context {
 	return v.ctx
 }
 
-// close the connection to client.
+// Close the connection to client.
 // TODO: FIXME: should be thread safe.
 func (v *RtmpConnection) Close() {
 	ctx := v.ctx
@@ -926,11 +933,12 @@ func (v *RtmpConnection) Close() {
 	return
 }
 
-// interface ReloadHandler
+// OnReloadGlobal interface ReloadHandler
 func (v *RtmpConnection) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	return
 }
 
+// OnReloadVhost interface ReloadHandler
 func (v *RtmpConnection) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
 	if vhost == v.Req.Vhost && scope == core.ReloadMwLatency {
 		return v.updateNbGroupMessages()
@@ -938,7 +946,7 @@ func (v *RtmpConnection) OnReloadVhost(vhost string, scope int, cc, pc *core.Con
 	return
 }
 
-// handshake with client, try complex then simple.
+// Handshake with client, try complex then simple.
 func (v *RtmpConnection) Handshake() (err error) {
 	ctx := v.ctx
 
@@ -993,7 +1001,7 @@ func (v *RtmpConnection) Handshake() (err error) {
 	shs := func() (err error) {
 		// plain text required.
 		if !v.handshake.ClientPlaintext() {
-			return fmt.Errorf("only support rtmp plain text.")
+			return fmt.Errorf("only support rtmp plain text")
 		}
 
 		return
@@ -1075,7 +1083,7 @@ func (v *RtmpConnection) waitC2() (err error) {
 	return
 }
 
-// do connect app with client, to discovery tcUrl.
+// ExpectConnectApp do connect app with client, to discovery tcUrl.
 func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 	ctx := v.ctx
 
@@ -1087,14 +1095,14 @@ func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 		}
 		if p, ok := p.(*RtmpConnectAppPacket); ok {
 			if p, ok := p.CommandObject.Get("tcUrl").(*Amf0String); ok {
-				r.TcUrl = string(*p)
+				r.TcURL = string(*p)
 			}
 			if p, ok := p.CommandObject.Get("objectEncoding").(*Amf0Number); ok {
 				r.ObjectEncoding = float64(*p)
 			}
 
 			objectEncoding := fmt.Sprintf("AMF%v", int(r.ObjectEncoding))
-			core.Trace.Println(ctx, "connect at", r.TcUrl, objectEncoding)
+			core.Trace.Println(ctx, "connect at", r.TcURL, objectEncoding)
 		} else {
 			// try next.
 			return true, nil
@@ -1103,7 +1111,7 @@ func (v *RtmpConnection) ExpectConnectApp(r *RtmpRequest) (err error) {
 	})
 }
 
-// set ack size to client, client will send ack-size for each ack window
+// SetWindowAckSize sets ack size to client, client will send ack-size for each ack window
 func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	p := NewRtmpSetWindowAckSizePacket().(*RtmpSetWindowAckSizePacket)
 	p.Ack = RtmpUint32(ack)
@@ -1111,7 +1119,7 @@ func (v *RtmpConnection) SetWindowAckSize(ack uint32) (err error) {
 	return v.write(p, 0)
 }
 
-// @type: The sender can mark this message hard (0), soft (1), or dynamic (2)
+// SetPeerBandwidth @type: The sender can mark this message hard (0), soft (1), or dynamic (2)
 // using the Limit type field.
 func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	p := NewRtmpSetPeerBandwidthPacket().(*RtmpSetPeerBandwidthPacket)
@@ -1121,7 +1129,7 @@ func (v *RtmpConnection) SetPeerBandwidth(bw uint32, t uint8) (err error) {
 	return v.write(p, 0)
 }
 
-// set the chunk size.
+// SetChunkSize sets the chunk size.
 func (v *RtmpConnection) SetChunkSize(n int) (err error) {
 	p := NewRtmpSetChunkSizePacket().(*RtmpSetChunkSizePacket)
 	p.ChunkSize = RtmpUint32(n)
@@ -1129,7 +1137,7 @@ func (v *RtmpConnection) SetChunkSize(n int) (err error) {
 	return v.write(p, 0)
 }
 
-// @param server_ip the ip of server.
+// ResponseConnectApp @param server_ip the ip of server.
 func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	p := NewRtmpConnectAppResPacket().(*RtmpConnectAppResPacket)
 
@@ -1162,14 +1170,14 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	return v.write(p, 0)
 }
 
-// response client the onBWDone message.
+// OnBwDone response client the onBWDone message.
 func (v *RtmpConnection) OnBwDone() (err error) {
 	p := NewRtmpOnBwDonePacket().(*RtmpOnBwDonePacket)
 
 	return v.write(p, 0)
 }
 
-// recv some message to identify the client.
+// Identify receives some message to identify the client.
 // @stream_id, client will createStream to play or publish by flash,
 //         the stream_id used to response the createStream request.
 // @type, output the client type.
@@ -1201,7 +1209,7 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 		// TODO: FIXME: response in right way, or forward in edge mode.
 		if p, ok := p.(*RtmpCallPacket); ok {
 			res := NewRtmpCallResPacket().(*RtmpCallResPacket)
-			res.TransactionId = p.TransactionId
+			res.TransactionID = p.TransactionID
 			if err = v.write(res, 0); err != nil {
 				core.Error.Println(ctx, "response call failed. err is", err)
 				return
@@ -1214,8 +1222,8 @@ func (v *RtmpConnection) Identify() (connType RtmpConnType, streamName string, d
 	return
 }
 
-// when request parsed, notify the connection.
-func (v *RtmpConnection) OnUrlParsed() (err error) {
+// OnURLParsed when request parsed, notify the connection.
+func (v *RtmpConnection) OnURLParsed() (err error) {
 	return v.updateNbGroupMessages()
 }
 func (v *RtmpConnection) updateNbGroupMessages() (err error) {
@@ -1225,7 +1233,7 @@ func (v *RtmpConnection) updateNbGroupMessages() (err error) {
 	return
 }
 
-// for Flash encoder, response the start publish event.
+// FlashStartPublish for Flash encoder, response the start publish event.
 func (v *RtmpConnection) FlashStartPublish() (err error) {
 	ctx := v.ctx
 
@@ -1233,7 +1241,7 @@ func (v *RtmpConnection) FlashStartPublish() (err error) {
 	res.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
 	res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 	res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
-	res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+	res.Data.Set(StatusClientID, NewAmf0String(RtmpSigClientID))
 	if err = v.write(res, v.sid); err != nil {
 		return
 	}
@@ -1242,7 +1250,7 @@ func (v *RtmpConnection) FlashStartPublish() (err error) {
 	return
 }
 
-// for FMLE encoder, response the start publish event.
+// FmleStartPublish for FMLE encoder, response the start publish event.
 func (v *RtmpConnection) FmleStartPublish() (err error) {
 	ctx := v.ctx
 
@@ -1255,7 +1263,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 		switch p := p.(type) {
 		case *RtmpFMLEStartPacket:
 			res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
-			res.TransactionId = p.TransactionId
+			res.TransactionID = p.TransactionID
 			if err = v.write(res, 0); err != nil {
 				return
 			}
@@ -1265,8 +1273,8 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			v.sid++
 
 			res := NewRtmpCreateStreamResPacket().(*RtmpCreateStreamResPacket)
-			res.TransactionId = p.TransactionId
-			res.StreamId = Amf0Number(v.sid)
+			res.TransactionID = p.TransactionID
+			res.StreamID = Amf0Number(v.sid)
 
 			if err = v.write(res, 0); err != nil {
 				return
@@ -1287,7 +1295,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 			res.Data.Set(StatusLevel, NewAmf0String(StatusLevelStatus))
 			res.Data.Set(StatusCode, NewAmf0String(StatusCodePublishStart))
 			res.Data.Set(StatusDescription, NewAmf0String("Started publishing stream."))
-			res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+			res.Data.Set(StatusClientID, NewAmf0String(RtmpSigClientID))
 			if err = v.write(res, v.sid); err != nil {
 				return
 			}
@@ -1308,7 +1316,7 @@ func (v *RtmpConnection) FmleStartPublish() (err error) {
 	})
 }
 
-// for FMLE encoder, to unpublish.
+// FmleUnpublish for FMLE encoder, to unpublish.
 func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 	// publish response onFCUnpublish(NetStream.unpublish.Success)
 	if res, ok := NewRtmpOnStatusCallPacket().(*RtmpOnStatusCallPacket); ok {
@@ -1322,7 +1330,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 
 	// FCUnpublish response
 	if res, ok := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket); ok {
-		res.TransactionId = upp.TransactionId
+		res.TransactionID = upp.TransactionID
 		if err = v.write(res, v.sid); err != nil {
 			return
 		}
@@ -1333,7 +1341,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 		res.Name = Amf0String(Amf0CommandOnFcUnpublish)
 		res.Data.Set(StatusCode, NewAmf0String(StatusCodeUnpublishSuccess))
 		res.Data.Set(StatusDescription, NewAmf0String("Stream is now unpublished"))
-		res.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+		res.Data.Set(StatusClientID, NewAmf0String(RtmpSigClientID))
 		if err = v.write(res, v.sid); err != nil {
 			return
 		}
@@ -1342,7 +1350,7 @@ func (v *RtmpConnection) FmleUnpublish(upp *RtmpFMLEStartPacket) (err error) {
 	return
 }
 
-// for Flash player or edge, response the start play event.
+// FlashStartPlay for Flash player or edge, response the start play event.
 func (v *RtmpConnection) FlashStartPlay() (err error) {
 	ctx := v.ctx
 
@@ -1361,7 +1369,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusCode, NewAmf0String(StatusCodeStreamReset))
 		p.Data.Set(StatusDescription, NewAmf0String("Playing and resetting stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
-		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+		p.Data.Set(StatusClientID, NewAmf0String(RtmpSigClientID))
 		if err = v.write(p, v.sid); err != nil {
 			return
 		}
@@ -1373,7 +1381,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 		p.Data.Set(StatusCode, NewAmf0String(StatusCodeStreamStart))
 		p.Data.Set(StatusDescription, NewAmf0String("Started playing stream."))
 		p.Data.Set(StatusDetails, NewAmf0String("stream"))
-		p.Data.Set(StatusClientId, NewAmf0String(RtmpSigClientId))
+		p.Data.Set(StatusClientID, NewAmf0String(RtmpSigClientID))
 		if err = v.write(p, v.sid); err != nil {
 			return
 		}
@@ -1413,7 +1421,7 @@ func (v *RtmpConnection) FlashStartPlay() (err error) {
 	return
 }
 
-// the rtmp connection never provides send message,
+// CacheMessage the rtmp connection never provides send message,
 // but we use cache message and the main goroutine of connection
 // will use Cycle to flush messages.
 func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
@@ -1439,7 +1447,7 @@ func (v *RtmpConnection) CacheMessage(m *RtmpMessage) (err error) {
 	return
 }
 
-// cycle to flush messages, and callback the fn when got message from peer.
+// Cycle to flush messages, and callback the fn when got message from peer.
 func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
 	for {
 		select {
@@ -1458,6 +1466,7 @@ func (v *RtmpConnection) Cycle(fn func(*RtmpMessage) error) (err error) {
 		}
 	}
 
+	// Unreachable code
 	return
 }
 
@@ -1516,14 +1525,14 @@ func (v *RtmpConnection) flush() (err error) {
 	return
 }
 
-// to receive message from rtmp.
+// RecvMessage to receive message from rtmp.
 func (v *RtmpConnection) RecvMessage(timeout time.Duration, fn func(*RtmpMessage) error) (err error) {
 	return v.read(timeout, func(m *RtmpMessage) (loop bool, err error) {
 		return true, fn(m)
 	})
 }
 
-// to decode the message to packet.
+// DecodeMessage to decode the message to packet.
 func (v *RtmpConnection) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 	return v.stack.DecodeMessage(m)
 }
@@ -1536,8 +1545,8 @@ func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (c
 		// increasing the stream id.
 		v.sid++
 
-		csr.TransactionId = current.TransactionId
-		csr.StreamId = Amf0Number(float64(v.sid))
+		csr.TransactionID = current.TransactionID
+		csr.StreamID = Amf0Number(float64(v.sid))
 		if err = v.write(csr, 0); err != nil {
 			core.Error.Println(ctx, "response createStream failed. err is", err)
 			return
@@ -1555,18 +1564,19 @@ func (v *RtmpConnection) identifyCreateStream(p0, p1 *RtmpCreateStreamPacket) (c
 		case *RtmpCreateStreamPacket:
 			// to avoid stack overflow attach.
 			if p0 != nil {
-				err = createStreamError
+				err = ErrCreateStream
 				core.Error.Println(ctx, "only support two createStream packet. err is", err)
 				return
 			}
 
 			connType, streamName, duration, err = v.identifyCreateStream(current, p)
 			return
-		default :
+		default:
 			connType, streamName, duration, err = v.Identify()
 			return
 
 		}
+		// Unreachable code
 		return
 	})
 
@@ -1584,7 +1594,7 @@ func (v *RtmpConnection) identifyFmlePublish(p *RtmpFMLEStartPacket) (connType R
 	streamName = string(p.Stream)
 
 	res := NewRtmpFMLEStartResPacket().(*RtmpFMLEStartResPacket)
-	res.TransactionId = p.TransactionId
+	res.TransactionID = p.TransactionID
 
 	if err = v.write(res, 0); err != nil {
 		core.Error.Println(ctx, "response identify fmle failed. err is", err)
@@ -1654,7 +1664,7 @@ func (v *RtmpConnection) packet2Message(p RtmpPacket, sid uint32) (m *RtmpMessag
 
 	m.MessageType = p.MessageType()
 	m.PreferCid = p.PreferCid()
-	m.StreamId = sid
+	m.StreamID = sid
 	m.Payload = b.Bytes()
 
 	return m, nil
@@ -1685,6 +1695,7 @@ func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err er
 		}
 	}
 
+	// Unreachable code
 	return
 }
 
@@ -1785,7 +1796,7 @@ const (
 	RtmpFmtType3
 )
 
-// the message type.
+// RtmpMessageType the message type.
 type RtmpMessageType uint8
 
 func (v RtmpMessageType) String() string {
@@ -1887,31 +1898,45 @@ func (v RtmpMessageType) isData() bool {
 	return v.isAmf0Data() || v.isAmf3Data()
 }
 
+// IsCommand returns whether or not the message type is an AMF0/AMF3 command
 func (v RtmpMessageType) IsCommand() bool {
 	return v.isAmf0Command() || v.isAmf3Command()
 }
 
 const (
 	// 5. Protocol Control Messages
+
 	// RTMP reserves message type IDs 1-7 for protocol control messages.
 	// These messages contain information needed by the RTM Chunk Stream
 	// protocol or RTMP itself. Protocol messages with IDs 1 & 2 are
 	// reserved for usage with RTM Chunk Stream protocol. Protocol messages
 	// with IDs 3-6 are reserved for usage of RTMP. Protocol message with ID
 	// 7 is used between edge server and origin server.
-	RtmpMsgSetChunkSize               RtmpMessageType = 0x01
-	RtmpMsgAbortMessage               RtmpMessageType = 0x02
-	RtmpMsgAcknowledgement            RtmpMessageType = 0x03
-	RtmpMsgUserControlMessage         RtmpMessageType = 0x04
-	RtmpMsgWindowAcknowledgementSize  RtmpMessageType = 0x05
-	RtmpMsgSetPeerBandwidth           RtmpMessageType = 0x06
+
+	// RtmpMsgSetChunkSize Set Chunk Size
+	RtmpMsgSetChunkSize RtmpMessageType = 0x01
+	// RtmpMsgAbortMessage Abort Message
+	RtmpMsgAbortMessage RtmpMessageType = 0x02
+	// RtmpMsgAcknowledgement Acknowledgement
+	RtmpMsgAcknowledgement RtmpMessageType = 0x03
+	// RtmpMsgUserControlMessage User Control Message
+	RtmpMsgUserControlMessage RtmpMessageType = 0x04
+	// RtmpMsgWindowAcknowledgementSize Window Acknowledgement Size
+	RtmpMsgWindowAcknowledgementSize RtmpMessageType = 0x05
+	// RtmpMsgSetPeerBandwidth Set Peer Bandwidth
+	RtmpMsgSetPeerBandwidth RtmpMessageType = 0x06
+	// RtmpMsgEdgeAndOriginServerCommand Edge and Origin Server Command
 	RtmpMsgEdgeAndOriginServerCommand RtmpMessageType = 0x07
+
 	// 3. Types of messages
+
 	// The server and the client send messages over the network to
 	// communicate with each other. The messages can be of any type which
 	// includes audio messages, video messages, command messages, shared
 	// object messages, data messages, and user control messages.
+
 	// 3.1. Command message
+
 	// Command messages carry the AMF-encoded commands between the client
 	// and the server. These messages have been assigned message type value
 	// of 20 for AMF0 encoding and message type value of 17 for AMF3
@@ -1923,36 +1948,58 @@ const (
 	// contains related parameters. A client or a server can request Remote
 	// Procedure Calls (RPC) over streams that are communicated using the
 	// command messages to the peer.
+
+	// RtmpMsgAMF3CommandMessage AMF3 Command Message
 	RtmpMsgAMF3CommandMessage RtmpMessageType = 17 // 0x11
+	// RtmpMsgAMF0CommandMessage AMF0 Command Message
 	RtmpMsgAMF0CommandMessage RtmpMessageType = 20 // 0x14
+
 	// 3.2. Data message
+
 	// The client or the server sends this message to send Metadata or any
 	// user data to the peer. Metadata includes details about the
 	// data(audio, video etc.) like creation time, duration, theme and so
 	// on. These messages have been assigned message type value of 18 for
 	// AMF0 and message type value of 15 for AMF3.
+
+	// RtmpMsgAMF0DataMessage AMF0 Data Message
 	RtmpMsgAMF0DataMessage RtmpMessageType = 18 // 0x12
+	// RtmpMsgAMF3DataMessage AMF3 Data Message
 	RtmpMsgAMF3DataMessage RtmpMessageType = 15 // 0x0F
+
 	// 3.3. Shared object message
+
 	// A shared object is a Flash object (a collection of name value pairs)
 	// that are in synchronization across multiple clients, instances, and
 	// so on. The message types kMsgContainer=19 for AMF0 and
 	// kMsgContainerEx=16 for AMF3 are reserved for shared object events.
 	// Each message can contain multiple events.
+
+	// RtmpMsgAMF3SharedObject AMF3 Shared Object
 	RtmpMsgAMF3SharedObject RtmpMessageType = 16 // 0x10
+	// RtmpMsgAMF0SharedObject AMF0 Shared Object
 	RtmpMsgAMF0SharedObject RtmpMessageType = 19 // 0x13
+
 	// 3.4. Audio message
+
+	// RtmpMsgAudioMessage Audio Message
 	// The client or the server sends this message to send audio data to the
 	// peer. The message type value of 8 is reserved for audio messages.
 	RtmpMsgAudioMessage RtmpMessageType = 8 // 0x08
+
 	// 3.5. Video message
+
+	// RtmpMsgVideoMessage Video Message
 	// The client or the server sends this message to send video data to the
 	// peer. The message type value of 9 is reserved for video messages.
 	// These messages are large and can delay the sending of other type of
 	// messages. To avoid such a situation, the video message is assigned
 	// the lowest priority.
 	RtmpMsgVideoMessage RtmpMessageType = 9 // 0x09
+
 	// 3.6. Aggregate message
+
+	// RtmpMsgAggregateMessage Aggregate Message
 	// An aggregate message is a single message that contains a list of submessages.
 	// The message type value of 22 is reserved for aggregate
 	// messages.
@@ -1960,32 +2007,40 @@ const (
 )
 
 const (
+	// RtmpCidProtocolControl Cid Protocol Control
 	// the chunk stream id used for some under-layer message,
 	// for example, the PC(protocol control) message.
 	RtmpCidProtocolControl = 0x02 + iota
+	// RtmpCidOverConnection Cid Over Connection
 	// the AMF0/AMF3 command message, invoke method and return the result, over NetConnection.
 	// generally use 0x03.
 	RtmpCidOverConnection
+	// RtmpCidOverConnection2 Cid Over Connection 2
 	// the AMF0/AMF3 command message, invoke method and return the result, over NetConnection,
 	// the midst state(we guess).
 	// rarely used, e.g. onStatus(NetStream.Play.Reset).
 	RtmpCidOverConnection2
+	// RtmpCidOverStream Cid Over Stream
 	// the stream message(amf0/amf3), over NetStream.
 	// generally use 0x05.
 	RtmpCidOverStream
+	// RtmpCidOverStream2 Cid Over Stream 2
 	// the stream message(amf0/amf3), over NetStream, the midst state(we guess).
 	// rarely used, e.g. play("mp4:mystram.f4v")
 	RtmpCidOverStream2
+	// RtmpCidVideo Cid Video
 	// the stream message(video), over NetStream
 	// generally use 0x06.
 	RtmpCidVideo
+	// RtmpCidAudio Cid Audio
 	// the stream message(audio), over NetStream.
 	// generally use 0x07.
 	RtmpCidAudio
 )
 
 // 6.1. Chunk Format
-// Extended timestamp: 0 or 4 bytes
+
+// RtmpExtendedTimestamp Extended timestamp: 0 or 4 bytes
 // This field MUST be sent when the normal timsestamp is set to
 // 0xffffff, it MUST NOT be sent if the normal timestamp is set to
 // anything else. So for values less than 0xffffff the normal
@@ -1995,10 +2050,12 @@ const (
 // 0xffffff and the extended timestamp MUST be sent.
 const RtmpExtendedTimestamp = 0xFFFFFF
 
-// the default chunk size for system.
+// RtmpServerChunkSize the default chunk size for system.
 const RtmpServerChunkSize = 60000
 
 // 6. Chunking, RTMP protocol default chunk size.
+
+// RtmpProtocolChunkSize Default Chunk Size
 const RtmpProtocolChunkSize = 128
 
 // 6. Chunking
@@ -2009,68 +2066,109 @@ const RtmpProtocolChunkSize = 128
 // other content on lower bandwidth connections. Smaller chunks are not
 // good for high-bit rate streaming. Chunk size is maintained
 // independently for each direction.
+
+// RtmpMinChunkSize Minimum Chunk Size
 const RtmpMinChunkSize = 128
+
+// RtmpMaxChunkSize Maximum Chunk Size
 const RtmpMaxChunkSize = 65536
 
 const (
-	// amf0 command message, command name macros
-	Amf0CommandConnect       = "connect"
-	Amf0CommandCreateStream  = "createStream"
-	Amf0CommandCloseStream   = "closeStream"
-	Amf0CommandPlay          = "play"
-	Amf0CommandPause         = "pause"
-	Amf0CommandOnBwDone      = "onBWDone"
-	Amf0CommandOnStatus      = "onStatus"
-	Amf0CommandResult        = "_result"
-	Amf0CommandError         = "_error"
-	Amf0CommandReleaseStream = "releaseStream"
-	Amf0CommandFcPublish     = "FCPublish"
-	Amf0CommandUnpublish     = "FCUnpublish"
-	Amf0CommandPublish       = "publish"
-	Amf0DataSampleAccess     = "|RtmpSampleAccess"
+	// AMF0 command message, command name macros
 
-	// FMLE
-	Amf0CommandOnFcPublish   = "onFCPublish"
+	// Amf0CommandConnect AMF0 Connect
+	Amf0CommandConnect = "connect"
+	// Amf0CommandCreateStream AMF0 Create Stream
+	Amf0CommandCreateStream = "createStream"
+	// Amf0CommandCloseStream AMF0 Close Stream
+	Amf0CommandCloseStream = "closeStream"
+	// Amf0CommandPlay AMF0 Play
+	Amf0CommandPlay = "play"
+	// Amf0CommandPause AMF0 Pause
+	Amf0CommandPause = "pause"
+	// Amf0CommandOnBwDone AMF0 On Bandwidth Done
+	Amf0CommandOnBwDone = "onBWDone"
+	// Amf0CommandOnStatus AMF0 On Status
+	Amf0CommandOnStatus = "onStatus"
+	// Amf0CommandResult AMF0 Result
+	Amf0CommandResult = "_result"
+	// Amf0CommandError AMF0 Error
+	Amf0CommandError = "_error"
+	// Amf0CommandReleaseStream AMF0 Release Stream
+	Amf0CommandReleaseStream = "releaseStream"
+	// Amf0CommandFcPublish AMF0 FC Publish
+	Amf0CommandFcPublish = "FCPublish"
+	// Amf0CommandUnpublish AMF0 Unpublish
+	Amf0CommandUnpublish = "FCUnpublish"
+	// Amf0CommandPublish AMF0 Publish
+	Amf0CommandPublish = "publish"
+	// Amf0DataSampleAccess AMF0 Data Sample Access
+	Amf0DataSampleAccess = "|RtmpSampleAccess"
+
+	// Amf0CommandOnFcPublish FMLE On FC Publish
+	Amf0CommandOnFcPublish = "onFCPublish"
+	// Amf0CommandOnFcUnpublish FMLE On FC Unpublish
 	Amf0CommandOnFcUnpublish = "onFCUnpublish"
 
 	// the signature for packets to client.
-	RtmpSigFmsVer   = "3,5,3,888"
-	RtmpSigAmf0Ver  = 0
-	RtmpSigClientId = "ASAICiss"
+
+	// RtmpSigFmsVer Sig FMS Version
+	RtmpSigFmsVer = "3,5,3,888"
+	// RtmpSigAmf0Ver Sig AMF0 Version
+	RtmpSigAmf0Ver = 0
+	// RtmpSigClientID Sig Client ID
+	RtmpSigClientID = "ASAICiss"
 
 	// onStatus consts.
-	StatusLevel       = "level"
-	StatusCode        = "code"
+
+	// StatusLevel Level
+	StatusLevel = "level"
+	// StatusCode Code
+	StatusCode = "code"
+	// StatusDescription Description
 	StatusDescription = "description"
-	StatusDetails     = "details"
-	StatusClientId    = "clientid"
-	// status value
+	// StatusDetails Details
+	StatusDetails = "details"
+	// StatusClientID Client ID
+	StatusClientID = "clientid"
+	// StatusLevelStatus Status Value / Level
 	StatusLevelStatus = "status"
-	// status error
+	// StatusLevelError Level Error
 	StatusLevelError = "error"
-	// code value
-	StatusCodeConnectSuccess   = "NetConnection.Connect.Success"
-	StatusCodeConnectRejected  = "NetConnection.Connect.Rejected"
-	StatusCodeStreamReset      = "NetStream.Play.Reset"
-	StatusCodeStreamStart      = "NetStream.Play.Start"
-	StatusCodeStreamPause      = "NetStream.Pause.Notify"
-	StatusCodeStreamUnpause    = "NetStream.Unpause.Notify"
-	StatusCodePublishStart     = "NetStream.Publish.Start"
-	StatusCodeDataStart        = "NetStream.Data.Start"
+	// StatusCodeConnectSuccess Connect Success
+	StatusCodeConnectSuccess = "NetConnection.Connect.Success"
+	// StatusCodeConnectRejected Connect Rejected
+	StatusCodeConnectRejected = "NetConnection.Connect.Rejected"
+	// StatusCodeStreamReset Stream Reset
+	StatusCodeStreamReset = "NetStream.Play.Reset"
+	// StatusCodeStreamStart Stream Start
+	StatusCodeStreamStart = "NetStream.Play.Start"
+	// StatusCodeStreamPause Stream Pause
+	StatusCodeStreamPause = "NetStream.Pause.Notify"
+	// StatusCodeStreamUnpause Stream Unpause
+	StatusCodeStreamUnpause = "NetStream.Unpause.Notify"
+	// StatusCodePublishStart Publish Start
+	StatusCodePublishStart = "NetStream.Publish.Start"
+	// StatusCodeDataStart Data Start
+	StatusCodeDataStart = "NetStream.Data.Start"
+	// StatusCodeUnpublishSuccess Unpublish Success
 	StatusCodeUnpublishSuccess = "NetStream.Unpublish.Success"
 )
 
-// the uint8 which suppport marshal and unmarshal.
+// RtmpUint8 is a uint8 which supports marshal and unmarshal.
 type RtmpUint8 uint8
 
+// MarshalBinary returns Marshal Binary data for RtmpUint8
 func (v *RtmpUint8) MarshalBinary() (data []byte, err error) {
 	return []byte{byte(*v)}, nil
 }
 
+// Size returns 1 for RtmpUint8
 func (v *RtmpUint8) Size() int {
 	return 1
 }
 
+// UnmarshalBinary returns Unmarshalled Binary data for RtmpUint8
 func (v *RtmpUint8) UnmarshalBinary(data []byte) (err error) {
 	if len(data) == 0 {
 		return io.EOF
@@ -2079,17 +2177,20 @@ func (v *RtmpUint8) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// the uint16 which suppport marshal and unmarshal.
+// RtmpUint16 is a uint16 which supports marshal and unmarshal.
 type RtmpUint16 uint16
 
+// MarshalBinary returns Marshal Binary data for RtmpUint16
 func (v *RtmpUint16) MarshalBinary() (data []byte, err error) {
 	return []byte{byte(*v >> 8), byte(*v)}, nil
 }
 
+// Size returns 2 for RtmpUint16
 func (v *RtmpUint16) Size() int {
 	return 2
 }
 
+// UnmarshalBinary returns Unmarshalled Binary data for RtmpUint16
 func (v *RtmpUint16) UnmarshalBinary(data []byte) (err error) {
 	if len(data) < 2 {
 		return io.EOF
@@ -2098,17 +2199,20 @@ func (v *RtmpUint16) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// the uint32 which suppport marshal and unmarshal.
+// RtmpUint32 is a uint32 which supports marshal and unmarshal.
 type RtmpUint32 uint32
 
+// MarshalBinary returns Marshal Binary data for RtmpUint32
 func (v *RtmpUint32) MarshalBinary() (data []byte, err error) {
 	return []byte{byte(*v >> 24), byte(*v >> 16), byte(*v >> 8), byte(*v)}, nil
 }
 
+// Size returns 4 for RtmpUint32
 func (v *RtmpUint32) Size() int {
 	return 4
 }
 
+// UnmarshalBinary returns Unmarshalled Binary data for RtmpUint32
 func (v *RtmpUint32) UnmarshalBinary(data []byte) (err error) {
 	if len(data) < 4 {
 		return io.EOF
@@ -2117,7 +2221,7 @@ func (v *RtmpUint32) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// SoundFormat UB [4]
+// RtmpCodecAudio SoundFormat UB [4]
 // Format of SoundData. The following values are defined:
 //     0 = Linear PCM, platform endian
 //     1 = ADPCM
@@ -2139,39 +2243,60 @@ func (v *RtmpUint32) UnmarshalBinary(data []byte) (err error) {
 type RtmpCodecAudio uint8
 
 const (
+	// RtmpLinearPCMPlatformEndian Linear PCM Platform Endian
 	RtmpLinearPCMPlatformEndian RtmpCodecAudio = iota
+	// RtmpADPCM ADPCM
 	RtmpADPCM
+	// RtmpMP3 MP3
 	RtmpMP3
+	// RtmpLinearPCMLittleEndian Linear PCM Little Endian
 	RtmpLinearPCMLittleEndian
+	// RtmpNellymoser16kHzMono Nelly Moser 16kHz Mono
 	RtmpNellymoser16kHzMono
+	// RtmpNellymoser8kHzMono Nelly Moser 8kHz Mono
 	RtmpNellymoser8kHzMono
+	// RtmpNellymoser Nelly Moser
 	RtmpNellymoser
+	// RtmpReservedG711AlawLogarithmicPCM Reserved G711A law
 	RtmpReservedG711AlawLogarithmicPCM
+	// RtmpReservedG711MuLawLogarithmicPCM Reserved G711Mu law
 	RtmpReservedG711MuLawLogarithmicPCM
+	// RtmpReserved Reserved
 	RtmpReserved
+	// RtmpAAC AAC
 	RtmpAAC
+	// RtmpSpeex Speex
 	RtmpSpeex
+	// RtmpReserved1CodecAudio Reserved 1 Codec Audio
 	RtmpReserved1CodecAudio
+	// RtmpReserved2CodecAudio Reserved 2 Codec Audio
 	RtmpReserved2CodecAudio
+	// RtmpReservedMP3_8kHz Reserved MP3 8kHz
 	RtmpReservedMP3_8kHz
+	// RtmpReservedDeviceSpecificSound Reserved Device Specific Sound
 	RtmpReservedDeviceSpecificSound
+	// RtmpReserved3CodecAudio Reserved 3 Codec Audio
 	RtmpReserved3CodecAudio
+	// RtmpDisabledCodecAudio Disabled Codec Audio
 	RtmpDisabledCodecAudio
 )
 
-// AACPacketType IF SoundFormat == 10 UI8
+// RtmpAacType is a AACPacketType IF SoundFormat == 10 UI8
 // The following values are defined:
 //     0 = AAC sequence header
 //     1 = AAC raw
 type RtmpAacType uint8
 
 const (
+	// RtmpAacSequenceHeader Sequence Header
 	RtmpAacSequenceHeader RtmpAacType = iota
+	// RtmpAacRawData Raw Data
 	RtmpAacRawData
+	// RtmpAacReserved Reserved
 	RtmpAacReserved
 )
 
-// E.4.3.1 VIDEODATA
+// RtmpCodecVideo E.4.3.1 VIDEODATA
 // CodecID UB [4]
 // Codec Identifier. The following values are defined:
 //     2 = Sorenson H.263
@@ -2183,19 +2308,29 @@ const (
 type RtmpCodecVideo uint8
 
 const (
+	// RtmpReservedCodecVideo Reserved Codec Video
 	RtmpReservedCodecVideo RtmpCodecVideo = iota
+	// RtmpReserved1CodecVideo Reserved 1 Codec Video
 	RtmpReserved1CodecVideo
+	// RtmpSorensonH263 Sorenson H263
 	RtmpSorensonH263
+	// RtmpScreenVideo Screen Video
 	RtmpScreenVideo
+	// RtmpOn2VP6 On 2 VP6
 	RtmpOn2VP6
+	// RtmpOn2VP6WithAlphaChannel On 2 VP6 With Alpha Channel
 	RtmpOn2VP6WithAlphaChannel
+	// RtmpScreenVideoVersion2 Screen Video Version 2
 	RtmpScreenVideoVersion2
+	// RtmpAVC AVC
 	RtmpAVC
+	// RtmpDisabledCodecVideo Disabled Codec Video
 	RtmpDisabledCodecVideo
+	// RtmpReserved2CodecVideo Reserved 2 Codec Video
 	RtmpReserved2CodecVideo
 )
 
-// E.4.3.1 VIDEODATA
+// RtmpAVCFrame E.4.3.1 VIDEODATA
 // Frame Type UB [4]
 // Type of video frame. The following values are defined:
 //     1 = key frame (for AVC, a seekable frame)
@@ -2206,16 +2341,23 @@ const (
 type RtmpAVCFrame uint8
 
 const (
+	// RtmpReservedAVCFrame Reserved AVC Frame
 	RtmpReservedAVCFrame RtmpAVCFrame = iota
+	// RtmpKeyFrame Key Frame
 	RtmpKeyFrame
+	// RtmpInterFrame InterFrame
 	RtmpInterFrame
+	// RtmpDisposableInterFrame Disposable InterFrame
 	RtmpDisposableInterFrame
+	// RtmpGeneratedKeyFrame Generated Key Frame
 	RtmpGeneratedKeyFrame
+	// RtmpVideoInfoFrame Video Info Frame
 	RtmpVideoInfoFrame
+	// RtmpReserved1AVCFrame Reserved 1 AVC Frame
 	RtmpReserved1AVCFrame
 )
 
-// AVCPacketType IF CodecID == 7 UI8
+// RtmpVideoAVCType AVCPacketType IF CodecID == 7 UI8
 // The following values are defined:
 //     0 = AVC sequence header
 //     1 = AVC NALU
@@ -2224,14 +2366,18 @@ const (
 type RtmpVideoAVCType uint8
 
 const (
+	// RtmpSequenceHeader Sequence Header
 	RtmpSequenceHeader RtmpVideoAVCType = iota
+	// RtmpNALU NALU
 	RtmpNALU
+	// RtmpSequenceHeaderEOF Sequence Header End Of File
 	RtmpSequenceHeaderEOF
+	// RtmpReservedAVCType Reserved AVC Type
 	RtmpReservedAVCType
 )
 
-// Rtmp message,
-// which decode from RTMP chunked stream with raw body.
+// RtmpMessage is an RTMP message
+// which is decoded from an RTMP chunked stream with a raw body.
 type RtmpMessage struct {
 	// Four-byte field that contains a timestamp of the message.
 	// The 4 bytes are packed in the big-endian order.
@@ -2241,7 +2387,7 @@ type RtmpMessage struct {
 	// 4bytes.
 	// Four-byte field that identifies the stream of the message. These
 	// bytes are set in little-endian format.
-	StreamId uint32
+	StreamID uint32
 	// 1byte.
 	// One byte field to represent the message type. A range of type IDs
 	// (1-7) are reserved for protocol control messages.
@@ -2257,6 +2403,7 @@ type RtmpMessage struct {
 	Payload []byte
 }
 
+// NewRtmpMessage returns a new RTMP message
 func NewRtmpMessage() *RtmpMessage {
 	return &RtmpMessage{}
 }
@@ -2265,12 +2412,12 @@ func (v *RtmpMessage) String() string {
 	return fmt.Sprintf("%v %vB %v", v.MessageType, len(v.Payload), v.Timestamp)
 }
 
-// convert the rtmp message to oryx message.
+// ToMessage converts the rtmp message to oryx message.
 func (v *RtmpMessage) ToMessage() (core.Message, error) {
 	return NewOryxRtmpMessage(v)
 }
 
-// covert the rtmp message to oryx message.
+// OryxRtmpMessage covert the rtmp message to oryx message.
 type OryxRtmpMessage struct {
 	rtmp *RtmpMessage
 
@@ -2279,6 +2426,7 @@ type OryxRtmpMessage struct {
 	AudioSequenceHeader bool
 }
 
+// NewOryxRtmpMessage creates a new Oryx RTMP message
 func NewOryxRtmpMessage(m *RtmpMessage) (*OryxRtmpMessage, error) {
 	v := &OryxRtmpMessage{
 		rtmp: m,
@@ -2336,7 +2484,7 @@ func (v *OryxRtmpMessage) isAudioSequenceHeader() bool {
 	return aacPacketType == RtmpAacSequenceHeader
 }
 
-// copy the message headers, share body.
+// Copy the message headers, share body.
 func (v *OryxRtmpMessage) Copy() *OryxRtmpMessage {
 	mcp := *v.rtmp
 	return &OryxRtmpMessage{
@@ -2344,15 +2492,18 @@ func (v *OryxRtmpMessage) Copy() *OryxRtmpMessage {
 	}
 }
 
+// Timestamp of the Oryx Message
 func (v *OryxRtmpMessage) Timestamp() uint64 {
 	return v.rtmp.Timestamp
 }
 
+// SetTimestamp of the Oryx Message
 func (v *OryxRtmpMessage) SetTimestamp(ts uint64) *OryxRtmpMessage {
 	v.rtmp.Timestamp = ts
 	return v
 }
 
+// Payload returns the rtmp payload for a given message
 func (v *OryxRtmpMessage) Payload() *RtmpMessage {
 	return v.rtmp
 }
@@ -2361,12 +2512,12 @@ func (v *OryxRtmpMessage) String() string {
 	return fmt.Sprintf("%v %vB", v.rtmp.MessageType, len(v.rtmp.Payload))
 }
 
+// Muxer returns the Muxer for a given message
 func (v *OryxRtmpMessage) Muxer() core.MessageMuxer {
 	return core.MuxerRtmp
 }
 
-// RTMP packet, which can be
-// decode from and encode to message payload.
+// RtmpPacket which can be decoded from and encode to the message payload.
 type RtmpPacket interface {
 	// all packet can marshaler and unmarshaler.
 	encoding.BinaryMarshaler
@@ -2382,14 +2533,14 @@ type RtmpPacket interface {
 	MessageType() RtmpMessageType
 }
 
-// 4.1.1. connect
+// RtmpConnectAppPacket 4.1.1. connect
 // The client sends the connect command to the server to request
 // connection to a server application instance.
 type RtmpConnectAppPacket struct {
 	// Name of the command. Set to "connect".
 	Name Amf0String
 	// Always set to 1.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// Command information object which has the name-value pairs.
 	// @remark: alloc in packet constructor, user can directly use it,
 	//       user should never alloc it again which will cause memory leak.
@@ -2400,22 +2551,25 @@ type RtmpConnectAppPacket struct {
 	Args *Amf0Object
 }
 
+// NewRtmpConnectAppPacket returns a new RTMP connection packet
 func NewRtmpConnectAppPacket() RtmpPacket {
 	return &RtmpConnectAppPacket{
 		Name:          Amf0String(Amf0CommandConnect),
-		TransactionId: Amf0Number(1.0),
+		TransactionID: Amf0Number(1.0),
 		CommandObject: NewAmf0Object(),
 		Args:          nil,
 	}
 }
 
+// MarshalBinary for a given connection packet
 func (v *RtmpConnectAppPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, v.CommandObject, v.Args)
+	return core.Marshals(&v.Name, &v.TransactionID, v.CommandObject, v.Args)
 }
 
+// UnmarshalBinary for a given connection packet
 func (v *RtmpConnectAppPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
-	if err = core.Unmarshals(b, &v.Name, &v.TransactionId, v.CommandObject); err != nil {
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionID, v.CommandObject); err != nil {
 		return
 	}
 
@@ -2427,20 +2581,22 @@ func (v *RtmpConnectAppPacket) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpConnectAppPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpConnectAppPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// response for SrsConnectAppPacket.
+// RtmpConnectAppResPacket is the response for SrsConnectAppPacket.
 type RtmpConnectAppResPacket struct {
 	// _result or _error; indicates whether the response is result or error.
 	Name Amf0String
 	// Transaction ID is 1 for call connect responses
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// Name-value pairs that describe the properties(fmsver etc.) of the connection.
 	// @remark, never be NULL.
 	Props *Amf0Object
@@ -2450,32 +2606,37 @@ type RtmpConnectAppResPacket struct {
 	Info *Amf0Object
 }
 
+// NewRtmpConnectAppResPacket returns a connect app response packet
 func NewRtmpConnectAppResPacket() RtmpPacket {
 	return &RtmpConnectAppResPacket{
 		Name:          Amf0String(Amf0CommandResult),
-		TransactionId: Amf0Number(1.0),
+		TransactionID: Amf0Number(1.0),
 		Props:         NewAmf0Object(),
 		Info:          NewAmf0Object(),
 	}
 }
 
+// MarshalBinary for a given connect packet
 func (v *RtmpConnectAppResPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, v.Props, v.Info)
+	return core.Marshals(&v.Name, &v.TransactionID, v.Props, v.Info)
 }
 
+// UnmarshalBinary for a given connect packet
 func (v *RtmpConnectAppResPacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, v.Props, v.Info)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionID, v.Props, v.Info)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpConnectAppResPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpConnectAppResPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// 4.1.2. Call
+// RtmpCallPacket 4.1.2. Call
 // The call method of the NetConnection object runs remote procedure
 // calls (RPC) at the receiving end. The called RPC name is passed as a
 // parameter to the call command.
@@ -2483,7 +2644,7 @@ type RtmpCallPacket struct {
 	// Name of the remote procedure that is called.
 	Name Amf0String
 	// If a response is expected we give a transaction Id. Else we pass a value of 0
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// If there exists any command info this
 	// is set, else this is set to null type.
 	// @remark, optional, init to and maybe NULL.
@@ -2493,17 +2654,20 @@ type RtmpCallPacket struct {
 	Args Amf0Any
 }
 
+// NewRtmpCallPacket returns a call packet
 func NewRtmpCallPacket() RtmpPacket {
 	return &RtmpCallPacket{}
 }
 
+// MarshalBinary for a given call packet
 func (v *RtmpCallPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, v.Command, v.Args)
+	return core.Marshals(&v.Name, &v.TransactionID, v.Command, v.Args)
 }
 
+// UnmarshalBinary for a given call packet
 func (v *RtmpCallPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
-	if err = core.Unmarshals(b, &v.Name, &v.TransactionId); err != nil {
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionID); err != nil {
 		return
 	}
 
@@ -2528,20 +2692,22 @@ func (v *RtmpCallPacket) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpCallPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpCallPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// response for RtmpCallPacket
+// RtmpCallResPacket is the response to RtmpCallPacket
 type RtmpCallResPacket struct {
 	// Name of the command.
 	Name Amf0String
 	// ID of the command, to which the response belongs to
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// If there exists any command info this
 	// is set, else this is set to null type.
 	// @remark, optional, init to and maybe NULL.
@@ -2551,19 +2717,22 @@ type RtmpCallResPacket struct {
 	Args Amf0Any
 }
 
+// NewRtmpCallResPacket returns a call response packet
 func NewRtmpCallResPacket() RtmpPacket {
 	return &RtmpCallResPacket{
 		Name: Amf0String(Amf0CommandResult),
 	}
 }
 
+// MarshalBinary for a given call response packet
 func (v *RtmpCallResPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, v.Command, v.Args)
+	return core.Marshals(&v.Name, &v.TransactionID, v.Command, v.Args)
 }
 
+// UnmarshalBinary for a given call response packet
 func (v *RtmpCallResPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
-	if err = core.Unmarshals(b, &v.Name, &v.TransactionId); err != nil {
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionID); err != nil {
 		return
 	}
 
@@ -2588,15 +2757,17 @@ func (v *RtmpCallResPacket) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpCallResPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpCallResPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// 4.1.3. createStream
+// RtmpCreateStreamPacket 4.1.3. createStream
 // The client sends this command to the server to create a logical
 // channel for message communication The publishing of audio, video, and
 // metadata is carried out over stream channel created using the
@@ -2605,107 +2776,125 @@ type RtmpCreateStreamPacket struct {
 	// Name of the command. Set to "createStream".
 	Name Amf0String
 	// Transaction ID of the command.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// If there exists any command info this is set, else this is set to null type.
 	// @remark, never be NULL, an AMF0 null instance.
 	Command Amf0Null
 }
 
+// NewRtmpCreateStreamPacket returns a create stream packet
 func NewRtmpCreateStreamPacket() RtmpPacket {
 	return &RtmpCreateStreamPacket{
 		Name: Amf0String(Amf0CommandCreateStream),
 	}
 }
 
+// MarshalBinary for a given create stream packet
 func (v *RtmpCreateStreamPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Command)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Command)
 }
 
+// UnmarshalBinary for a given create stream packet
 func (v *RtmpCreateStreamPacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionID, &v.Command)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpCreateStreamPacket) PreferCid() uint32 {
 	return RtmpCidProtocolControl
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpCreateStreamPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// response for RtmpCreateStreamPacket
+// RtmpCreateStreamResPacket is the response to a RtmpCreateStreamPacket
 type RtmpCreateStreamResPacket struct {
 	// _result or _error; indicates whether the response is result or error.
 	Name Amf0String
 	// ID of the command that response belongs to.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// If there exists any command info this is set, else this is set to null type.
 	Command Amf0Null
 	// The return value is either a stream ID or an error information object.
-	StreamId Amf0Number
+	StreamID Amf0Number
 }
 
+// NewRtmpCreateStreamResPacket returns a create stream response packet
 func NewRtmpCreateStreamResPacket() RtmpPacket {
 	return &RtmpCreateStreamResPacket{
 		Name: Amf0String(Amf0CommandResult),
 	}
 }
 
+// MarshalBinary for a given create stream response packet
 func (v *RtmpCreateStreamResPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.StreamId)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Command, &v.StreamID)
 }
 
+// UnmarshalBinary for a given create stream response packet
 func (v *RtmpCreateStreamResPacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command, &v.StreamId)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionID, &v.Command, &v.StreamID)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpCreateStreamResPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpCreateStreamResPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// 5.5. Window Acknowledgement Size (5)
+// RtmpSetWindowAckSizePacket 5.5. Window Acknowledgement Size (5)
 // The client or the server sends this message to inform the peer which
 // window size to use when sending acknowledgment.
 type RtmpSetWindowAckSizePacket struct {
 	Ack RtmpUint32
 }
 
+// NewRtmpSetWindowAckSizePacket returns an Ack Size packet
 func NewRtmpSetWindowAckSizePacket() RtmpPacket {
 	return &RtmpSetWindowAckSizePacket{}
 }
 
+// MarshalBinary for a given Ack Size packet
 func (v *RtmpSetWindowAckSizePacket) MarshalBinary() (data []byte, err error) {
 	return core.Marshals(&v.Ack)
 }
 
+// UnmarshalBinary for a given Ack Size packet
 func (v *RtmpSetWindowAckSizePacket) UnmarshalBinary(data []byte) (err error) {
 	return core.Unmarshals(bytes.NewBuffer(data), &v.Ack)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpSetWindowAckSizePacket) PreferCid() uint32 {
 	return RtmpCidProtocolControl
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpSetWindowAckSizePacket) MessageType() RtmpMessageType {
 	return RtmpMsgWindowAcknowledgementSize
 }
 
-// 5.6. Set Peer Bandwidth (6)
+// RtmpSetPeerBandwidthType 5.6. Set Peer Bandwidth (6)
 type RtmpSetPeerBandwidthType uint8
 
+// The sender can mark this message hard (0), soft (1), or dynamic (2)
+// using the Limit type field.
 const (
-	// The sender can mark this message hard (0), soft (1), or dynamic (2)
-	// using the Limit type field.
+	// Hard Bandwidth limit
 	Hard RtmpSetPeerBandwidthType = iota
+	// Soft Bandwidth limit
 	Soft
+	// Dynamic Bandwidth limit
 	Dynamic
 )
 
-// 5.6. Set Peer Bandwidth (6)
+// RtmpSetPeerBandwidthPacket 5.6. Set Peer Bandwidth (6)
 // The client or the server sends this message to update the output
 // bandwidth of the peer.
 type RtmpSetPeerBandwidthPacket struct {
@@ -2714,67 +2903,77 @@ type RtmpSetPeerBandwidthPacket struct {
 	Type RtmpUint8
 }
 
+// NewRtmpSetPeerBandwidthPacket returns a set peer bandwidth packet
 func NewRtmpSetPeerBandwidthPacket() RtmpPacket {
 	return &RtmpSetPeerBandwidthPacket{
 		Type: RtmpUint8(Dynamic),
 	}
 }
 
+// MarshalBinary for a given set peer bandwidth packet
 func (v *RtmpSetPeerBandwidthPacket) MarshalBinary() (data []byte, err error) {
 	return core.Marshals(&v.Bandwidth, &v.Type)
 }
 
+// UnmarshalBinary for a given set peer bandwidth packet
 func (v *RtmpSetPeerBandwidthPacket) UnmarshalBinary(data []byte) (err error) {
 	return core.Unmarshals(bytes.NewBuffer(data), &v.Bandwidth, &v.Type)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpSetPeerBandwidthPacket) PreferCid() uint32 {
 	return RtmpCidProtocolControl
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpSetPeerBandwidthPacket) MessageType() RtmpMessageType {
 	return RtmpMsgSetPeerBandwidth
 }
 
-// when bandwidth test done, notice client.
+// RtmpOnBwDonePacket when bandwidth test done, notice client.
 type RtmpOnBwDonePacket struct {
 	// Name of command. Set to "onBWDone"
 	Name Amf0String
 	// Transaction ID set to 0.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// Command information does not exist. Set to null type.
 	// @remark, never be NULL, an AMF0 null instance.
 	Args Amf0Null
 }
 
+// NewRtmpOnBwDonePacket returns an on bandwidth done packet
 func NewRtmpOnBwDonePacket() RtmpPacket {
 	return &RtmpOnBwDonePacket{
 		Name: Amf0String(Amf0CommandOnBwDone),
 	}
 }
 
+// MarshalBinary for a given on bandwidth done packet
 func (v *RtmpOnBwDonePacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Args)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Args)
 }
 
+// UnmarshalBinary for a given on bandwidth done packet
 func (v *RtmpOnBwDonePacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Args)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionID, &v.Args)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpOnBwDonePacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpOnBwDonePacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// FMLE start publish: ReleaseStream/PublishStream
+// RtmpFMLEStartPacket FMLE start publish: ReleaseStream/PublishStream
 type RtmpFMLEStartPacket struct {
 	// Name of the command
 	Name Amf0String
 	// the transaction ID to get the response.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// If there exists any command info this is set, else this is set to null type.
 	// @remark, never be NULL, an AMF0 null instance.
 	Command Amf0Null
@@ -2782,34 +2981,39 @@ type RtmpFMLEStartPacket struct {
 	Stream Amf0String
 }
 
+// NewRtmpFMLEStartPacket returns an FMLE Start packet
 func NewRtmpFMLEStartPacket() RtmpPacket {
 	return &RtmpFMLEStartPacket{
 		Name: Amf0String(Amf0CommandReleaseStream),
 	}
 }
 
+// MarshalBinary for a given FMLE Start packet
 func (v *RtmpFMLEStartPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.Stream)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Command, &v.Stream)
 }
 
+// UnmarshalBinary for a given FMLE Start packet
 func (v *RtmpFMLEStartPacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command, &v.Stream)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionID, &v.Command, &v.Stream)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpFMLEStartPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpFMLEStartPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// response for RtmpFMLEStartPacket
+// RtmpFMLEStartResPacket response for RtmpFMLEStartPacket
 type RtmpFMLEStartResPacket struct {
 	// Name of the command
 	Name Amf0String
 	// the transaction ID to get the response.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// If there exists any command info this is set, else this is set to null type.
 	// @remark, never be NULL, an AMF0 null instance.
 	Command Amf0Null
@@ -2817,35 +3021,40 @@ type RtmpFMLEStartResPacket struct {
 	Args Amf0Undefined
 }
 
+// NewRtmpFMLEStartResPacket returns an FMLE Start response packet
 func NewRtmpFMLEStartResPacket() RtmpPacket {
 	return &RtmpFMLEStartResPacket{
 		Name: Amf0String(Amf0CommandResult),
 	}
 }
 
+// MarshalBinary for a given FMLE Start response packet
 func (v *RtmpFMLEStartResPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.Args)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Command, &v.Args)
 }
 
+// UnmarshalBinary for a given FMLE Start response packet
 func (v *RtmpFMLEStartResPacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command, &v.Args)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionID, &v.Command, &v.Args)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpFMLEStartResPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpFMLEStartResPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// 4.2.1. play
+// RtmpPlayPacket 4.2.1. play
 // The client sends this command to the server to play a stream.
 type RtmpPlayPacket struct {
 	// Name of the command. Set to "play".
 	Name Amf0String
 	// Transaction ID set to 0.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// Command information does not exist. Set to null type.
 	// @remark, never be NULL, an AMF0 null instance.
 	Command Amf0Null
@@ -2887,19 +3096,22 @@ type RtmpPlayPacket struct {
 	Reset *Amf0Boolean
 }
 
+// NewRtmpPlayPacket returns a play packet
 func NewRtmpPlayPacket() RtmpPacket {
 	return &RtmpPlayPacket{
 		Name: Amf0String(Amf0CommandPlay),
 	}
 }
 
+// MarshalBinary for a given play packet
 func (v *RtmpPlayPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.Stream, v.Start, v.Duration, v.Reset)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Command, &v.Stream, v.Start, v.Duration, v.Reset)
 }
 
+// UnmarshalBinary for a given play packet
 func (v *RtmpPlayPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
-	if err = core.Unmarshals(b, &v.Name, &v.TransactionId, &v.Command, &v.Stream); err != nil {
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionID, &v.Command, &v.Stream); err != nil {
 		return
 	}
 
@@ -2925,15 +3137,17 @@ func (v *RtmpPlayPacket) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpPlayPacket) PreferCid() uint32 {
 	return RtmpCidOverStream
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpPlayPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// FMLE/flash publish
+// RtmpPublishPacket FMLE/flash publish
 // 4.2.6. Publish
 // The client sends the publish command to publish a named stream to the
 // server. Using this name, any client can play this stream and receive
@@ -2942,7 +3156,7 @@ type RtmpPublishPacket struct {
 	// Name of the command, set to "publish".
 	Name Amf0String
 	// Transaction ID set to 0.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// Command information object does not exist. Set to null type.
 	Command Amf0Null
 	// Name with which the stream is published.
@@ -2960,19 +3174,22 @@ type RtmpPublishPacket struct {
 	Type *Amf0String
 }
 
+// NewRtmpPublishPacket returns a publish packet
 func NewRtmpPublishPacket() RtmpPacket {
 	return &RtmpPublishPacket{
 		Name: Amf0String(Amf0CommandPublish),
 	}
 }
 
+// MarshalBinary for a given publish packet
 func (v *RtmpPublishPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, &v.Stream, v.Type)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Command, &v.Stream, v.Type)
 }
 
+// UnmarshalBinary for a given publish packet
 func (v *RtmpPublishPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
-	if err = core.Unmarshals(b, &v.Name, &v.TransactionId, &v.Command, &v.Stream); err != nil {
+	if err = core.Unmarshals(b, &v.Name, &v.TransactionID, &v.Command, &v.Stream); err != nil {
 		return
 	}
 	if b.Len() > 0 {
@@ -2982,21 +3199,23 @@ func (v *RtmpPublishPacket) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpPublishPacket) PreferCid() uint32 {
 	return RtmpCidOverStream
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpPublishPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// onStatus command, AMF0 Call
+// RtmpOnStatusCallPacket onStatus command, AMF0 Call
 // @remark, user must set the stream_id by SrsCommonMessage.set_packet().
 type RtmpOnStatusCallPacket struct {
 	// Name of command. Set to "onStatus"
 	Name Amf0String
 	// Transaction ID set to 0.
-	TransactionId Amf0Number
+	TransactionID Amf0Number
 	// Command information does not exist. Set to null type.
 	Command Amf0Null
 	// Name-value pairs that describe the response from the server.
@@ -3004,6 +3223,7 @@ type RtmpOnStatusCallPacket struct {
 	Data *Amf0Object
 }
 
+// NewRtmpOnStatusCallPacket returns an on status call packet
 func NewRtmpOnStatusCallPacket() RtmpPacket {
 	return &RtmpOnStatusCallPacket{
 		Name: Amf0String(Amf0CommandOnStatus),
@@ -3011,23 +3231,27 @@ func NewRtmpOnStatusCallPacket() RtmpPacket {
 	}
 }
 
+// MarshalBinary for a given on status call packet
 func (v *RtmpOnStatusCallPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Name, &v.TransactionId, &v.Command, v.Data)
+	return core.Marshals(&v.Name, &v.TransactionID, &v.Command, v.Data)
 }
 
+// UnmarshalBinary for a given on status call packet
 func (v *RtmpOnStatusCallPacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionId, &v.Command, v.Data)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.TransactionID, &v.Command, v.Data)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpOnStatusCallPacket) PreferCid() uint32 {
 	return RtmpCidOverStream
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpOnStatusCallPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// onStatus data, AMF0 Data
+// RtmpOnStatusDataPacket onStatus data, AMF0 Data
 type RtmpOnStatusDataPacket struct {
 	// Name of command. Set to "onStatus"
 	Name Amf0String
@@ -3036,6 +3260,7 @@ type RtmpOnStatusDataPacket struct {
 	Data *Amf0Object
 }
 
+// NewRtmpOnStatusDataPacket returns a given on status data packet
 func NewRtmpOnStatusDataPacket() RtmpPacket {
 	return &RtmpOnStatusDataPacket{
 		Name: Amf0String(Amf0CommandOnStatus),
@@ -3043,23 +3268,27 @@ func NewRtmpOnStatusDataPacket() RtmpPacket {
 	}
 }
 
+// MarshalBinary for a given on status data packet
 func (v *RtmpOnStatusDataPacket) MarshalBinary() (data []byte, err error) {
 	return core.Marshals(&v.Name, v.Data)
 }
 
+// UnmarshalBinary for a given on status data packet
 func (v *RtmpOnStatusDataPacket) UnmarshalBinary(data []byte) (err error) {
 	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, v.Data)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpOnStatusDataPacket) PreferCid() uint32 {
 	return RtmpCidOverStream
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpOnStatusDataPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0DataMessage
 }
 
-// AMF0Data RtmpSampleAccess
+// RtmpSampleAccessPacket AMF0Data
 type RtmpSampleAccessPacket struct {
 	// Name of command. Set to "|RtmpSampleAccess".
 	Name Amf0String
@@ -3073,87 +3302,102 @@ type RtmpSampleAccessPacket struct {
 	AudioSampleAccess Amf0Boolean
 }
 
+// NewRtmpSampleAccessPacket returns a given sample access packet
 func NewRtmpSampleAccessPacket() RtmpPacket {
 	return &RtmpSampleAccessPacket{
 		Name: Amf0String(Amf0DataSampleAccess),
 	}
 }
 
+// MarshalBinary for a given sample access packet
 func (v *RtmpSampleAccessPacket) MarshalBinary() (data []byte, err error) {
 	return core.Marshals(&v.Name, &v.VideoSampleAccess, &v.AudioSampleAccess)
 }
 
+// UnmarshalBinary for a given sample access packet
 func (v *RtmpSampleAccessPacket) UnmarshalBinary(data []byte) (err error) {
 	return core.Unmarshals(bytes.NewBuffer(data), &v.Name, &v.VideoSampleAccess, &v.AudioSampleAccess)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpSampleAccessPacket) PreferCid() uint32 {
 	return RtmpCidOverStream
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpSampleAccessPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0DataMessage
 }
 
-// 7.1. Set Chunk Size
+// RtmpSetChunkSizePacket 7.1. Set Chunk Size
 // Protocol control message 1, Set Chunk Size, is used to notify the
 // peer about the new maximum chunk size.
 type RtmpSetChunkSizePacket struct {
 	ChunkSize RtmpUint32
 }
 
+// NewRtmpSetChunkSizePacket returns a given set chunk size packet
 func NewRtmpSetChunkSizePacket() RtmpPacket {
 	return &RtmpSetChunkSizePacket{}
 }
 
+// MarshalBinary for a given set chunk size packet
 func (v *RtmpSetChunkSizePacket) MarshalBinary() (data []byte, err error) {
 	return core.Marshals(&v.ChunkSize)
 }
 
+// UnmarshalBinary for a given set chunk size packet
 func (v *RtmpSetChunkSizePacket) UnmarshalBinary(data []byte) (err error) {
 	return core.Unmarshals(bytes.NewBuffer(data), &v.ChunkSize)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpSetChunkSizePacket) PreferCid() uint32 {
 	return RtmpCidProtocolControl
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpSetChunkSizePacket) MessageType() RtmpMessageType {
 	return RtmpMsgSetChunkSize
 }
 
-// the empty packet is a sample rtmp packet.
+// RtmpEmptyPacket the empty packet is a sample rtmp packet.
 type RtmpEmptyPacket struct {
-	Id Amf0Number
+	ID Amf0Number
 }
 
+// NewRtmpEmptyPacket returns an empty packet
 func NewRtmpEmptyPacket() RtmpPacket {
 	return &RtmpEmptyPacket{}
 }
 
+// MarshalBinary for a given empty packet
 func (v *RtmpEmptyPacket) MarshalBinary() (data []byte, err error) {
-	return core.Marshals(&v.Id)
+	return core.Marshals(&v.ID)
 }
 
+// UnmarshalBinary for a given empty packet
 func (v *RtmpEmptyPacket) UnmarshalBinary(data []byte) (err error) {
-	return core.Unmarshals(bytes.NewBuffer(data), &v.Id)
+	return core.Unmarshals(bytes.NewBuffer(data), &v.ID)
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpEmptyPacket) PreferCid() uint32 {
 	return RtmpCidOverConnection
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpEmptyPacket) MessageType() RtmpMessageType {
 	return RtmpMsgAMF0CommandMessage
 }
 
-// 3.7. User Control message
+// RtmpPcucEventType 3.7. User Control message
 type RtmpPcucEventType RtmpUint16
 
 const (
 	// 2bytes event-type and generally, 4bytes event-data
 
-	// The server sends this event to notify the client
+	// RtmpPcucStreamBegin The server sends this event to notify the client
 	// that a stream has become functional and can be
 	// used for communication. By default, this event
 	// is sent on ID 0 after the application connect
@@ -3163,7 +3407,7 @@ const (
 	// functional.
 	RtmpPcucStreamBegin RtmpPcucEventType = 0x00
 
-	// The server sends this event to notify the client
+	// RtmpPcucStreamEOF The server sends this event to notify the client
 	// that the playback of data is over as requested
 	// on this stream. No more data is sent without
 	// issuing additional commands. The client discards
@@ -3172,7 +3416,7 @@ const (
 	// stream on which playback has ended.
 	RtmpPcucStreamEOF RtmpPcucEventType = 0x01
 
-	// The server sends this event to notify the client
+	// RtmpPcucStreamDry The server sends this event to notify the client
 	// that there is no more data on the stream. If the
 	// server does not detect any message for a time
 	// period, it can notify the subscribed clients
@@ -3180,7 +3424,7 @@ const (
 	// data represent the stream ID of the dry stream.
 	RtmpPcucStreamDry RtmpPcucEventType = 0x02
 
-	// The client sends this event to inform the server
+	// RtmpPcucSetBufferLength The client sends this event to inform the server
 	// of the buffer size (in milliseconds) that is
 	// used to buffer any data coming over a stream.
 	// This event is sent before the server starts
@@ -3190,13 +3434,13 @@ const (
 	// milliseconds.
 	RtmpPcucSetBufferLength RtmpPcucEventType = 0x03 // 8bytes event-data
 
-	// The server sends this event to notify the client
+	// RtmpPcucStreamIsRecorded The server sends this event to notify the client
 	// that the stream is a recorded stream. The
 	// 4 bytes event data represent the stream ID of
 	// the recorded stream.
 	RtmpPcucStreamIsRecorded RtmpPcucEventType = 0x04
 
-	// The server sends this event to test whether the
+	// RtmpPcucPingRequest The server sends this event to test whether the
 	// client is reachable. Event data is a 4-byte
 	// timestamp, representing the local server time
 	// when the server dispatched the command. The
@@ -3204,13 +3448,13 @@ const (
 	// receiving kMsgPingRequest.
 	RtmpPcucPingRequest RtmpPcucEventType = 0x06
 
-	// The client sends this event to the server in
+	// RtmpPcucPingResponse The client sends this event to the server in
 	// response to the ping request. The event data is
 	// a 4-byte timestamp, which was received with the
 	// kMsgPingRequest request.
 	RtmpPcucPingResponse RtmpPcucEventType = 0x07
 
-	// for PCUC size=3, the payload is "00 1A 01",
+	// RtmpPcucFmsEvent0 for PCUC size=3, the payload is "00 1A 01",
 	// where we think the event is 0x001a, fms defined msg,
 	// which has only 1bytes event data.
 	RtmpPcucFmsEvent0 RtmpPcucEventType = 0x1a
@@ -3232,6 +3476,8 @@ const (
 // | Event Type ( 2- bytes ) | Event Data
 // +------------------------------+-------------------------
 // Figure 5 Pay load for the 'User Control Message'.
+
+// RtmpUserControlPacket User Control Packet
 type RtmpUserControlPacket struct {
 	// Event type is followed by Event data.
 	// @see RtmpPcucEventType
@@ -3243,12 +3489,14 @@ type RtmpUserControlPacket struct {
 	ExtraData RtmpUint32
 }
 
+// NewRtmpUserControlPacket returns a user control packet
 func NewRtmpUserControlPacket() RtmpPacket {
 	return &RtmpUserControlPacket{
 		EventType: RtmpUint16(RtmpPcucStreamBegin),
 	}
 }
 
+// MarshalBinary for a given user control packet
 func (v *RtmpUserControlPacket) MarshalBinary() (data []byte, err error) {
 	if RtmpPcucEventType(v.EventType) == RtmpPcucSetBufferLength {
 		return core.Marshals(&v.EventType, &v.EventData, &v.ExtraData)
@@ -3256,6 +3504,7 @@ func (v *RtmpUserControlPacket) MarshalBinary() (data []byte, err error) {
 	return core.Marshals(&v.EventType, &v.EventData)
 }
 
+// UnmarshalBinary for a given user control packet
 func (v *RtmpUserControlPacket) UnmarshalBinary(data []byte) (err error) {
 	b := bytes.NewBuffer(data)
 	if err = core.Unmarshals(b, &v.EventType, &v.EventData); err != nil {
@@ -3267,15 +3516,17 @@ func (v *RtmpUserControlPacket) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
+// PreferCid returns cid over connection
 func (v *RtmpUserControlPacket) PreferCid() uint32 {
 	return RtmpCidProtocolControl
 }
 
+// MessageType returns the AMF0 Command message type
 func (v *RtmpUserControlPacket) MessageType() RtmpMessageType {
 	return RtmpMsgUserControlMessage
 }
 
-// incoming chunk stream maybe interlaced,
+// RtmpChunk incoming chunk stream maybe interlaced,
 // use the chunk stream to cache the input RTMP chunk streams.
 type RtmpChunk struct {
 	// the fmt of basic header.
@@ -3309,9 +3560,10 @@ type RtmpChunk struct {
 	// 4bytes.
 	// Four-byte field that identifies the stream of the message. These
 	// bytes are set in little-endian format.
-	streamId uint32
+	streamID uint32
 }
 
+// NewRtmpChunk returns an rtmp chunk
 func NewRtmpChunk(cid uint32) *RtmpChunk {
 	return &RtmpChunk{
 		cid:     cid,
@@ -3332,6 +3584,7 @@ type debugBufferedReader struct {
 	imp *bufio.Reader
 }
 
+// NewReaderSize returns a debug buffered reader
 func NewReaderSize(ctx core.Context, r io.Reader, size int) bufferedReader {
 	return &debugBufferedReader{
 		ctx: ctx,
@@ -3376,7 +3629,7 @@ func (v *debugBufferedReader) ReadByte() (c byte, err error) {
 	return
 }
 
-// RTMP protocol stack.
+// RtmpStack protocol stack
 type RtmpStack struct {
 	ctx core.Context
 
@@ -3400,12 +3653,13 @@ type RtmpStack struct {
 	slowSendBuffer *bufio.Writer
 }
 
-// max chunk header is fmt0.
+// RtmpMaxChunkHeader max chunk header is fmt0.
 const RtmpMaxChunkHeader = 12
 
-// the preloaded group messages.
+// RtmpDefaultMwMessages the preloaded group messages.
 const RtmpDefaultMwMessages = 25
 
+// NewRtmpStack returns an rtmp stack
 func NewRtmpStack(ctx core.Context, r io.Reader, w io.Writer) *RtmpStack {
 	v := &RtmpStack{
 		ctx:          ctx,
@@ -3433,6 +3687,7 @@ func NewRtmpStack(ctx core.Context, r io.Reader, w io.Writer) *RtmpStack {
 	return v
 }
 
+// DecodeMessage decodes a given message
 func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 	ctx := v.ctx
 	b := bytes.NewBuffer(m.Payload)
@@ -3498,6 +3753,7 @@ func (v *RtmpStack) DecodeMessage(m *RtmpMessage) (p RtmpPacket, err error) {
 	return
 }
 
+// ReadMessage reads a given message
 func (v *RtmpStack) ReadMessage() (m *RtmpMessage, err error) {
 	ctx := v.ctx
 
@@ -3615,7 +3871,7 @@ func (v *RtmpStack) fetchC0c3Cache(index int) (nextIndex int, iov []byte) {
 	return index + 1, v.c0c3Cache[index]
 }
 
-// to sendout multiple messages.
+// SendMessage to sendout multiple messages.
 func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 	// cache the messages to send to descrease the syscall.
 	iovs := v.iovsCache
@@ -3658,10 +3914,10 @@ func (v *RtmpStack) SendMessage(msgs ...*RtmpMessage) (err error) {
 				iov[7] = byte(m.MessageType)
 
 				// stream_id, 4bytes, little-endian
-				iov[8] = byte(m.StreamId)
-				iov[9] = byte(m.StreamId >> 8)
-				iov[10] = byte(m.StreamId >> 16)
-				iov[11] = byte(m.StreamId >> 24)
+				iov[8] = byte(m.StreamID)
+				iov[9] = byte(m.StreamID >> 8)
+				iov[10] = byte(m.StreamID >> 16)
+				iov[11] = byte(m.StreamID >> 24)
 			} else {
 				// the fmt3 is 1bytes header.
 				iovIndex, iov = v.fetchC0c3Cache(iovIndex)
@@ -3955,7 +4211,7 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 
 			if fmt == RtmpFmtType0 {
 				// little-endian
-				chunk.streamId = uint32(bh[7]) | uint32(bh[8])<<8 | uint32(bh[9])<<16 | uint32(bh[10])<<24
+				chunk.streamID = uint32(bh[7]) | uint32(bh[8])<<8 | uint32(bh[9])<<16 | uint32(bh[10])<<24
 			}
 		}
 	} else {
@@ -4038,7 +4294,7 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 	chunk.partialMessage.MessageType = RtmpMessageType(chunk.messageType)
 	chunk.partialMessage.Timestamp = chunk.timestamp
 	chunk.partialMessage.PreferCid = chunk.cid
-	chunk.partialMessage.StreamId = chunk.streamId
+	chunk.partialMessage.StreamID = chunk.streamID
 
 	// update chunk information.
 	chunk.fmt = fmt

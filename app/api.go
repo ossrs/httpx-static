@@ -27,6 +27,7 @@ import (
 	"time"
 )
 
+// Summary is a json summary of the state of the server
 type Summary struct {
 	Ok   bool  `json:"ok"`
 	Now  int64 `json:"now_ms"`
@@ -37,6 +38,7 @@ type Summary struct {
 	} `json:"self"`
 }
 
+// NewSummary is a new summary of state of the server
 func NewSummary() *Summary {
 	s := &Summary{}
 

@@ -41,12 +41,17 @@ import (
 type ServerState int
 
 const (
+	// StateInit server Init state
 	StateInit ServerState = 1 << iota
+	// StateReady server Ready state
 	StateReady
+	// StateRunning server Running state
 	StateRunning
+	// StateClosed server Closed state
 	StateClosed
 )
 
+// Server interface
 type Server struct {
 	ctx core.Context
 	// signal handler.
@@ -65,6 +70,7 @@ type Server struct {
 	lock sync.Mutex
 }
 
+// NewServer sets up a new server
 func NewServer(ctx core.Context) *Server {
 	v := &Server{
 		ctx:     ctx,
@@ -150,6 +156,7 @@ func (v *Server) Close() {
 	core.Trace.Println(ctx, "server closed")
 }
 
+// ParseConfig parses a server configuration file
 func (v *Server) ParseConfig(conf string) (err error) {
 	ctx := v.ctx
 
@@ -168,6 +175,7 @@ func (v *Server) ParseConfig(conf string) (err error) {
 	return
 }
 
+// PrepareLogger prepares a log of the server's state
 func (v *Server) PrepareLogger() (err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
@@ -224,6 +232,7 @@ func (v *Server) initializeRuntime() (err error) {
 	return
 }
 
+// Initialize initializes a server instance
 func (v *Server) Initialize() (err error) {
 	ctx := v.ctx
 
@@ -286,6 +295,7 @@ func (v *Server) onSignal(signal os.Signal) {
 	}
 }
 
+// Run executes a server instance as running
 func (v *Server) Run() (err error) {
 	ctx := v.ctx
 
@@ -314,7 +324,7 @@ func (v *Server) Run() (err error) {
 
 	var wc core.WorkerContainer = v
 	for {
-		var gcc <-chan time.Time = nil
+		var gcc <-chan time.Time
 		if core.Conf.Go.GcInterval > 0 {
 			gcc = time.After(time.Second * time.Duration(core.Conf.Go.GcInterval))
 		}
@@ -352,6 +362,7 @@ func (v *Server) QC() <-chan bool {
 	return v.quit
 }
 
+// Quit will quit a server instance
 func (v *Server) Quit() error {
 	select {
 	case v.quit <- true:
@@ -361,6 +372,7 @@ func (v *Server) Quit() error {
 	return core.ErrQuit
 }
 
+// GFork handles server fork
 func (v *Server) GFork(name string, f func(core.WorkerContainer)) {
 	ctx := v.ctx
 
@@ -468,6 +480,7 @@ func (v *Server) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	return
 }
 
+// OnReloadVhost handles reloading of a Vhost
 func (v *Server) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err error) {
 	return
 }

@@ -59,13 +59,13 @@ const (
 	MarkerAmf0Invalid = 0x3F
 )
 
-// the amf0 type interface
+// Amf0Any the amf0 type interface
 type Amf0Any interface {
 	encoding.BinaryMarshaler
 	core.UnmarshalSizer
 }
 
-// discovery the Amf0Any type by marker.
+// Amf0Discovery discovery the Amf0Any type by marker.
 func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	if len(data) == 0 {
 		return nil, ErrAmf0
@@ -99,7 +99,7 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	}
 }
 
-// 2.12 Strict Array Type
+// Amf0StrictArray 2.12 Strict Array Type
 // array-count = U32
 // strict-array-type = array-count *(value-type)
 type Amf0StrictArray struct {
@@ -133,7 +133,7 @@ func (v *Amf0StrictArray) Add(e Amf0Any) *Amf0StrictArray {
 }
 
 func (v *Amf0StrictArray) Size() int {
-	var size int = 1 + 4
+	var size = 1 + 4
 	for _, e := range v.properties {
 		size += e.Size()
 	}
@@ -147,7 +147,7 @@ func (v *Amf0StrictArray) MarshalBinary() (data []byte, err error) {
 		return
 	}
 
-	var count uint32 = uint32(len(v.properties))
+	var count = uint32(len(v.properties))
 	if err = binary.Write(&b, binary.BigEndian, count); err != nil {
 		return
 	}
@@ -194,7 +194,7 @@ func (v *Amf0StrictArray) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// 2.10 ECMA Array Type
+// Amf0EcmaArray 2.10 ECMA Array Type
 // ecma-array-type = associative-count *(object-property)
 // associative-count = U32
 // object-property = (UTF-8 value-type) | (UTF-8-empty object-end-marker)
@@ -267,7 +267,7 @@ func (v *Amf0EcmaArray) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// 2.5 Object Type
+// Amf0Object 2.5 Object Type
 // anonymous-object-type = object-marker *(object-property)
 // object-property = (UTF-8 value-type) | (UTF-8-empty object-end-marker)
 type Amf0Object struct {
@@ -329,7 +329,7 @@ func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// 2.13 Date Type
+// Amf0Date 2.13 Date Type
 // time-zone = S16 ; reserved, not supported should be set to 0x0000
 // date-type = date-marker DOUBLE time-zone
 // @see: https://github.com/ossrs/srs/issues/185
@@ -404,7 +404,7 @@ func (v *Amf0Date) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// read amf0 undefined from stream.
+// Amf0Undefined read amf0 undefined from stream.
 // 2.8 undefined Type
 // undefined-type = undefined-marker
 type Amf0Undefined struct{}
@@ -442,7 +442,7 @@ func (v *Amf0Undefined) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// read amf0 null from stream.
+// Amf0Null read amf0 null from stream.
 // 2.7 null Type
 // null-type = null-marker
 type Amf0Null struct{}
@@ -451,6 +451,7 @@ func (v Amf0Null) String() string {
 	return "null"
 }
 
+// Size returns 1 for AMF0 Null
 func (v *Amf0Null) Size() int {
 	return 1
 }
@@ -480,14 +481,14 @@ func (v *Amf0Null) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// read amf0 number from stream.
+// Amf0Number read amf0 number from stream.
 // 2.2 Number Type
 // number-type = number-marker DOUBLE
 // @return default value is 0.
 type Amf0Number float64
 
 func NewAmf0Number(v float64) *Amf0Number {
-	var n Amf0Number = Amf0Number(v)
+	var n = Amf0Number(v)
 	return &n
 }
 
@@ -532,7 +533,7 @@ func (v *Amf0Number) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// read amf0 boolean from stream.
+// Amf0Boolean read amf0 boolean from stream.
 // 2.4 String Type
 // boolean-type = boolean-marker U8
 //         0 is false, <> 0 is true
@@ -540,7 +541,7 @@ func (v *Amf0Number) UnmarshalBinary(data []byte) (err error) {
 type Amf0Boolean bool
 
 func NewAmf0Bool(v bool) *Amf0Boolean {
-	var b Amf0Boolean = Amf0Boolean(v)
+	var b = Amf0Boolean(v)
 	return &b
 }
 
@@ -599,7 +600,7 @@ func (v *Amf0Boolean) UnmarshalBinary(data []byte) (err error) {
 	return
 }
 
-// read amf0 string from stream.
+// Amf0String read amf0 string from stream.
 // 2.4 String Type
 // string-type = string-marker UTF-8
 // @return default value is empty string.
@@ -607,7 +608,7 @@ func (v *Amf0Boolean) UnmarshalBinary(data []byte) (err error) {
 type Amf0String string
 
 func NewAmf0String(v string) *Amf0String {
-	var s Amf0String = Amf0String(v)
+	var s = Amf0String(v)
 	return &s
 }
 
@@ -792,7 +793,7 @@ func (v *amf0Properties) Get(name string) (value Amf0Any) {
 }
 
 func (v *amf0Properties) Size() int {
-	var size int = 2 + v.eof.Size()
+	var size = 2 + v.eof.Size()
 	for _, e := range v.properties {
 		size += e.key.Size()
 		size += e.value.Size()

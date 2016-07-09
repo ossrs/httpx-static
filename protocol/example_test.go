@@ -29,7 +29,7 @@ import (
 	"time"
 )
 
-func Example_Amf0Discovery() {
+func ExampleAmf0Discovery() {
 	b := []byte{0x02} // read from network
 
 	for len(b) > 0 { // parse all amf0 instance in b.
@@ -412,7 +412,7 @@ func ExampleMultipleAmf0_Unmarshals() {
 	if err := core.Unmarshals(&d, &s, &n, &b); err != nil {
 		_ = err
 	} else {
-		_, _, _ = s, n, b // use unmarshaled amf0 instances.
+		_, _, _ = s, n, b // use unmarshalled amf0 instances.
 	}
 }
 
@@ -426,7 +426,7 @@ func ExampleMultipleAmf0_Unmarshals_MultipleTimes() {
 	if err := core.Unmarshals(&d, &s, &n, &b); err != nil {
 		_ = err // error
 	} else {
-		_, _, _ = s, n, b // use unmarshaled amf0 instances.
+		_, _, _ = s, n, b // use unmarshalled amf0 instances.
 	}
 
 	if d.Len() > 0 {

@@ -35,11 +35,15 @@ import (
 	"time"
 )
 
+// IfaceType interface type
 type IfaceType uint8
 
 const (
+	// IfaceInternet Internet/WAN interface
 	IfaceInternet IfaceType = iota
+	// IfaceIntranet Intranet/LAN interface
 	IfaceIntranet
+	// IfaceUnknown Unknown interface
 	IfaceUnknown
 )
 
@@ -54,6 +58,7 @@ func (v IfaceType) String() string {
 	}
 }
 
+// NetworkIface Network interface
 type NetworkIface struct {
 	// interface name.
 	Ifname string
@@ -69,6 +74,7 @@ func (v *NetworkIface) String() string {
 	return fmt.Sprintf("%v/%v/%v/%v", v.Ifname, v.IP, v.Mac, v.Internet)
 }
 
+// Heartbeat establishes the heartbeat interface
 type Heartbeat struct {
 	ctx      core.Context
 	ips      []*NetworkIface
@@ -77,6 +83,7 @@ type Heartbeat struct {
 	lock     sync.Mutex
 }
 
+// NewHeartbeat returns a new Heartbeat
 func NewHeartbeat(ctx core.Context) *Heartbeat {
 	return &Heartbeat{
 		ctx:      ctx,
@@ -86,6 +93,7 @@ func NewHeartbeat(ctx core.Context) *Heartbeat {
 	}
 }
 
+// Initialize a heartbeat monitor
 func (v *Heartbeat) Initialize(w core.WorkerContainer) (err error) {
 	ctx := v.ctx
 	c := &core.Conf.Heartbeat
@@ -123,7 +131,7 @@ func (v *Heartbeat) Initialize(w core.WorkerContainer) (err error) {
 		})
 		h.HandleFunc("/api/v1/htbt/devices", func(w http.ResponseWriter, r *http.Request) {
 			var b interface{}
-			var err error
+			// var err error // Commenting this out due to shadowing over L118
 			if r.Method == "GET" {
 				b = map[string]interface{}{
 					"code":    0,
@@ -224,9 +232,9 @@ func (v *Heartbeat) beatCycle(w core.WorkerContainer) {
 			core.Info.Println(ctx, "start to heartbeat every", c.Interval)
 
 			if err := v.beat(); err != nil {
-				core.Warn.Println(ctx, "heartbeat to", c.Url, "every", c.Interval, "failed, err is", err)
+				core.Warn.Println(ctx, "heartbeat to", c.URL, "every", c.Interval, "failed, err is", err)
 			} else {
-				core.Info.Println(ctx, "heartbeat to", c.Url, "every", c.Interval)
+				core.Info.Println(ctx, "heartbeat to", c.URL, "every", c.Interval)
 			}
 		}
 	}
@@ -244,7 +252,7 @@ func (v *Heartbeat) discovery() (err error) {
 	}
 
 	// whether address is internet.
-	is_internet := func(ipv4 net.IP) IfaceType {
+	isInternet := func(ipv4 net.IP) IfaceType {
 		ipv4 = ipv4.To4()
 		core.Info.Println(ctx, "addr is", []byte(ipv4))
 		addr := (uint32(ipv4[0]) << 24) | (uint32(ipv4[1]) << 16) | (uint32(ipv4[2]) << 8) | uint32(ipv4[3])
@@ -275,9 +283,9 @@ func (v *Heartbeat) discovery() (err error) {
 	// fetch the ip from addr interface.
 	ipf := func(addr net.Addr) (string, bool, IfaceType) {
 		if v, ok := addr.(*net.IPNet); ok && vf(v.IP) {
-			return v.IP.String(), true, is_internet(v.IP)
+			return v.IP.String(), true, isInternet(v.IP)
 		} else if v, ok := addr.(*net.IPAddr); ok && vf(v.IP) {
-			return v.IP.String(), true, is_internet(v.IP)
+			return v.IP.String(), true, isInternet(v.IP)
 		} else {
 			return "", false, IfaceUnknown
 		}
@@ -378,11 +386,11 @@ func (v *Heartbeat) beat() (err error) {
 	core.Info.Println(ctx, "heartbeat info is", string(b))
 
 	var resp *http.Response
-	if resp, err = http.Post(c.Url, ocore.HttpJson, bytes.NewReader(b)); err != nil {
+	if resp, err = http.Post(c.URL, ocore.HttpJson, bytes.NewReader(b)); err != nil {
 		return
 	}
 	defer resp.Body.Close()
 
-	core.Info.Println(ctx, "heartbeat to", c.Url, "ok")
+	core.Info.Println(ctx, "heartbeat to", c.URL, "ok")
 	return
 }
