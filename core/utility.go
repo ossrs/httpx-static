@@ -35,7 +35,7 @@ import (
 // @see http://stackoverflow.com/questions/14298523/why-does-adding-concurrency-slow-down-this-golang-code
 var randoms chan *rand.Rand = make(chan *rand.Rand, runtime.NumCPU())
 
-// randome fill the bytes.
+// RandomFill randomly fills the bytes.
 func RandomFill(b []byte) {
 	// fetch in buffered chan.
 	var random *rand.Rand
@@ -58,7 +58,7 @@ func RandomFill(b []byte) {
 	}
 }
 
-// invoke the f with recover.
+// Recover invokes the f
 // the name of goroutine, use empty to ignore.
 func Recover(ctx Context, name string, f func() error) {
 	defer func() {
@@ -82,12 +82,12 @@ func Recover(ctx Context, name string, f func() error) {
 	}
 }
 
-// unmarshaler
+// Marshaler is a marshaler
 type Marshaler interface {
 	encoding.BinaryMarshaler
 }
 
-// marshal the object o to b
+// Marshal the object o to b
 func Marshal(o Marshaler, b *bytes.Buffer) (err error) {
 	if b == nil {
 		panic("should not be nil.")
@@ -106,7 +106,7 @@ func Marshal(o Marshaler, b *bytes.Buffer) (err error) {
 	return
 }
 
-// marshal multiple o, which can be nil.
+// Marshals multiple o, which can be nil.
 func Marshals(o ...Marshaler) (data []byte, err error) {
 	var b bytes.Buffer
 
@@ -127,7 +127,7 @@ func Marshals(o ...Marshaler) (data []byte, err error) {
 	return b.Bytes(), nil
 }
 
-// unmarshaler and sizer.
+// UnmarshalSizer is an unmarshaler and sizer.
 type UnmarshalSizer interface {
 	encoding.BinaryUnmarshaler
 
@@ -135,7 +135,7 @@ type UnmarshalSizer interface {
 	Size() int
 }
 
-// unmarshal the object from b
+// Unmarshal the object from b
 func Unmarshal(o UnmarshalSizer, b *bytes.Buffer) (err error) {
 	if b == nil {
 		panic("should not be nil")
@@ -153,7 +153,7 @@ func Unmarshal(o UnmarshalSizer, b *bytes.Buffer) (err error) {
 	return
 }
 
-// unmarshal multiple o pointers, which can be nil.
+// Unmarshals multiple o pointers, which can be nil.
 func Unmarshals(b *bytes.Buffer, o ...UnmarshalSizer) (err error) {
 	for _, e := range o {
 		if b.Len() == 0 {

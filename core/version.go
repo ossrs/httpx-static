@@ -29,43 +29,78 @@ const (
 	reversion = 17
 )
 
+// Version returns the go-oryx major.minor.revision version
 func Version() string {
 	return fmt.Sprintf("%v.%v.%v", major, minor, reversion)
 }
 
-// stable major version
+// OryxSigStable stable major version
 const OryxSigStable = 0
 
+// OryxSigStableBranch returns a go-oryx stable branch string
 func OryxSigStableBranch() string {
 	return fmt.Sprintf("%v.0release", OryxSigStable)
 }
 
 // project info.
+
+// OryxSigKey specifies the project key
 const OryxSigKey = "Oryx"
+
+// OryxSigCode specifies the project code
 const OryxSigCode = "MonkeyKing"
+
+// OryxSigRole specifies the project role
 const OryxSigRole = "cluster"
+
+// OryxSigName specifies the project name
 const OryxSigName = OryxSigKey + "(SRS++)"
-const OryxSigUrlShort = "github.com/ossrs/go-oryx"
-const OryxSigUrl = "https://" + OryxSigUrlShort
+
+// OryxSigURLShort specifies the short project URL
+const OryxSigURLShort = "github.com/ossrs/go-oryx"
+
+// OryxSigURL specifies the full project URL
+const OryxSigURL = "https://" + OryxSigURLShort
+
+// OryxSigWeb specifies the project website
 const OryxSigWeb = "http://ossrs.net"
+
+// OryxSigEmail specifies the project owner's email address
 const OryxSigEmail = "winlin@vip.126.com"
+
+// OryxSigLicense specifies the product:  go-oryx/SRS++
 const OryxSigLicense = "The MIT License (MIT)"
+
+// OryxSigCopyright specifies the product:  go-oryx/SRS++
 const OryxSigCopyright = "Copyright (c) 2013-2015 Oryx(ossrs)"
+
+// OryxSigAuthors specifies the project authors
 const OryxSigAuthors = "winlin"
+
+// OryxSigProduct specifies the project description
 const OryxSigProduct = "The go-oryx is SRS++, focus on real-time live streaming cluster."
 
+// OryxSigPrimary returns the primary stable major version
 func OryxSigPrimary() string {
 	return fmt.Sprintf("Oryx/%v", OryxSigStable)
 }
-func OryxSigContributorsUrl() string {
-	return fmt.Sprintf("%v/blob/%v/AUTHORS.txt", OryxSigUrl, OryxSigStableBranch())
+
+// OryxSigContributorsURL returns the formatted contributors URL
+func OryxSigContributorsURL() string {
+	return fmt.Sprintf("%v/blob/%v/AUTHORS.txt", OryxSigURL, OryxSigStableBranch())
 }
+
+// OryxSigHandshake returns the formatted handshake built from product key and version
 func OryxSigHandshake() string {
 	return fmt.Sprintf("%v(%v)", OryxSigKey, Version())
 }
+
+// OryxSigRelease returns the formatted release URL
 func OryxSigRelease() string {
-	return fmt.Sprintf("%v/tree/%v", OryxSigUrl, OryxSigStableBranch())
+	return fmt.Sprintf("%v/tree/%v", OryxSigURL, OryxSigStableBranch())
 }
+
+// OryxSigServer returns the full, formatted server version information
 func OryxSigServer() string {
 	return fmt.Sprintf("%v/%v(%v)", OryxSigKey, Version(), OryxSigCode)
 }

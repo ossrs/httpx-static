@@ -23,6 +23,7 @@
 
 package core
 
+// ReloadCycle handles reloading of the worker
 func (v *Config) ReloadCycle(wc WorkerContainer) {
 	ctx := v.ctx
 

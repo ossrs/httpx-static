@@ -22,7 +22,10 @@
 package core
 
 const (
-	RtmpListen       = 1935
+	// RtmpListen specidies the RTMP port to listen for stream data
+	RtmpListen = 1935
+	// RtmpDefaultVhost specifies the default RTMP Vhost
 	RtmpDefaultVhost = "__defaultVhost__"
-	RtmpDefaultApp   = "__defaultApp__"
+	// RtmpDefaultApp specifies the default RTMP App
+	RtmpDefaultApp = "__defaultApp__"
 )

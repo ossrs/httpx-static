@@ -26,20 +26,27 @@ import (
 	"io"
 )
 
-// the muxer of oryx message type.
+// MessageMuxer is the muxer of oryx's message type.
 type MessageMuxer uint8
 
 const (
+	// MuxerRtmp represents the RTMP Muxer
 	MuxerRtmp MessageMuxer = iota
+	// MuxerFlv represents the FLV Muxer
 	MuxerFlv
+	// MuxerH264 represents the H264 Muxer
 	MuxerH264
+	// MuxerRtsp represents the RTSP Muxer
 	MuxerRtsp
+	// MuxerTs represents the TS Muxer
 	MuxerTs
+	// MuxerAac represents the AAC Muxer
 	MuxerAac
+	// MuxerMp3 represents the MP3 Muxer
 	MuxerMp3
 )
 
-// the message for oryx
+// Message for oryx
 // the common structure for RTMP/FLV/HLS/MP4 or any
 // message, it can be media message or control message.
 // the message flow from agent to another agent.
@@ -50,19 +57,19 @@ type Message interface {
 	Muxer() MessageMuxer
 }
 
-// the opener to open the resource.
+// Opener to open the resource.
 type Opener interface {
 	// open the resource.
 	Open() error
 }
 
-// the open and closer for resource manage.
+// OpenCloser is the open and closer for resource management.
 type OpenCloser interface {
 	Opener
 	io.Closer
 }
 
-// the agent contains a source
+// Agent contains a source
 // which ingest message from upstream sink
 // write message to channel
 // finally delivery to downstream sink.
