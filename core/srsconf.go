@@ -37,6 +37,7 @@ type srsConfDirective struct {
 	directives []*srsConfDirective
 }
 
+// NewSrsConfDirective returns a new configuration directive
 func NewSrsConfDirective() *srsConfDirective {
 	return &srsConfDirective{
 		args:       make([]string, 0),
@@ -84,7 +85,9 @@ mainLoop:
 	return nil
 }
 
-var stringNotMatch = errors.New("string not match")
+// ErrStringNotMatch handles unmatched strings
+var ErrStringNotMatch = errors.New("string not match")
+
 var scanString = func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 	if atEOF && len(data) == 0 {
 		return 0, nil, nil
@@ -92,26 +95,34 @@ var scanString = func(data []byte, atEOF bool) (advance int, token []byte, err e
 
 	if bytes.IndexAny(data, "'\"") != 0 {
 		if atEOF {
-			return 0, nil, stringNotMatch
+			return 0, nil, ErrStringNotMatch
 		}
 		return 0, nil, nil
 	}
 
-	if i := bytes.IndexByte(data[1:], data[0]); i < 0 {
+	i := bytes.IndexByte(data[1:], data[0])
+	if i < 0 {
 		if atEOF {
-			return 0, nil, stringNotMatch
+			return 0, nil, ErrStringNotMatch
 		}
 		return 0, nil, nil
-	} else {
-		return i + 2, data[:i+2], nil
 	}
+	return i + 2, data[:i+2], nil
+	// This is unreachable
 	return
 }
 
-var srsConfEndOfObject = errors.New("object EOF")
-var srsConfStartOfObject = errors.New("object START")
-var srsConfEndOfDirective = errors.New("directive EOF")
-var srsConfInvalid = errors.New("invalid srs config")
+// ErrSrsConfEndOfObject handles end of object errors
+var ErrSrsConfEndOfObject = errors.New("object EOF")
+
+// ErrSrsConfStartOfObject handles start of object errors
+var ErrSrsConfStartOfObject = errors.New("object START")
+
+// ErrSrsConfEndOfDirective handles end of directive errors
+var ErrSrsConfEndOfDirective = errors.New("directive EOF")
+
+// ErrSrsConfInvalid handles invalid configuration errors
+var ErrSrsConfInvalid = errors.New("invalid srs config")
 
 func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 	// name and args.
@@ -152,12 +163,12 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 		if str == "" {
 			continue
 		} else if str == "{" {
-			err = srsConfStartOfObject
+			err = ErrSrsConfStartOfObject
 			break
 		} else if str == "}" {
-			return srsConfEndOfObject
+			return ErrSrsConfEndOfObject
 		} else if str == ";" {
-			err = srsConfEndOfDirective
+			err = ErrSrsConfEndOfDirective
 			break
 		}
 
@@ -172,16 +183,16 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 	}
 
 	// for we got directive end.
-	if err == srsConfEndOfDirective {
+	if err == ErrSrsConfEndOfDirective {
 		return nil
 	}
 
 	// for sub directives.
-	if err == srsConfStartOfObject {
+	if err == ErrSrsConfStartOfObject {
 		for {
 			dir := NewSrsConfDirective()
 			if err := dir.Parse(s); err != nil {
-				if err == srsConfEndOfObject {
+				if err == ErrSrsConfEndOfObject {
 					return nil
 				}
 				return err
@@ -196,10 +207,10 @@ func (v *srsConfDirective) Parse(s *bufio.Scanner) (err error) {
 	}
 
 	// must be something invalid.
-	return srsConfInvalid
+	return ErrSrsConfInvalid
 }
 
-// the reader support bash-style comment,
+// NewSrsConfCommentReader the reader support bash-style comment,
 //      line: # comments
 func NewSrsConfCommentReader(r io.Reader) io.Reader {
 	startMatches := [][]byte{[]byte("'"), []byte("\""), []byte("#")}
@@ -214,6 +225,7 @@ type srsConfParser struct {
 	r io.Reader
 }
 
+// NewSrsConfParser returns a new configuration parser
 func NewSrsConfParser(r io.Reader) *srsConfParser {
 	return &srsConfParser{
 		r: NewSrsConfCommentReader(r),
@@ -257,12 +269,12 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 		}
 	}
 	if d := root.Get("daemon"); d != nil {
-		c.Daemon = srs_switch2bool(d.Arg0())
+		c.Daemon = srsSwitch2bool(d.Arg0())
 	}
 
 	if d := root.Get("heartbeat"); d != nil {
 		if d := d.Get("enabled"); d != nil {
-			c.Heartbeat.Enabled = srs_switch2bool(d.Arg0())
+			c.Heartbeat.Enabled = srsSwitch2bool(d.Arg0())
 		}
 		if d := d.Get("interval"); d != nil {
 			if c.Heartbeat.Interval, err = strconv.ParseFloat(d.Arg0(), 64); err != nil {
@@ -273,10 +285,10 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 			c.Heartbeat.DeviceID = d.Arg0()
 		}
 		if d := d.Get("url"); d != nil {
-			c.Heartbeat.Url = d.Arg0()
+			c.Heartbeat.URL = d.Arg0()
 		}
 		if d := d.Get("summaries"); d != nil {
-			c.Heartbeat.Summary = srs_switch2bool(d.Arg0())
+			c.Heartbeat.Summary = srsSwitch2bool(d.Arg0())
 		}
 	}
 
@@ -316,6 +328,6 @@ func (v *srsConfParser) Decode(c *Config) (err error) {
 	return
 }
 
-func srs_switch2bool(v string) bool {
+func srsSwitch2bool(v string) bool {
 	return v == "on"
 }

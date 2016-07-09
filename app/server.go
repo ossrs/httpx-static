@@ -358,7 +358,7 @@ func (v *Server) Quit() error {
 	default:
 	}
 
-	return core.QuitError
+	return core.ErrQuit
 }
 
 func (v *Server) GFork(name string, f func(core.WorkerContainer)) {

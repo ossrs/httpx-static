@@ -68,7 +68,7 @@ type Amf0Any interface {
 // discovery the Amf0Any type by marker.
 func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	if len(data) == 0 {
-		return nil, Amf0Error
+		return nil, ErrAmf0
 	}
 
 	switch data[0] {
@@ -95,7 +95,7 @@ func Amf0Discovery(data []byte) (a Amf0Any, err error) {
 	case MarkerAmf0Invalid:
 		fallthrough
 	default:
-		return nil, Amf0Error
+		return nil, ErrAmf0
 	}
 }
 
@@ -170,7 +170,7 @@ func (v *Amf0StrictArray) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0StrictArray {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	var count uint32
@@ -252,7 +252,7 @@ func (v *Amf0EcmaArray) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0EcmaArray {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	var count uint32
@@ -319,7 +319,7 @@ func (v *Amf0Object) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0Object {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	if err = core.Unmarshal(v.properties, b); err != nil {
@@ -390,7 +390,7 @@ func (v *Amf0Date) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0Date {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	if err = binary.Read(b, binary.BigEndian, &v.Date); err != nil {
@@ -436,7 +436,7 @@ func (v *Amf0Undefined) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0Undefined {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	return
@@ -474,7 +474,7 @@ func (v *Amf0Null) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0Null {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	return
@@ -522,7 +522,7 @@ func (v *Amf0Number) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0Number {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	if err = binary.Read(b, binary.BigEndian, (*float64)(v)); err != nil {
@@ -583,7 +583,7 @@ func (v *Amf0Boolean) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0Boolean {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	var vb byte
@@ -646,7 +646,7 @@ func (v *Amf0String) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0String {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	var nvb uint16
@@ -692,7 +692,7 @@ func (v *amf0ObjectEOF) UnmarshalBinary(data []byte) (err error) {
 	}
 
 	if m != MarkerAmf0ObjectEnd {
-		return Amf0Error
+		return ErrAmf0
 	}
 
 	return

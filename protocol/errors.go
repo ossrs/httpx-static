@@ -23,14 +23,14 @@ package protocol
 
 import "errors"
 
-// when read RTMP chunk error.
-var RtmpChunkError = errors.New("rtmp chunk error")
+// ErrRtmpChunk occurs when read RTMP chunk error.
+var ErrRtmpChunk = errors.New("rtmp chunk error")
 
-// when got RTMP msg invalid payload.
-var RtmpPayloadError = errors.New("rtmp msg payload error")
+// ErrRtmpPayload occurs when receiving an invalid RTMP msg payload.
+var ErrRtmpPayload = errors.New("rtmp msg payload error")
 
-// the amf0 object error.
-var Amf0Error = errors.New("amf0 error")
+// ErrAmf0 represents the amf0 object error.
+var ErrAmf0 = errors.New("amf0 error")
 
-// the rtmp request url error.
-var RequestUrlError = errors.New("rtmp request url error")
+// ErrRequestURL represents the rtmp request url error.
+var ErrRequestURL = errors.New("rtmp request url error")

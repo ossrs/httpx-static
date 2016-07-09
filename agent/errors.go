@@ -23,16 +23,16 @@ package agent
 
 import "errors"
 
-// ErrorAgentBusy occurs when the agent is busy.
-var ErrorAgentBusy = errors.New("agent is busy")
+// ErrAgentBusy occurs when the agent is busy.
+var ErrAgentBusy = errors.New("agent is busy")
 
-// ErrorAgentNotSupport occurs when agent not support source or sink.
-var ErrorAgentNotSupport = errors.New("agent not support")
+// ErrAgentNotSupport occurs when agent not support source or sink.
+var ErrAgentNotSupport = errors.New("agent not support")
 
-// ErrorAgentControlRepublish is for flash or fmle to republish the stream.
-var ErrorAgentControlRepublish = errors.New("agent republish")
+// ErrAgentControlRepublish is for flash or fmle to republish the stream.
+var ErrAgentControlRepublish = errors.New("agent republish")
 
 // IsControlError determines whether control error object.
 func IsControlError(err error) bool {
-	return err == ErrorAgentControlRepublish
+	return err == ErrAgentControlRepublish
 }

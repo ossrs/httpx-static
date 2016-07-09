@@ -27,20 +27,20 @@ import (
 	"net"
 )
 
-// the quit error, used for goroutine to return.
-var QuitError error = errors.New("system quit")
+// ErrQuit used for goroutine to return.
+var ErrQuit = errors.New("system quit")
 
-// when channel overflow, for example, the c0c1 never overflow
+// ErrOverflow when channel overflow, for example, the c0c1 never overflow
 // when channel buffer size set to 2.
-var OverflowError error = errors.New("system overflow")
+var ErrOverflow = errors.New("system overflow")
 
-// when io timeout to wait.
-var TimeoutError error = errors.New("io timeout")
+// ErrTimeout when io timeout to wait.
+var ErrTimeout = errors.New("io timeout")
 
-// when the rtmp vhost not found.
-var VhostNotFoundError error = errors.New("vhost not found")
+// ErrVhostNotFound when the rtmp vhost not found.
+var ErrVhostNotFound = errors.New("vhost not found")
 
-// whether the object in recover or returned error can ignore,
+// IsNormalQuit whether the object in recover or returned error can ignore,
 // for instance, the error is a Quit error.
 func IsNormalQuit(err interface{}) bool {
 	if err == nil {
@@ -54,7 +54,7 @@ func IsNormalQuit(err interface{}) bool {
 		}
 
 		// manual quit or read timeout.
-		if err == QuitError || err == TimeoutError {
+		if err == ErrQuit || err == ErrTimeout {
 			return true
 		}
 

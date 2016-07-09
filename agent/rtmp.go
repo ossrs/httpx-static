@@ -420,14 +420,14 @@ func (v *RtmpPlayAgent) Flow(source core.Agent) (err error) {
 	ctx := v.ctx
 
 	core.Error.Println(ctx, "play agent not support flow.")
-	return ErrorAgentNotSupport
+	return ErrAgentNotSupport
 }
 
 func (v *RtmpPlayAgent) UnFlow(source core.Agent) (err error) {
 	ctx := v.ctx
 
 	core.Error.Println(ctx, "play agent not support flow.")
-	return ErrorAgentNotSupport
+	return ErrAgentNotSupport
 }
 
 func (v *RtmpPlayAgent) TiedSink() (sink core.Agent) {
@@ -494,7 +494,7 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 				// flash unpublish.
 				// TODO: maybe need to support republish.
 				core.Trace.Println(ctx, "flash publish finished.")
-				return ErrorAgentControlRepublish
+				return ErrAgentControlRepublish
 			}
 
 			// for fmle, drop others except the fmle start packet.
@@ -509,7 +509,7 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 				}
 
 				core.Trace.Println(ctx, "fmle publish finished.")
-				return ErrorAgentControlRepublish
+				return ErrAgentControlRepublish
 			}
 
 			core.Trace.Println(ctx, "fmle ignore AMF0/AMF3 command message.")
@@ -527,10 +527,10 @@ func (v *RtmpPublishAgent) Pump() (err error) {
 	// when republish, we expect more one more message
 	// to ensure client got the unpublish response.
 	// TODO: FIXME: support republish over same connection.
-	if err == ErrorAgentControlRepublish {
+	if err == ErrAgentControlRepublish {
 		return v.conn.RecvMessage(tm, func(m *protocol.RtmpMessage) error {
 			core.Info.Println(ctx, "publish drop message", m)
-			return ErrorAgentControlRepublish
+			return ErrAgentControlRepublish
 		})
 	}
 	return
@@ -540,21 +540,21 @@ func (v *RtmpPublishAgent) Write(m core.Message) (err error) {
 	ctx := v.ctx
 
 	core.Error.Println(ctx, "publish agent not support write message.")
-	return ErrorAgentNotSupport
+	return ErrAgentNotSupport
 }
 
 func (v *RtmpPublishAgent) Tie(sink core.Agent) (err error) {
 	ctx := v.ctx
 
 	core.Error.Println(ctx, "publish agent has no upstream.")
-	return ErrorAgentNotSupport
+	return ErrAgentNotSupport
 }
 
 func (v *RtmpPublishAgent) UnTie(sink core.Agent) (err error) {
 	ctx := v.ctx
 
 	core.Error.Println(ctx, "publish agent has no upstream.")
-	return ErrorAgentNotSupport
+	return ErrAgentNotSupport
 }
 
 func (v *RtmpPublishAgent) Flow(source core.Agent) (err error) {

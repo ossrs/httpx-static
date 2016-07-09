@@ -64,7 +64,7 @@ func (v *DupAgent) Pump() (err error) {
 	ctx := v.ctx
 
 	core.Error.Println(ctx, "dup agent not support pump.")
-	return ErrorAgentNotSupport
+	return ErrAgentNotSupport
 }
 
 func (v *DupAgent) Write(m core.Message) (err error) {

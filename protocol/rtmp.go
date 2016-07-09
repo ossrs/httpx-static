@@ -135,7 +135,7 @@ func (v *hsBytes) inCacheC0C1() (err error) {
 	select {
 	case v.in <- v.C0C1():
 	default:
-		return core.OverflowError
+		return core.ErrOverflow
 	}
 
 	core.Info.Println(ctx, "cache c0c1 ok.")
@@ -168,7 +168,7 @@ func (v *hsBytes) outCacheS0S1S2() (err error) {
 	select {
 	case v.out <- v.S0S1S2():
 	default:
-		return core.OverflowError
+		return core.ErrOverflow
 	}
 
 	core.Info.Println(ctx, "cache s0s1s2 ok.")
@@ -193,7 +193,7 @@ func (v *hsBytes) inCacheC2() (err error) {
 	select {
 	case v.in <- v.C2():
 	default:
-		return core.OverflowError
+		return core.ErrOverflow
 	}
 
 	core.Info.Println(ctx, "cache c2 ok.")
@@ -726,15 +726,15 @@ func (v *RtmpRequest) Reparse() (err error) {
 	// check.
 	if v.Vhost == "" {
 		core.Error.Println(ctx, "vhost must not be empty")
-		return RequestUrlError
+		return ErrRequestURL
 	}
 	if v.App == "" && v.Stream == "" {
 		core.Error.Println(ctx, "both app and stream must not be empty")
-		return RequestUrlError
+		return ErrRequestURL
 	}
 	if p := v.Port(); p <= 0 {
 		core.Error.Println(ctx, "port must be positive, actual is", p)
-		return RequestUrlError
+		return ErrRequestURL
 	}
 
 	return
@@ -805,7 +805,7 @@ type RtmpConnection struct {
 	// the locker for close
 	closeLock sync.Mutex
 	// when receiver or sender quit, notify main goroutine.
-	closing *core.Quiter
+	closing *core.Quitter
 
 	// the locker for write.
 	writeLock sync.Mutex
@@ -832,7 +832,7 @@ func NewRtmpConnection(ctx core.Context, transport io.ReadWriteCloser, wc core.W
 		stack:         NewRtmpStack(ctx, transport, transport),
 		in:            make(chan *RtmpMessage, RtmpInCache),
 		out:           make([]*RtmpMessage, 0, RtmpDefaultMwMessages*2),
-		closing:       core.NewQuiter(),
+		closing:       core.NewQuitter(),
 		shouldFlush:   make(chan bool, 1),
 	}
 
@@ -1043,7 +1043,7 @@ func (v *RtmpConnection) waitC0C1() (err error) {
 		break
 	case <-time.After(timeout):
 		core.Error.Println(ctx, "c0c1 timeout for", timeout)
-		return core.TimeoutError
+		return core.ErrTimeout
 	case <-v.closing.QC():
 		return v.closing.Quit()
 	case <-v.wc.QC():
@@ -1065,7 +1065,7 @@ func (v *RtmpConnection) waitC2() (err error) {
 		break
 	case <-time.After(timeout):
 		core.Error.Println(ctx, "c2 timeout for", timeout)
-		return core.TimeoutError
+		return core.ErrTimeout
 	case <-v.closing.QC():
 		return v.closing.Quit()
 	case <-v.wc.QC():
@@ -1149,7 +1149,7 @@ func (v *RtmpConnection) ResponseConnectApp() (err error) {
 	d.Set("oryx_sig", NewAmf0String(core.OryxSigKey))
 	d.Set("oryx_server", NewAmf0String(core.OryxSigServer()))
 	d.Set("oryx_role", NewAmf0String(core.OryxSigRole))
-	d.Set("oryx_url", NewAmf0String(core.OryxSigUrl))
+	d.Set("oryx_url", NewAmf0String(core.OryxSigURL))
 	d.Set("oryx_version", NewAmf0String(core.Version()))
 	d.Set("oryx_site", NewAmf0String(core.OryxSigWeb))
 	d.Set("oryx_email", NewAmf0String(core.OryxSigEmail))
@@ -1677,7 +1677,7 @@ func (v *RtmpConnection) read(timeout time.Duration, fn rtmpReadHandler) (err er
 			}
 		case <-time.After(timeout):
 			core.Error.Println(ctx, "timeout for", timeout)
-			return core.TimeoutError
+			return core.ErrTimeout
 		case <-v.closing.QC():
 			return v.closing.Quit()
 		case <-v.wc.QC():
@@ -3844,7 +3844,7 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 		} else {
 			// must be a RTMP protocol level error.
 			core.Error.Println(ctx, "fresh chunk fmt must be", RtmpFmtType0, "actual is", fmt)
-			return RtmpChunkError
+			return ErrRtmpChunk
 		}
 	}
 
@@ -3852,7 +3852,7 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 	// the fmt must not be type0 which means new message.
 	if !isFirstMsgOfChunk && fmt == RtmpFmtType0 {
 		core.Error.Println(ctx, "chunk partial msg, fmt must be", RtmpFmtType0, "actual is", fmt)
-		return RtmpChunkError
+		return ErrRtmpChunk
 	}
 
 	// create msg when new chunk stream start
@@ -3891,7 +3891,7 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 		// for a message, if msg exists in cache, the delta must not changed.
 		if !isFirstMsgOfChunk && chunk.timestampDelta != delta {
 			core.Error.Println(ctx, "chunk msg exists, should not change the delta.")
-			return RtmpChunkError
+			return ErrRtmpChunk
 		}
 
 		// fmt: 0
@@ -3943,12 +3943,12 @@ func rtmpReadMessageHeader(ctx core.Context, in bufferedReader, fmt uint8, chunk
 			// for a message, if msg exists in cache, the size must not changed.
 			if !isFirstMsgOfChunk && chunk.payloadLength != payloadLength {
 				core.Error.Println(ctx, "chunk msg exists, payload length should not be changed.")
-				return RtmpChunkError
+				return ErrRtmpChunk
 			}
 			// for a message, if msg exists in cache, the type must not changed.
 			if !isFirstMsgOfChunk && chunk.messageType != mtype {
 				core.Error.Println(ctx, "chunk msg exists, type should not be changed.")
-				return RtmpChunkError
+				return ErrRtmpChunk
 			}
 			chunk.payloadLength = payloadLength
 			chunk.messageType = mtype
@@ -4129,5 +4129,5 @@ func rtmpReadBasicHeader(ctx core.Context, in bufferedReader) (fmt uint8, cid ui
 		return fmt, temp, nil
 	}
 
-	return fmt, cid, RtmpChunkError
+	return fmt, cid, ErrRtmpChunk
 }

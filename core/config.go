@@ -448,7 +448,7 @@ func (v *Config) Vhost(name string) (*Vhost, error) {
 		return v.Vhost(RtmpDefaultVhost)
 	}
 
-	return nil, VhostNotFoundError
+	return nil, ErrVhostNotFound
 }
 
 func (v *Config) VhostGroupMessages(vhost string) (n int, err error) {
