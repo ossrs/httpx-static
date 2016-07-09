@@ -20,7 +20,7 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /*
-The protocol package provides protocol feature for oryx,
+Package protocol provides protocol feature for oryx,
 for example, the rtmp/flv/264/aac muxer and demuxer.
 */
 package protocol

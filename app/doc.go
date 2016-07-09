@@ -20,7 +20,7 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 /*
-The app package provides the application level feature for oryx,
+Package app provides the application level feature for oryx,
 for example, the server object and some stream control service.
 */
 package app
