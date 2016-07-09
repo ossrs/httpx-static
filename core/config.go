@@ -192,25 +192,25 @@ func (v *Config) Loads(conf string) error {
 	// json style should not be *.conf
 	if !strings.HasSuffix(conf, ".conf") {
 		// read the whole config to []byte.
-		if f, err := os.Open(conf); err != nil {
+		f, err := os.Open(conf)
+		if err != nil {
 			return err
-		} else {
-			defer f.Close()
+		}
+		defer f.Close()
 
-			if err := ocore.Unmarshal(f, v); err != nil {
-				return err
-			}
+		if err := ocore.Unmarshal(f, v); err != nil {
+			return err
 		}
 	} else {
 		// srs-style config.
 		var p *srsConfParser
-		if f, err := os.Open(conf); err != nil {
+		f, err := os.Open(conf)
+		if err != nil {
 			return err
-		} else {
-			defer f.Close()
-
-			p = NewSrsConfParser(f)
 		}
+		defer f.Close()
+
+		p = NewSrsConfParser(f)
 
 		if err := p.Decode(v); err != nil {
 			return err
@@ -261,7 +261,7 @@ func (v *Config) reparse() (err error) {
 	return
 }
 
-// validate the config whether ok.
+// Validate the config whether ok.
 func (v *Config) Validate() error {
 	ctx := v.ctx
 
@@ -306,12 +306,12 @@ func (v *Config) Validate() error {
 	return nil
 }
 
-// whether log tank is file
+// LogToFile returns whether or not the log tank is file
 func (v *Config) LogToFile() bool {
 	return v.Log.Tank == "file"
 }
 
-// get the log tank writer for specified level.
+// LogTank get's the log tank writer for the specified level.
 // the param dw is the default writer.
 func (v *Config) LogTank(level string, dw io.Writer) io.Writer {
 	if v.Log.Level == "info" {
@@ -339,7 +339,7 @@ func (v *Config) LogTank(level string, dw io.Writer) io.Writer {
 	return ioutil.Discard
 }
 
-// subscribe the reload event,
+// Subscribe the reload event,
 // when got reload event, notify all handlers.
 func (v *Config) Subscribe(h ReloadHandler) {
 	// ignore exists.
@@ -352,6 +352,7 @@ func (v *Config) Subscribe(h ReloadHandler) {
 	v.reloadHandlers = append(v.reloadHandlers, h)
 }
 
+// Unsubscribe the reload event
 func (v *Config) Unsubscribe(h ReloadHandler) {
 	for i, p := range v.reloadHandlers {
 		if p == h {
@@ -361,6 +362,7 @@ func (v *Config) Unsubscribe(h ReloadHandler) {
 	}
 }
 
+// Reload the Config
 func (v *Config) Reload(cc *Config) (err error) {
 	pc := v
 	ctx := v.ctx
