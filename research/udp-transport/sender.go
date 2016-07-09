@@ -49,14 +49,14 @@ type Metric struct {
 	JumpFrames int32 `json:"jump"`
 }
 
-func fill_string(size int) (str string) {
+func fillString(size int) (str string) {
 	for len(str) < size {
 		str += "F"
 	}
 	return
 }
 
-func create_raw_message(interval, size int, id uint32, prets uint64) (uint32, uint64, *Msg, []byte, error) {
+func createRawMessage(interval, size int, id uint32, prets uint64) (uint32, uint64, *Msg, []byte, error) {
 	msg := &Msg{
 		ID:        id,
 		Timestamp: uint64(time.Now().UnixNano()),
@@ -83,13 +83,13 @@ func create_raw_message(interval, size int, id uint32, prets uint64) (uint32, ui
 		}
 		psize := size - len(buf)
 		//ocore.Trace.Println(nil, "resize", len(buf), "to", size, psize)
-		msg.Data = fill_string(psize)
+		msg.Data = fillString(psize)
 	}
 
 	return id, prets, msg, buf, nil
 }
 
-func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func(), ef func(error) error) (err error) {
+func serveMsgs(c io.ReadWriter, interval, size int, report uint32, fn func(), ef func(error) error) (err error) {
 	br := bufio.NewReader(c)
 	d := json.NewDecoder(br)
 
@@ -98,7 +98,7 @@ func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func(), e
 	for {
 		var msg *Msg
 		var buf []byte
-		if id, prets, msg, buf, err = create_raw_message(interval, size, id, prets); err != nil {
+		if id, prets, msg, buf, err = createRawMessage(interval, size, id, prets); err != nil {
 			return
 		}
 
@@ -146,7 +146,7 @@ func serve_msgs(c io.ReadWriter, interval, size int, report uint32, fn func(), e
 	}
 }
 
-func serve_send(host, transport string, port, interval, size int, report uint32) (err error) {
+func serveSend(host, transport string, port, interval, size int, report uint32) (err error) {
 	if transport == "tcp" {
 		var addr *net.TCPAddr
 		if addr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf("%v:%v", host, port)); err != nil {
@@ -161,7 +161,7 @@ func serve_send(host, transport string, port, interval, size int, report uint32)
 
 		c.SetNoDelay(true)
 
-		return serve_msgs(c, interval, size, report, nil, nil)
+		return serveMsgs(c, interval, size, report, nil, nil)
 	}
 
 	if transport == "udp" {
@@ -183,7 +183,7 @@ func serve_send(host, transport string, port, interval, size int, report uint32)
 		}
 		ocore.Trace.Println(nil, "connected at", c.RemoteAddr())
 
-		return serve_msgs(c, interval, size, report, func() {
+		return serveMsgs(c, interval, size, report, func() {
 			// udp maybe drop packets, which cause the timeout.
 			c.SetReadDeadline(time.Now().Add(1 * time.Second))
 		}, func(err error) error {
@@ -229,7 +229,7 @@ func main() {
 	ocore.Trace.Println(nil, fmt.Sprintf("sender over %v://%v:%v %v/%v/%v.", transport, host, port, interval, size, report))
 
 	var err error
-	if err = serve_send(host, transport, port, interval, size, uint32(report)); err != nil {
+	if err = serveSend(host, transport, port, interval, size, uint32(report)); err != nil {
 		ocore.Error.Println(nil, "serve failed. err is", err)
 		os.Exit(1)
 	}

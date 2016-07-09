@@ -48,7 +48,7 @@ type Metric struct {
 	JumpFrames int32 `json:"jump"`
 }
 
-func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) {
+func serveMsgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) {
 	var prets int64
 	var preid uint32
 	missing := map[uint32]bool{}
@@ -117,11 +117,11 @@ func serve_msgs(rmsg func() (*Msg, error), wbuf func([]byte) error) (err error) 
 			fmt.Sprintf("%v/%v", msg.Diff, rdiff),
 			fmt.Sprintf("%v/%v/%v", msg.Type, msg.Interval, msg.Size))
 	}
-
+	// This appears unreachable.
 	return
 }
 
-func serve_recv(transport string, port int) (err error) {
+func serveRecv(transport string, port int) (err error) {
 	if transport == "tcp" {
 		var addr *net.TCPAddr
 		if addr, err = net.ResolveTCPAddr("tcp", fmt.Sprintf(":%v", port)); err != nil {
@@ -149,7 +149,7 @@ func serve_recv(transport string, port int) (err error) {
 				br := bufio.NewReader(c)
 				d := json.NewDecoder(br)
 
-				_ = serve_msgs(func() (msg *Msg, err error) {
+				_ = serveMsgs(func() (msg *Msg, err error) {
 					msg = &Msg{}
 					if err = d.Decode(msg); err != nil {
 						return
@@ -179,7 +179,7 @@ func serve_recv(transport string, port int) (err error) {
 
 		rbuf := make([]byte, 32*1024)
 		var from *net.UDPAddr
-		return serve_msgs(func() (msg *Msg, err error) {
+		return serveMsgs(func() (msg *Msg, err error) {
 			var n int
 			if n, from, err = c.ReadFromUDP(rbuf); err != nil {
 				return
@@ -223,7 +223,7 @@ func main() {
 	ocore.Trace.Println(nil, fmt.Sprintf("receiver over %v://:%v.", transport, port))
 
 	var err error
-	if err = serve_recv(transport, port); err != nil {
+	if err = serveRecv(transport, port); err != nil {
 		ocore.Error.Println(nil, "serve failed. err is", err)
 		os.Exit(1)
 	}
