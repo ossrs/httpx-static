@@ -29,7 +29,7 @@ import (
 	"runtime/debug"
 )
 
-// the rtmp publish or play agent,
+// Rtmp represents the rtmp publish or play agent,
 // to listen at RTMP(tcp://1935) and recv data from RTMP publisher or player,
 // when identified the client type, redirect to the specified agent.
 type Rtmp struct {
@@ -50,7 +50,7 @@ func NewRtmp(ctx core.Context, wc core.WorkerContainer) (agent core.OpenCloser) 
 	return v
 }
 
-// interface core.Agent
+// Open interface core.Agent
 func (v *Rtmp) Open() (err error) {
 	return v.applyListen(core.Conf)
 }
@@ -315,7 +315,7 @@ func (v *Rtmp) cycle(conn *protocol.RtmpConnection) (err error) {
 	return
 }
 
-// interface ReloadHandler
+// OnReloadGlobal interface ReloadHandler
 func (v *Rtmp) OnReloadGlobal(scope int, cc, pc *core.Config) (err error) {
 	if scope != core.ReloadListen {
 		return
@@ -336,7 +336,7 @@ func (v *Rtmp) OnReloadVhost(vhost string, scope int, cc, pc *core.Config) (err 
 	return
 }
 
-// rtmp play agent, to serve the player or edge.
+// RtmpPlayAgent is to serve the player or edge.
 type RtmpPlayAgent struct {
 	ctx       core.Context
 	conn      *protocol.RtmpConnection
@@ -434,7 +434,7 @@ func (v *RtmpPlayAgent) TiedSink() (sink core.Agent) {
 	return v.upstream
 }
 
-// rtmp publish agent, to serve the FMLE or flash publisher/encoder.
+// RtmpPublishAgent is to serve the FMLE or flash publisher/encoder.
 type RtmpPublishAgent struct {
 	ctx  core.Context
 	conn *protocol.RtmpConnection

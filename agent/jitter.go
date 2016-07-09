@@ -26,7 +26,7 @@ import (
 	"github.com/ossrs/go-oryx/core"
 )
 
-// the time jitter algorithm:
+// JitterAlgorithm is the time jitter algorithm:
 // 1. full, to ensure stream start at zero, and ensure stream monotonically increasing.
 // 2. zero, only ensure sttream start at zero, ignore timestamp jitter.
 // 3. off, disable the time jitter algorithm, like atc.
@@ -38,7 +38,7 @@ const (
 	Off
 )
 
-// time jitter detect and correct,
+// Jitter is the time jitter detect and correct,
 // to ensure the stream is monotonically.
 type Jitter struct {
 	ctx                        core.Context
