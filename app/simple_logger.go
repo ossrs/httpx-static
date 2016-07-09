@@ -45,15 +45,15 @@ func (v *simpleLogger) open(c *core.Config) (err error) {
 		core.Trace.Println(ctx, "apply log", c.Log.Tank, c.Log.Level, c.Log.File)
 		core.Trace.Println(ctx, "please see detail of log: tailf", c.Log.File)
 
-		if v.file, err = os.OpenFile(c.Log.File, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
+		v.file, err = os.OpenFile(c.Log.File, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644)
+		if err != nil {
 			core.Error.Println(ctx, "open log file", c.Log.File, "failed, err is", err)
 			return
-		} else {
-			core.Info = core.NewLoggerPlus(log.New(c.LogTank("info", v.file), core.LogInfoLabel, log.LstdFlags))
-			core.Trace = core.NewLoggerPlus(log.New(c.LogTank("trace", v.file), core.LogTraceLabel, log.LstdFlags))
-			core.Warn = core.NewLoggerPlus(log.New(c.LogTank("warn", v.file), core.LogWarnLabel, log.LstdFlags))
-			core.Error = core.NewLoggerPlus(log.New(c.LogTank("error", v.file), core.LogErrorLabel, log.LstdFlags))
 		}
+		core.Info = core.NewLoggerPlus(log.New(c.LogTank("info", v.file), core.LogInfoLabel, log.LstdFlags))
+		core.Trace = core.NewLoggerPlus(log.New(c.LogTank("trace", v.file), core.LogTraceLabel, log.LstdFlags))
+		core.Warn = core.NewLoggerPlus(log.New(c.LogTank("warn", v.file), core.LogWarnLabel, log.LstdFlags))
+		core.Error = core.NewLoggerPlus(log.New(c.LogTank("error", v.file), core.LogErrorLabel, log.LstdFlags))
 	} else {
 		core.Trace.Println(ctx, "apply log", c.Log.Tank, c.Log.Level)
 
