@@ -35,12 +35,12 @@ func run(svr *app.Server, ctx core.Context) int {
 	var c *os.Process
 	if core.Conf.Daemon {
 		core.Trace.Println(ctx, "run in daemon mode, log file", core.Conf.Log.File)
-		if child, err := d.Reborn(); err != nil {
+		child, err := d.Reborn()
+		if err != nil {
 			core.Error.Println(ctx, "daemon failed. err is", err)
 			return -1
-		} else {
-			c = child
 		}
+		c = child
 	}
 	defer d.Release()
 
