@@ -22,9 +22,10 @@
 package agent
 
 import (
+	"sync"
+
 	"github.com/ossrs/go-oryx/core"
 	"github.com/ossrs/go-oryx/protocol"
-	"sync"
 )
 
 type AgentManager struct {

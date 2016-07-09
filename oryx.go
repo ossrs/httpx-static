@@ -32,12 +32,13 @@ package main
 
 import (
 	"fmt"
+	"os"
+
 	ohttp "github.com/ossrs/go-oryx-lib/http"
 	ooptions "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/agent"
 	"github.com/ossrs/go-oryx/app"
 	"github.com/ossrs/go-oryx/core"
-	"os"
 )
 
 func serve(svr *app.Server, ctx core.Context) int {

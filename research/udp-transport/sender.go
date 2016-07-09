@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	ocore "github.com/ossrs/go-oryx-lib/logger"
 	"io"
 	"net"
 	"os"
 	"time"
+
+	ocore "github.com/ossrs/go-oryx-lib/logger"
 )
 
 type MsgType uint8

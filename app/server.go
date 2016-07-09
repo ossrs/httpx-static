@@ -23,8 +23,6 @@ package app
 
 import (
 	"fmt"
-	"github.com/ossrs/go-oryx/agent"
-	"github.com/ossrs/go-oryx/core"
 	"os"
 	"os/signal"
 	"runtime"
@@ -33,6 +31,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/ossrs/go-oryx/agent"
+	"github.com/ossrs/go-oryx/core"
 )
 
 // the state of server, state graph:

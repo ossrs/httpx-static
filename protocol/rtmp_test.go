@@ -24,8 +24,9 @@ package protocol
 import (
 	"bufio"
 	"bytes"
-	"github.com/ossrs/go-oryx/core"
 	"testing"
+
+	"github.com/ossrs/go-oryx/core"
 )
 
 func TestHsBytes(t *testing.T) {

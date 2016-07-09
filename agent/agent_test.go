@@ -22,11 +22,12 @@
 package agent
 
 import (
-	"github.com/ossrs/go-oryx/core"
 	"io/ioutil"
 	"log"
 	"os"
 	"testing"
+
+	"github.com/ossrs/go-oryx/core"
 )
 
 func TestMain(m *testing.M) {

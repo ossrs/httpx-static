@@ -22,10 +22,11 @@
 package core
 
 import (
-	ocore "github.com/ossrs/go-oryx-lib/logger"
 	"io/ioutil"
 	"log"
 	"os"
+
+	ocore "github.com/ossrs/go-oryx-lib/logger"
 )
 
 // alias the Context interface.

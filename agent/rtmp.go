@@ -23,10 +23,11 @@ package agent
 
 import (
 	"fmt"
-	"github.com/ossrs/go-oryx/core"
-	"github.com/ossrs/go-oryx/protocol"
 	"net"
 	"runtime/debug"
+
+	"github.com/ossrs/go-oryx/core"
+	"github.com/ossrs/go-oryx/protocol"
 )
 
 // the rtmp publish or play agent,

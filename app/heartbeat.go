@@ -25,14 +25,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	ocore "github.com/ossrs/go-oryx-lib/http"
-	"github.com/ossrs/go-oryx/core"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"reflect"
 	"sync"
 	"time"
+
+	ocore "github.com/ossrs/go-oryx-lib/http"
+	"github.com/ossrs/go-oryx/core"
 )
 
 type IfaceType uint8
