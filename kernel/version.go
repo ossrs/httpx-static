@@ -23,16 +23,19 @@ SOFTWARE.
 */
 
 /*
- This the main entrance of go-oryx.
+ This is the version for oryx.
 */
-package main
+package kernel
 
 import "fmt"
 
-func main() {
-	description := `GO-ORYX is next generation media streaming server.
-Oryx is goups of coprocesses, which is:
-	flvlb, load-balance for flv streaming, use 302 or proxy to serve lots of connections.
-Please use these coprocesses to build your live streaming cluster.`
-	fmt.Println(description)
+const (
+	Major    = 0
+	Minor    = 0
+	Revision = 1
+)
+
+// The version format in Major.Minor.Revision
+func Version() string {
+	return fmt.Sprintf("%v.%v.%v", Major, Minor, Revision)
 }

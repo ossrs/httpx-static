@@ -23,63 +23,59 @@ SOFTWARE.
 */
 
 /*
- This the main entrance of flvlb, load-balance for flv streaming.
+ This is the basic config for oryx.
 */
-package main
+package kernel
 
 import (
-	"encoding/json"
 	"fmt"
-	oj "github.com/ossrs/go-oryx-lib/json"
 	ol "github.com/ossrs/go-oryx-lib/logger"
-	oo "github.com/ossrs/go-oryx-lib/options"
-	"github.com/ossrs/go-oryx/kernel"
 	"os"
 )
 
-var signature = fmt.Sprintf("FLVLB/%v", kernel.Version())
-
-// The config object for flvlb module.
-type FlvConfig struct {
-	kernel.Config
+// The basic config, for all modules which will provides these config.
+type Config struct {
+	Logger struct {
+		Tank     string `json:"tank"`
+		FilePath string `json:"file"`
+	} `json:"logger"`
 }
 
-func (v *FlvConfig) Loads(c string) (err error) {
+// The interface fmt.Stringer
+func (v *Config) String() string {
+	var logger string
+	if v.Logger.Tank == "console" {
+		logger = v.Logger.Tank
+	} else {
+		logger = fmt.Sprintf("%v,%v", v.Logger.Tank, v.Logger.FilePath)
+	}
+
+	return fmt.Sprintf("logger(%v)", logger)
+}
+
+// The interface io.Closer
+// Cleanup the resource open by config, for example, the logger file.
+func (v *Config) Close() error {
+	return ol.Close()
+}
+
+// Open the logger, when tank is file, switch logger to file.
+func (v *Config) OpenLogger() (err error) {
+	if tank := v.Logger.Tank; tank != "file" && tank != "console" {
+		return fmt.Errorf("Invalid logger tank, must be console/file, actual is %v", tank)
+	}
+
+	if v.Logger.Tank != "file" {
+		return
+	}
+
 	var f *os.File
-	if f, err = os.Open(c); err != nil {
-		fmt.Println("Open config failed, err is", err)
-		return
-	}
-	defer f.Close()
-
-	r := json.NewDecoder(oj.NewJsonPlusReader(f))
-	if err = r.Decode(v); err != nil {
-		fmt.Println("Decode config failed, err is", err)
-		return
+	if f, err = os.OpenFile(v.Logger.FilePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
+		return fmt.Errorf("Open logger %v failed, err is", v.Logger.FilePath, err)
 	}
 
-	if err = v.Config.OpenLogger(); err != nil {
-		fmt.Println("Open logger failed, err is", err)
-		return
-	}
-
-	return
-}
-
-func main() {
-	var err error
-	confFile := oo.ParseArgv("conf/flv.lb.json", kernel.Version(), signature)
-	fmt.Println("FLVLB is the load-balance for flv streaming, config is", confFile)
-
-	conf := &FlvConfig{}
-	if err = conf.Loads(confFile); err != nil {
-		fmt.Println("Loads config failed, err is", err)
-		return
-	}
-	defer conf.Close()
-
-	ctx := &kernel.Context{}
-	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
+	_ = ol.Close()
+	ol.Switch(f)
 
 	return
 }

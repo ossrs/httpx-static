@@ -23,16 +23,30 @@ SOFTWARE.
 */
 
 /*
- This the main entrance of go-oryx.
+ This is the context for logger.
 */
-package main
+package kernel
 
-import "fmt"
+import "sync"
 
-func main() {
-	description := `GO-ORYX is next generation media streaming server.
-Oryx is goups of coprocesses, which is:
-	flvlb, load-balance for flv streaming, use 302 or proxy to serve lots of connections.
-Please use these coprocesses to build your live streaming cluster.`
-	fmt.Println(description)
+// The global context id, grow from this one.
+var globalContextId int = 100
+
+// The lock to generate the cid.
+var globalCidGeneratorLock *sync.Mutex = &sync.Mutex{}
+
+// The context for logger.
+type Context struct {
+	cid int
+}
+
+func (v *Context) Cid() int {
+	if v.cid == 0 {
+		globalCidGeneratorLock.Lock()
+		defer globalCidGeneratorLock.Unlock()
+
+		v.cid = globalContextId
+		globalContextId++
+	}
+	return v.cid
 }
