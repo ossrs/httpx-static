@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 /*
- This the main entrance of flvlb, load-balance for flv streaming.
+ This the main entrance of rtmplb, load-balance for rtmp streaming.
 */
 package main
 
@@ -37,14 +37,14 @@ import (
 	"os"
 )
 
-var signature = fmt.Sprintf("FLVLB/%v", kernel.Version())
+var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
 
-// The config object for flvlb module.
-type FlvLbConfig struct {
+// The config object for rtmplb module.
+type RtmpLbConfig struct {
 	kernel.Config
 }
 
-func (v *FlvLbConfig) Loads(c string) (err error) {
+func (v *RtmpLbConfig) Loads(c string) (err error) {
 	var f *os.File
 	if f, err = os.Open(c); err != nil {
 		fmt.Println("Open config failed, err is", err)
@@ -68,10 +68,10 @@ func (v *FlvLbConfig) Loads(c string) (err error) {
 
 func main() {
 	var err error
-	confFile := oo.ParseArgv("conf/flv.lb.json", kernel.Version(), signature)
-	fmt.Println("FLVLB is the load-balance for flv streaming, config is", confFile)
+	confFile := oo.ParseArgv("conf/rtmp.lb.json", kernel.Version(), signature)
+	fmt.Println("RTMPLB is the load-balance for rtmp streaming, config is", confFile)
 
-	conf := &FlvLbConfig{}
+	conf := &RtmpLbConfig{}
 	if err = conf.Loads(confFile); err != nil {
 		fmt.Println("Loads config failed, err is", err)
 		return
