@@ -39,8 +39,7 @@ import (
 var ListenerDisposed error = fmt.Errorf("listener disposed")
 
 // The tcp listeners which support reload.
-// @remark don't reuse this listener, user must new when close it.
-//	listener will return error ListenerDisposed when reuse a disposed listener.
+// @remark listener will return error ListenerDisposed when reuse a disposed listener.
 type TcpListeners struct {
 	// The config and listener objects.
 	addrs     []string
