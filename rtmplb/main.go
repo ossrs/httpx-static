@@ -112,6 +112,7 @@ func main() {
 	// serve clients.
 	go func() {
 		time.Sleep(time.Duration(3) * time.Second)
+		ol.T(ctx, "close listener")
 		listener.Close()
 	}()
 

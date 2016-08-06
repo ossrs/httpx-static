@@ -118,12 +118,11 @@ func (v *TcpListeners) ListenTCP() (err error) {
 	}
 
 	for i, l := range v.listeners {
-		go func(l *net.TCPListener) {
+		addr := v.addrs[i]
+		go func(l *net.TCPListener, addr string) {
 			defer v.wait.Done()
 
 			ctx := &Context{}
-			addr := v.addrs[i]
-
 			for {
 				if err := v.acceptFrom(ctx, l); err != nil {
 					if err != ListenerDisposed {
@@ -132,7 +131,7 @@ func (v *TcpListeners) ListenTCP() (err error) {
 					return
 				}
 			}
-		}(l)
+		}(l, addr)
 	}
 
 	return
@@ -166,7 +165,7 @@ func (v *TcpListeners) acceptFrom(ctx ol.Context, l *net.TCPListener) (err error
 
 	var conn *net.TCPConn
 	if conn, err = l.AcceptTCP(); err != nil {
-		// when disposed, ignore any error.
+		// when disposed, ignore any error for it's user closed listener.
 		if v.disposed {
 			err = ListenerDisposed
 			return
@@ -180,6 +179,11 @@ func (v *TcpListeners) acceptFrom(ctx ol.Context, l *net.TCPListener) (err error
 	case v.conns <- conn:
 	case c := <-v.closing:
 		v.closing <- c
+
+		// we got a connection but not accept by user and listener is closed,
+		// we must close this connection for user never get it.
+		conn.Close()
+		ol.W(ctx, "listener: drop connection", conn.RemoteAddr().String())
 	}
 
 	return
@@ -232,7 +236,7 @@ func (v *TcpListeners) Close() (err error) {
 		return
 	}
 
-	// unblock all goroutines
+	// unblock all listener internal goroutines
 	v.closing <- true
 
 	// interrupt all listeners.
@@ -242,7 +246,7 @@ func (v *TcpListeners) Close() (err error) {
 		}
 	}
 
-	// wait for all listener to quit.
+	// wait for all listener internal goroutines to quit.
 	v.wait.Wait()
 
 	// clear the closing signal.
