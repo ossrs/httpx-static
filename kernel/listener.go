@@ -40,7 +40,7 @@ var ListenerDisposed error = fmt.Errorf("listener disposed")
 
 // The tcp listeners which support reload.
 // @remark don't reuse this listener, user must new when close it.
-//	listener will return ListenerDisposed when reuse a disposed listener.
+//	listener will return error ListenerDisposed when reuse a disposed listener.
 type TcpListeners struct {
 	// The config and listener objects.
 	addrs     []string
@@ -83,7 +83,7 @@ func NewTcpListeners(addrs []string) (v *TcpListeners, err error) {
 	return
 }
 
-// @remark ListenerDisposed when listener is disposed.
+// @remark error ListenerDisposed when listener is disposed.
 func (v *TcpListeners) ListenTCP() (err error) {
 	if err = func() error {
 		v.reuseLock.Lock()
@@ -186,7 +186,7 @@ func (v *TcpListeners) acceptFrom(ctx ol.Context, l *net.TCPListener) (err error
 	return
 }
 
-// @remark ListenerDisposed when listener is disposed.
+// @remark error ListenerDisposed when listener is disposed.
 func (v *TcpListeners) AcceptTCP() (c *net.TCPConn, err error) {
 	if err = func() error {
 		v.reuseLock.Lock()
@@ -215,7 +215,7 @@ func (v *TcpListeners) AcceptTCP() (c *net.TCPConn, err error) {
 }
 
 // io.Closer
-// @remark ListenerDisposed when listener is disposed.
+// @remark error ListenerDisposed when listener is disposed.
 func (v *TcpListeners) Close() (err error) {
 	if err = func() error {
 		v.reuseLock.Lock()
