@@ -4,5 +4,13 @@
         "tank": "console",
         // The log file path, only for tank file.
         "file": "./rtmplb.log"
+    },
+    "rtmp": {
+        // The listen tcp4 or tcp6 addrs for rtmp load-balance proxy,
+        // for example, tcp://:1935, tcp://0.0.0.0:1935, tcp4://:1935, tcp6://:1935
+        "listens": ["tcp://:19350"],
+        // The backend rtmp server tcp4 or tcp6 addrs, for example,
+        // tcp://127.0.0.1:1936, tcp4://127.0.0.1:1936
+        "backends": ["tcp://127.0.0.1:1936"]
     }
 }

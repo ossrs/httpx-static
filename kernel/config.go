@@ -47,10 +47,10 @@ func (v *Config) String() string {
 	if v.Logger.Tank == "console" {
 		logger = v.Logger.Tank
 	} else {
-		logger = fmt.Sprintf("%v,%v", v.Logger.Tank, v.Logger.FilePath)
+		logger = fmt.Sprintf("tank=%v,file=%v", v.Logger.Tank, v.Logger.FilePath)
 	}
 
-	return fmt.Sprintf("logger(%v)", logger)
+	return fmt.Sprintf("logger(tank=%v)", logger)
 }
 
 // The interface io.Closer

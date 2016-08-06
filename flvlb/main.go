@@ -44,6 +44,10 @@ type FlvLbConfig struct {
 	kernel.Config
 }
 
+func (v *FlvLbConfig) String() string {
+	return fmt.Sprintf("%v", &v.Config)
+}
+
 func (v *FlvLbConfig) Loads(c string) (err error) {
 	var f *os.File
 	if f, err = os.Open(c); err != nil {
