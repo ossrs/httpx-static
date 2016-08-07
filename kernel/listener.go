@@ -115,31 +115,32 @@ func (v *TcpListeners) ListenTCP() (err error) {
 		}
 	}
 
-	if len(v.listeners) > 0 {
-		v.wait.Add(len(v.listeners))
-	}
-
 	for i, l := range v.listeners {
-		addr := v.addrs[i]
-		go func(l *net.TCPListener, addr string) {
-			defer v.wait.Done()
-
-			ctx := &Context{}
-			for {
-				if err := v.acceptFrom(ctx, l); err != nil {
-					if err != ListenerDisposed {
-						ol.W(ctx, "listener:", addr, "quit, err is", err)
-					}
-					return
-				}
-			}
-		}(l, addr)
+		go v.acceptFrom(l, v.addrs[i])
 	}
 
 	return
 }
 
-func (v *TcpListeners) acceptFrom(ctx ol.Context, l *net.TCPListener) (err error) {
+func (v *TcpListeners) acceptFrom(l *net.TCPListener, addr string) {
+	v.wait.Add(1)
+	defer v.wait.Done()
+
+	ctx := &Context{}
+
+	for {
+		if err := v.doAcceptFrom(ctx, l); err != nil {
+			if err != ListenerDisposed {
+				ol.W(ctx, "listener:", addr, "quit, err is", err)
+			}
+			return
+		}
+	}
+
+	return
+}
+
+func (v *TcpListeners) doAcceptFrom(ctx ol.Context, l *net.TCPListener) (err error) {
 	defer func() {
 		if err != nil && err != ListenerDisposed {
 			select {
