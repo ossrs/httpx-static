@@ -56,6 +56,8 @@ type TcpListeners struct {
 	reuseLock *sync.Mutex
 }
 
+// Listen at addrs format as netowrk://laddr, for example,
+// tcp://:1935, tcp4://:1935, tcp6://1935, tcp://0.0.0.0:1935
 func NewTcpListeners(addrs []string) (v *TcpListeners, err error) {
 	if len(addrs) == 0 {
 		return nil, fmt.Errorf("no listens")

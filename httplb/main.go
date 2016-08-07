@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 /*
- This the main entrance of flvlb, load-balance for flv streaming.
+ This the main entrance of httplb, load-balance for flv/hls+ streaming.
 */
 package main
 
