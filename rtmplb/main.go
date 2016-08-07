@@ -57,19 +57,19 @@ func (v *RtmpLbConfig) String() string {
 func (v *RtmpLbConfig) Loads(c string) (err error) {
 	var f *os.File
 	if f, err = os.Open(c); err != nil {
-		fmt.Println("Open config failed, err is", err)
+		ol.E(nil, "Open config failed, err is", err)
 		return
 	}
 	defer f.Close()
 
 	r := json.NewDecoder(oj.NewJsonPlusReader(f))
 	if err = r.Decode(v); err != nil {
-		fmt.Println("Decode config failed, err is", err)
+		ol.E(nil, "Decode config failed, err is", err)
 		return
 	}
 
 	if err = v.Config.OpenLogger(); err != nil {
-		fmt.Println("Open logger failed, err is", err)
+		ol.E(nil, "Open logger failed, err is", err)
 		return
 	}
 
@@ -89,7 +89,7 @@ func main() {
 
 	conf := &RtmpLbConfig{}
 	if err = conf.Loads(confFile); err != nil {
-		fmt.Println("Loads config failed, err is", err)
+		ol.E(nil, "Loads config failed, err is", err)
 		return
 	}
 	defer conf.Close()
@@ -128,8 +128,30 @@ func main() {
 		_ = c
 	}
 
+	go func() {
+		f := func() {
+			var f *os.File
+			if f, err = os.OpenFile("test.id", os.O_WRONLY|os.O_CREATE, 0644); err != nil {
+				ol.E(nil, "open id failed, err is", err)
+				return
+			}
+			defer f.Close()
+
+			ol.T(nil, "write id ok")
+			f.Write([]byte(fmt.Sprintf("%v", time.Now().String())))
+		}
+		for {
+			f()
+			time.Sleep(time.Duration(3) * time.Second)
+		}
+
+	}()
+
+	for {
+		ol.E(ctx, "process ok")
+		time.Sleep(time.Duration(3) * time.Microsecond)
+	}
 	ol.T(ctx, "serve ok")
-	time.Sleep(time.Duration(1) * time.Hour)
 
 	return
 }

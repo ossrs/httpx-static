@@ -4,5 +4,13 @@
         "tank": "console",
         // The log file path, only for tank file.
         "file": "./shell.log"
+    },
+    "rtmplb": {
+        // Wheter enable the rtmplb.
+        "enabled": true,
+        // The binary of rtmplb.
+        "binary": "../rtmplb/rtmplb",
+        // The config file for rtmplb.
+        "config": "../conf/rtmplb.json"
     }
 }

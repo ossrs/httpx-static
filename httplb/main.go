@@ -51,19 +51,19 @@ func (v *HttpLbConfig) String() string {
 func (v *HttpLbConfig) Loads(c string) (err error) {
 	var f *os.File
 	if f, err = os.Open(c); err != nil {
-		fmt.Println("Open config failed, err is", err)
+		ol.E(nil, "Open config failed, err is", err)
 		return
 	}
 	defer f.Close()
 
 	r := json.NewDecoder(oj.NewJsonPlusReader(f))
 	if err = r.Decode(v); err != nil {
-		fmt.Println("Decode config failed, err is", err)
+		ol.E(nil, "Decode config failed, err is", err)
 		return
 	}
 
 	if err = v.Config.OpenLogger(); err != nil {
-		fmt.Println("Open logger failed, err is", err)
+		ol.E(nil, "Open logger failed, err is", err)
 		return
 	}
 
@@ -77,7 +77,7 @@ func main() {
 
 	conf := &HttpLbConfig{}
 	if err = conf.Loads(confFile); err != nil {
-		fmt.Println("Loads config failed, err is", err)
+		ol.E(nil, "Loads config failed, err is", err)
 		return
 	}
 	defer conf.Close()
