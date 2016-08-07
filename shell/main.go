@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 /*
- This the main entrance of httplb, load-balance for flv/hls+ streaming.
+ This the main entrance of shell, to start other processes.
 */
 package main
 
@@ -31,24 +31,23 @@ import (
 	"encoding/json"
 	"fmt"
 	oj "github.com/ossrs/go-oryx-lib/json"
-	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/kernel"
 	"os"
 )
 
-var signature = fmt.Sprintf("FLVLB/%v", kernel.Version())
+var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
 
-// The config object for httplb module.
-type HttpLbConfig struct {
+// The config object for shell module.
+type ShellConfig struct {
 	kernel.Config
 }
 
-func (v *HttpLbConfig) String() string {
+func (v *ShellConfig) String() string {
 	return fmt.Sprintf("%v", &v.Config)
 }
 
-func (v *HttpLbConfig) Loads(c string) (err error) {
+func (v *ShellConfig) Loads(c string) (err error) {
 	var f *os.File
 	if f, err = os.Open(c); err != nil {
 		fmt.Println("Open config failed, err is", err)
@@ -72,18 +71,15 @@ func (v *HttpLbConfig) Loads(c string) (err error) {
 
 func main() {
 	var err error
-	confFile := oo.ParseArgv("conf/httplb.json", kernel.Version(), signature)
-	fmt.Println("FLVLB is the load-balance for http flv/hls+ streaming, config is", confFile)
+	confFile := oo.ParseArgv("conf/shell.json", kernel.Version(), signature)
+	fmt.Println("SHELL is the process forker, config is", confFile)
 
-	conf := &HttpLbConfig{}
+	conf := &ShellConfig{}
 	if err = conf.Loads(confFile); err != nil {
 		fmt.Println("Loads config failed, err is", err)
 		return
 	}
 	defer conf.Close()
-
-	ctx := &kernel.Context{}
-	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
 
 	return
 }

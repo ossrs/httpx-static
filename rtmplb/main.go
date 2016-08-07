@@ -84,7 +84,7 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 
 func main() {
 	var err error
-	confFile := oo.ParseArgv("conf/rtmp.lb.json", kernel.Version(), signature)
+	confFile := oo.ParseArgv("conf/rtmplb.json", kernel.Version(), signature)
 	fmt.Println("RTMPLB is the load-balance for rtmp streaming, config is", confFile)
 
 	conf := &RtmpLbConfig{}
