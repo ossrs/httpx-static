@@ -20,5 +20,36 @@
         "binary": "../httplb/httplb",
         // The config file for httplb.
         "config": "../conf/httplb.json"
+    },
+    "worker": {
+        // Wether enable the stream worker.
+        "enabled": true,
+        // The worker provider, can be bellow:
+        //      srs, simple rtmp server stream provider.
+        "provider": "srs",
+        // The binary of stream worker.
+        "binary": "./srs",
+        // The config file template for srs.
+        "config": "../conf/srs.conf",
+        // The work dir for stream worker.
+        // @remark shell will build config file to work dir.
+        "work_dir": "./objs/workers",
+        // The ports we can used for worker.
+        "ports": { "start": 50000, "stop": 60000 },
+        // Service specified config
+        "service": {
+            // The binary of big for bms.
+            "big_binary": "./big_api",
+            // The variables to replace the config template to build config file.
+            "variables": {
+                "rtmp_port": "${rtmp}",
+                "api_port": "${api}",
+                "http_port": "${http}",
+                "big_port": "${big}",
+                "big_binary": "${big_binary}",
+                "pid_file": "${pid}",
+                "work_dir": "${cwd}"
+            }
+        }
     }
 }

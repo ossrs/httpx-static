@@ -36,10 +36,32 @@ import (
 	"github.com/ossrs/go-oryx/kernel"
 	"os"
 	"os/exec"
+	"reflect"
 	"sync"
 )
 
 var signature = fmt.Sprintf("SHELL/%v", kernel.Version())
+
+// The service provider.
+type ServiceProvider string
+
+func (v ServiceProvider) IsSrs() bool {
+	return v == "srs"
+}
+
+// Service SRS specified config.
+type SrsServiceConfig struct {
+	BigBinary string `json:"big_binary"`
+	Variables struct {
+		RtmpPort  string `json:"rtmp_port"`
+		ApiPort   string `json:"api_port"`
+		HttpPort  string `json:"http_port"`
+		BigPort   string `json:"big_port"`
+		BigBinary string `json:"big_binary"`
+		PidFile   string `json:"pid_file"`
+		WorkDir   string `json:"work_dir"`
+	} `json:"variables"`
+}
 
 // The config object for shell module.
 type ShellConfig struct {
@@ -48,14 +70,24 @@ type ShellConfig struct {
 		Enabled bool   `json:"enabled"`
 		Binary  string `json:"binary"`
 		Config  string `json:"config"`
-		// The binary to exec.
-		binary string
 	} `json:"rtmplb"`
 	Httplb struct {
 		Enabled bool   `json:"enabled"`
 		Binary  string `json:"binary"`
 		Config  string `json:"config"`
 	} `json:"httplb"`
+	Worker struct {
+		Enabled  bool            `json:"enabled"`
+		Provider ServiceProvider `json:"provider"`
+		Binary   string          `json:"binary"`
+		Config   string          `json:"config"`
+		WorkDir  string          `json:"work_dir"`
+		Ports    struct {
+			Start int `json:"start"`
+			Stop  int `json:"stop"`
+		} `json:"ports"`
+		Service interface{} `json:"service"`
+	} `json:"worker"`
 }
 
 func (v *ShellConfig) String() string {
@@ -63,18 +95,53 @@ func (v *ShellConfig) String() string {
 	return fmt.Sprintf("%v rtmplb(enabled=%v,binary=%v,config=%v)", &v.Config, r.Enabled, r.Binary, r.Config)
 }
 
+func (v *ShellConfig) SrsConfig() (c *SrsServiceConfig, err error) {
+	r := v.Worker.Service
+
+	if r, ok := r.(*SrsServiceConfig); !ok {
+		return nil, fmt.Errorf("Config is not srs service, actual is %v", reflect.TypeOf(r))
+	} else {
+		return r, nil
+	}
+
+	return
+}
+
 func (v *ShellConfig) Loads(c string) (err error) {
-	var f *os.File
-	if f, err = os.Open(c); err != nil {
-		ol.E(nil, "Open config failed, err is", err)
+	f := func(c string) (err error) {
+		var f *os.File
+		if f, err = os.Open(c); err != nil {
+			ol.E(nil, "Open config failed, err is", err)
+			return
+		}
+		defer f.Close()
+
+		r := json.NewDecoder(oj.NewJsonPlusReader(f))
+		if err = r.Decode(v); err != nil {
+			ol.E(nil, "Decode config failed, err is", err)
+			return
+		}
+
 		return
 	}
-	defer f.Close()
 
-	r := json.NewDecoder(oj.NewJsonPlusReader(f))
-	if err = r.Decode(v); err != nil {
-		ol.E(nil, "Decode config failed, err is", err)
+	// Parse basic config and provider.
+	if err = f(c); err != nil {
 		return
+	}
+
+	if v.Worker.Enabled {
+		if !v.Worker.Provider.IsSrs() {
+			return fmt.Errorf("Provider(%v) must be srs", string(v.Worker.Provider))
+		}
+
+		// Parse srs provider again.
+		if v.Worker.Provider.IsSrs() {
+			v.Worker.Service = &SrsServiceConfig{}
+			if err = f(c); err != nil {
+				return
+			}
+		}
 	}
 
 	if err = v.Config.OpenLogger(); err != nil {
@@ -86,7 +153,7 @@ func (v *ShellConfig) Loads(c string) (err error) {
 		if len(r.Binary) == 0 {
 			return fmt.Errorf("Empty rtmplb binary")
 		}
-		if r.binary, err = exec.LookPath(r.Binary); err != nil {
+		if _, err = exec.LookPath(r.Binary); err != nil {
 			ol.E(nil, fmt.Sprintf("Invalid rtmplb binary=%v, err is %v", r.Binary, err))
 			return
 		}
@@ -95,17 +162,74 @@ func (v *ShellConfig) Loads(c string) (err error) {
 			return
 		}
 	}
+
 	if r := &v.Httplb; r.Enabled {
 		if len(r.Binary) == 0 {
 			return fmt.Errorf("Empty httplb binary")
 		}
-		if r.Binary, err = exec.LookPath(r.Binary); err != nil {
+		if _, err = exec.LookPath(r.Binary); err != nil {
 			ol.E(nil, fmt.Sprintf("Invalid httplb binary=%v, err is %v", r.Binary, err))
 			return
 		}
 		if _, err = os.Lstat(r.Config); err != nil {
 			ol.E(nil, fmt.Sprintf("Invalid httplb config=%v, err is %v", r.Config, err))
 			return
+		}
+	}
+
+	if r := &v.Worker; r.Enabled {
+		if len(r.Binary) == 0 {
+			return fmt.Errorf("Empty worker binary")
+		}
+		if _, err = exec.LookPath(r.Binary); err != nil {
+			ol.E(nil, fmt.Sprintf("Invalid worker binary=%v, err is %v", r.Binary, err))
+			return
+		}
+		if _, err = os.Lstat(r.Config); err != nil {
+			ol.E(nil, fmt.Sprintf("Invalid worker config=%v, err is %v", r.Config, err))
+			return
+		}
+
+		if fi, err := os.Lstat(r.WorkDir); err != nil {
+			if !os.IsNotExist(err) {
+				ol.E(nil, fmt.Sprintf("Invalid worker dir=%v, err is %v", r.WorkDir, err))
+				return err
+			} else if err = os.MkdirAll(r.WorkDir, 0755); err != nil {
+				ol.E(nil, fmt.Sprintf("Create worker dir=%v failed, err is %v", r.WorkDir, err))
+				return err
+			}
+		} else if !fi.IsDir() {
+			return fmt.Errorf("Work dir=%v is not dir", r.WorkDir)
+		}
+
+		if r.Ports.Start <= 0 || r.Ports.Stop <= 0 {
+			return fmt.Errorf("Ports zone [%v, %v] invalid", r.Ports.Start, r.Ports.Stop)
+		}
+		if r.Ports.Start >= r.Ports.Stop {
+			return fmt.Errorf("Ports zone start=%v should greater than stop=%v", r.Ports.Start, r.Ports.Stop)
+		}
+
+		if r.Provider.IsSrs() {
+			if s, err := v.SrsConfig(); err != nil {
+				ol.E(nil, "Service srs config invalid, err is", err)
+				return err
+			} else if len(s.BigBinary) == 0 {
+				return fmt.Errorf("Empty big binary")
+			} else if len(s.Variables.BigBinary) == 0 {
+				return fmt.Errorf("Empty variable big binary")
+			} else if len(s.Variables.ApiPort) == 0 {
+				return fmt.Errorf("Empty variable api port")
+			} else if len(s.Variables.BigPort) == 0 {
+				return fmt.Errorf("Empty variable big port")
+			} else if len(s.Variables.HttpPort) == 0 {
+				return fmt.Errorf("Empty variable http port")
+			} else if len(s.Variables.PidFile) == 0 {
+				return fmt.Errorf("Empty variable pid file")
+			} else if len(s.Variables.RtmpPort) == 0 {
+				return fmt.Errorf("Empty variable rtmp port")
+			} else if len(s.Variables.WorkDir) == 0 {
+				return fmt.Errorf("Empty variable work dir")
+			}
 		}
 	}
 
@@ -184,7 +308,7 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 	ctx := v.ctx
 
 	if r := &v.conf.Rtmplb; r.Enabled {
-		v.rtmplb = exec.Command(r.binary, "-c", r.Config)
+		v.rtmplb = exec.Command(r.Binary, "-c", r.Config)
 		if err = v.rtmplb.Start(); err != nil {
 			ol.E(ctx, "Shell: exec rtmplb failed, err is", err)
 			return
