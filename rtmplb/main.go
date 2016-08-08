@@ -36,7 +36,6 @@ import (
 	"github.com/ossrs/go-oryx/kernel"
 	"net"
 	"os"
-	"time"
 )
 
 var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
@@ -109,13 +108,6 @@ func main() {
 		return
 	}
 
-	// serve clients.
-	go func() {
-		time.Sleep(time.Duration(3) * time.Second)
-		ol.T(ctx, "close listener")
-		listener.Close()
-	}()
-
 	for {
 		var c *net.TCPConn
 		if c, err = listener.AcceptTCP(); err != nil {
@@ -125,33 +117,9 @@ func main() {
 			break
 		}
 
-		_ = c
+		c.Close()
 	}
 
-	go func() {
-		f := func() {
-			var f *os.File
-			if f, err = os.OpenFile("test.id", os.O_WRONLY|os.O_CREATE, 0644); err != nil {
-				ol.E(nil, "open id failed, err is", err)
-				return
-			}
-			defer f.Close()
-
-			ol.T(nil, "write id ok")
-			f.Write([]byte(fmt.Sprintf("%v", time.Now().String())))
-		}
-		for {
-			f()
-			time.Sleep(time.Duration(3) * time.Second)
-		}
-
-	}()
-
-	for {
-		ol.E(ctx, "process ok")
-		time.Sleep(time.Duration(3) * time.Microsecond)
-	}
 	ol.T(ctx, "serve ok")
-
 	return
 }

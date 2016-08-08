@@ -38,7 +38,7 @@ import (
 	"os/exec"
 )
 
-var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
+var signature = fmt.Sprintf("SHELL/%v", kernel.Version())
 
 // The config object for shell module.
 type ShellConfig struct {

@@ -35,9 +35,10 @@ import (
 	oo "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/kernel"
 	"os"
+	"time"
 )
 
-var signature = fmt.Sprintf("FLVLB/%v", kernel.Version())
+var signature = fmt.Sprintf("HTTPLB/%v", kernel.Version())
 
 // The config object for httplb module.
 type HttpLbConfig struct {
@@ -73,7 +74,7 @@ func (v *HttpLbConfig) Loads(c string) (err error) {
 func main() {
 	var err error
 	confFile := oo.ParseArgv("conf/httplb.json", kernel.Version(), signature)
-	fmt.Println("FLVLB is the load-balance for http flv/hls+ streaming, config is", confFile)
+	fmt.Println("HTTPLB is the load-balance for http flv/hls+ streaming, config is", confFile)
 
 	conf := &HttpLbConfig{}
 	if err = conf.Loads(confFile); err != nil {
@@ -84,6 +85,8 @@ func main() {
 
 	ctx := &kernel.Context{}
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
+
+	time.Sleep(time.Duration(1) * time.Hour)
 
 	return
 }
