@@ -6,11 +6,19 @@
         "file": "./shell.log"
     },
     "rtmplb": {
-        // Wheter enable the rtmplb.
+        // Wether enable the rtmplb.
         "enabled": true,
         // The binary of rtmplb.
         "binary": "../rtmplb/rtmplb",
         // The config file for rtmplb.
         "config": "../conf/rtmplb.json"
+    },
+    "httplb": {
+        // Wether enable the httplb.
+        "enabled": true,
+        // The binary of httplb.
+        "binary": "../httplb/httplb",
+        // The config file for httplb.
+        "config": "../conf/httplb.json"
     }
 }
