@@ -245,12 +245,11 @@ type ShellBoss struct {
 }
 
 func NewShellBoss(conf *ShellConfig) *ShellBoss {
-	v := &ShellBoss{
+	return &ShellBoss{
 		conf: conf,
 		ctx:  &kernel.Context{},
+		pool: kernel.NewProcessPool(),
 	}
-	v.pool = kernel.NewProcessPool(v.ctx)
-	return v
 }
 
 func (v *ShellBoss) Close() (err error) {

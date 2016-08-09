@@ -64,9 +64,9 @@ type ProcessPool struct {
 	closing chan bool
 }
 
-func NewProcessPool(ctx ol.Context) *ProcessPool {
+func NewProcessPool() *ProcessPool {
 	return &ProcessPool{
-		ctx:             ctx,
+		ctx:             &Context{},
 		wait:            &sync.WaitGroup{},
 		exitedProcesses: make(chan *ProcessDeadBody),
 		processLock:     &sync.Mutex{},
@@ -76,47 +76,8 @@ func NewProcessPool(ctx ol.Context) *ProcessPool {
 	}
 }
 
-// interface io.Closer
-func (v *ProcessPool) Close() (err error) {
-	ctx := v.ctx
-
-	// notify we are closing, process should drop any info and quit.
-	v.closing <- true
-
-	// when disposed, should never dispose again.
-	v.disposeLock.Lock()
-	defer v.disposeLock.Unlock()
-	if v.disposed {
-		return PoolDisposed
-	}
-	v.disposed = true
-
-	func() {
-		v.processLock.Lock()
-		defer v.processLock.Unlock()
-
-		// notify all alive processes to quit.
-		for pid, p := range v.processes {
-			if r0 := p.Process.Kill(); r0 != nil {
-				if err == nil {
-					err = r0
-				}
-				ol.E(ctx, fmt.Sprintf("kill process %v failed, r0 is %v, err is %v", pid, r0, err))
-			}
-		}
-	}()
-
-	// wait for all processes to quit.
-	v.wait.Wait()
-
-	// unblock the waiter.
-	// @remark we can close it because no process will write it.
-	close(v.exitedProcesses)
-
-	ol.T(ctx, "process pool closed")
-	return
-}
-
+// Start new process, user can start many processes.
+// @return error PoolDisposed when pool disposed.
 func (v *ProcessPool) Start(name string, arg ...string) (c *exec.Cmd, err error) {
 	ctx := v.ctx
 
@@ -175,6 +136,8 @@ func (v *ProcessPool) Start(name string, arg ...string) (c *exec.Cmd, err error)
 	return process, nil
 }
 
+// Wait for a dead process.
+// @return error PoolDisposed when pool disposed.
 func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
 	// when disposed, should never use it again.
 	v.disposeLock.Lock()
@@ -193,4 +156,46 @@ func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
 		v.closing <- c
 		return nil, PoolDisposed
 	}
+}
+
+// interface io.Closer
+// @return error PoolDisposed when pool disposed.
+func (v *ProcessPool) Close() (err error) {
+	ctx := v.ctx
+
+	// notify we are closing, process should drop any info and quit.
+	v.closing <- true
+
+	// when disposed, should never dispose again.
+	v.disposeLock.Lock()
+	defer v.disposeLock.Unlock()
+	if v.disposed {
+		return PoolDisposed
+	}
+	v.disposed = true
+
+	func() {
+		v.processLock.Lock()
+		defer v.processLock.Unlock()
+
+		// notify all alive processes to quit.
+		for pid, p := range v.processes {
+			if r0 := p.Process.Kill(); r0 != nil {
+				if err == nil {
+					err = r0
+				}
+				ol.E(ctx, fmt.Sprintf("kill process %v failed, r0 is %v, err is %v", pid, r0, err))
+			}
+		}
+	}()
+
+	// wait for all processes to quit.
+	v.wait.Wait()
+
+	// unblock the waiter.
+	// @remark we can close it because no process will write it.
+	close(v.exitedProcesses)
+
+	ol.T(ctx, "process pool closed")
+	return
 }
