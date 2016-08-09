@@ -134,22 +134,23 @@ func (v *ProcessPool) Start(name string, arg ...string) (c *exec.Cmd, err error)
 		ol.E(ctx, "start", name, arg, "failed, err is", err)
 		return
 	}
+	pid := process.Process.Pid
 
 	func() {
 		v.processLock.Lock()
 		defer v.processLock.Unlock()
 		v.wait.Add(1)
-		v.processes[process.Process.Pid] = process
+		v.processes[pid] = process
 	}()
 
 	// use goroutine to wait for process to quit.
-	go func(process *exec.Cmd) {
+	go func() {
 		var err error
 
 		defer func() {
 			v.processLock.Lock()
 			defer v.processLock.Unlock()
-			delete(v.processes, process.Process.Pid)
+			delete(v.processes, pid)
 			v.wait.Done()
 		}()
 
@@ -159,16 +160,17 @@ func (v *ProcessPool) Start(name string, arg ...string) (c *exec.Cmd, err error)
 			case v.exitedProcesses <- pdb:
 			case <-v.closing:
 				v.closing <- true
+				ol.I(ctx, fmt.Sprintf("drop info for process %v, err is %v", pid, err))
 			}
 		}()
 
 		if err = process.Wait(); err != nil {
 			if !v.disposed {
-				ol.E(ctx, "process", process.Process.Pid, "exited, err is", err)
+				ol.E(ctx, "process", pid, "exited, err is", err)
 			}
 			return
 		}
-	}(process)
+	}()
 
 	return process, nil
 }
