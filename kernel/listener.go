@@ -52,8 +52,8 @@ type TcpListeners struct {
 	// Used to notify all goroutines to quit.
 	closing chan bool
 	// Used to prevent reuse this object.
-	disposed  bool
-	reuseLock *sync.Mutex
+	disposed    bool
+	disposeLock *sync.Mutex
 }
 
 // Listen at addrs format as netowrk://laddr, for example,
@@ -73,12 +73,12 @@ func NewTcpListeners(addrs []string) (v *TcpListeners, err error) {
 	}
 
 	v = &TcpListeners{
-		addrs:     addrs,
-		conns:     make(chan *net.TCPConn),
-		errors:    make(chan error),
-		wait:      &sync.WaitGroup{},
-		closing:   make(chan bool, 1),
-		reuseLock: &sync.Mutex{},
+		addrs:       addrs,
+		conns:       make(chan *net.TCPConn),
+		errors:      make(chan error),
+		wait:        &sync.WaitGroup{},
+		closing:     make(chan bool, 1),
+		disposeLock: &sync.Mutex{},
 	}
 
 	return
@@ -86,17 +86,11 @@ func NewTcpListeners(addrs []string) (v *TcpListeners, err error) {
 
 // @remark error ListenerDisposed when listener is disposed.
 func (v *TcpListeners) ListenTCP() (err error) {
-	if err = func() error {
-		v.reuseLock.Lock()
-		defer v.reuseLock.Unlock()
-
-		// user should never listen on a disposed listener
-		if v.disposed {
-			return ListenerDisposed
-		}
-		return nil
-	}(); err != nil {
-		return
+	// user should never listen on a disposed listener
+	v.disposeLock.Lock()
+	defer v.disposeLock.Unlock()
+	if v.disposed {
+		return ListenerDisposed
 	}
 
 	for _, addr := range v.addrs {
@@ -194,23 +188,20 @@ func (v *TcpListeners) doAcceptFrom(ctx ol.Context, l *net.TCPListener) (err err
 
 // @remark error ListenerDisposed when listener is disposed.
 func (v *TcpListeners) AcceptTCP() (c *net.TCPConn, err error) {
-	if err = func() error {
-		v.reuseLock.Lock()
-		defer v.reuseLock.Unlock()
-
-		// user should never use a disposed listener.
-		if v.disposed {
-			return ListenerDisposed
-		}
-		return nil
-	}(); err != nil {
-		return nil, err
+	// user should close a disposed listener.
+	v.disposeLock.Lock()
+	defer v.disposeLock.Unlock()
+	if v.disposed {
+		return nil, ListenerDisposed
 	}
 
 	var ok bool
 	select {
 	case c, ok = <-v.conns:
 	case err, ok = <-v.errors:
+	case c := <-v.closing:
+		v.closing <- c
+		return nil, ListenerDisposed
 	}
 
 	// when chan closed, the listener is disposed.
@@ -223,24 +214,20 @@ func (v *TcpListeners) AcceptTCP() (c *net.TCPConn, err error) {
 // io.Closer
 // @remark error ListenerDisposed when listener is disposed.
 func (v *TcpListeners) Close() (err error) {
-	if err = func() error {
-		v.reuseLock.Lock()
-		defer v.reuseLock.Unlock()
-
-		// user should close a disposed listener.
-		if v.disposed {
-			return ListenerDisposed
-		}
-
-		// set to disposed to prevent reuse this object.
-		v.disposed = true
-		return nil
-	}(); err != nil {
-		return
+	// unblock all listener and user goroutines
+	select {
+	case v.closing <- true:
+	default:
 	}
 
-	// unblock all listener internal goroutines
-	v.closing <- true
+	// user should close a disposed listener.
+	v.disposeLock.Lock()
+	defer v.disposeLock.Unlock()
+	if v.disposed {
+		return ListenerDisposed
+	}
+	// set to disposed to prevent reuse this object.
+	v.disposed = true
 
 	// interrupt all listeners.
 	for _, v := range v.listeners {
@@ -251,9 +238,6 @@ func (v *TcpListeners) Close() (err error) {
 
 	// wait for all listener internal goroutines to quit.
 	v.wait.Wait()
-
-	// clear the closing signal.
-	_ = <-v.closing
 
 	// close channels to unblock the user goroutine to AcceptTCP()
 	close(v.conns)

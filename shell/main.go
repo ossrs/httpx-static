@@ -37,7 +37,6 @@ import (
 	"os"
 	"os/exec"
 	"reflect"
-	"sync"
 )
 
 var signature = fmt.Sprintf("SHELL/%v", kernel.Version())
@@ -236,154 +235,68 @@ func (v *ShellConfig) Loads(c string) (err error) {
 	return
 }
 
-// The process type.
-type ProcessType int
-
-const (
-	ProcessRtmpLb ProcessType = 100 + iota
-	ProcessHttpLb
-)
-
-func (v ProcessType) String() string {
-	switch v {
-	case ProcessRtmpLb:
-		return "rtmplb"
-	case ProcessHttpLb:
-		return "httplb"
-	default:
-		return "other"
-	}
-}
-
 // The shell to exec all processes.
 type ShellBoss struct {
 	conf   *ShellConfig
 	rtmplb *exec.Cmd
 	httplb *exec.Cmd
 	ctx    ol.Context
-	q      chan ProcessType
-	wait   *sync.WaitGroup
+	pool   *kernel.ProcessPool
 }
 
 func NewShellBoss(conf *ShellConfig) *ShellBoss {
-	return &ShellBoss{
+	v := &ShellBoss{
 		conf: conf,
 		ctx:  &kernel.Context{},
-		q:    make(chan ProcessType, 2),
-		wait: &sync.WaitGroup{},
 	}
+	v.pool = kernel.NewProcessPool(v.ctx)
+	return v
 }
 
 func (v *ShellBoss) Close() (err error) {
-	ctx := v.ctx
-
-	// only kill process, for we use isolate goroutine to wait them.
-	if r := v.rtmplb.ProcessState; v.conf.Rtmplb.Enabled && (r == nil || !r.Exited()) {
-		var r0 error
-
-		if r0 = v.rtmplb.Process.Kill(); err == nil {
-			err = r0
-		}
-
-		ol.W(ctx, fmt.Sprintf("Shell: rtmplb killed, r0=%v, err is %v", r0, err))
-	}
-
-	if r := v.httplb.ProcessState; v.conf.Httplb.Enabled && (r == nil || !r.Exited()) {
-		var r0 error
-
-		if r0 = v.httplb.Process.Kill(); err == nil {
-			err = r0
-		}
-
-		ol.W(ctx, fmt.Sprintf("Shell: httplb killed, r0=%v, err is %v", r0, err))
-	}
-
-	// wait for all process to quit.
-	v.wait.Wait()
-
-	return
+	return v.pool.Close()
 }
 
 func (v *ShellBoss) ExecBuddies() (err error) {
 	ctx := v.ctx
 
 	if r := &v.conf.Rtmplb; r.Enabled {
-		v.rtmplb = exec.Command(r.Binary, "-c", r.Config)
-		if err = v.rtmplb.Start(); err != nil {
+		if v.rtmplb, err = v.pool.Start(r.Binary, "-c", r.Config); err != nil {
 			ol.E(ctx, "Shell: exec rtmplb failed, err is", err)
 			return
 		}
-		v.wait.Add(1)
-
 		p := v.rtmplb
 		ol.T(ctx, fmt.Sprintf("Shell: exec rtmplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
 	if r := &v.conf.Httplb; r.Enabled {
-		v.httplb = exec.Command(r.Binary, "-c", r.Config)
-		if err = v.httplb.Start(); err != nil {
+		if v.httplb, err = v.pool.Start(r.Binary, "-c", r.Config); err != nil {
 			ol.E(ctx, "Shell: exec httplb failed, err is", err)
 			return
 		}
-		v.wait.Add(1)
-
 		p := v.httplb
 		ol.T(ctx, fmt.Sprintf("Shell: exec httplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
-	go func() {
-		defer v.wait.Done()
-		defer func() {
-			v.q <- ProcessRtmpLb
-		}()
-
-		ctx := v.ctx
-
-		if !v.conf.Rtmplb.Enabled {
-			return
-		}
-
-		if err = v.rtmplb.Wait(); err != nil {
-			ol.E(ctx, "Shell: rtmplb failed, err is", err)
-			return
-		}
-
-		err = fmt.Errorf("rtmplb exited")
-		ol.E(ctx, fmt.Sprintf("Shell: rtmplb exited, err is", err))
-	}()
-
-	go func() {
-		defer v.wait.Done()
-		defer func() {
-			v.q <- ProcessHttpLb
-		}()
-
-		ctx := v.ctx
-
-		if !v.conf.Httplb.Enabled {
-			return
-		}
-
-		if err = v.httplb.Wait(); err != nil {
-			ol.E(ctx, "Shell: httplb failed, err is", err)
-			return
-		}
-
-		err = fmt.Errorf("httplb exited")
-		ol.E(ctx, fmt.Sprintf("Shell: httplb exited, err is", err))
-	}()
 	return
 }
 
 func (v *ShellBoss) Wait() {
 	ctx := v.ctx
 
-	if v, ok := <-v.q; !ok {
-		return
-	} else if v == ProcessRtmpLb || v == ProcessHttpLb {
-		ol.W(ctx, "kernel process", v, "quit, shell quit.")
+	var err error
+	var process *exec.Cmd
+	if process, err = v.pool.Wait(); err != nil {
+		ol.W(ctx, "Shell: wait process failed, err is", err)
 		return
 	}
+
+	if process == v.rtmplb || process == v.httplb {
+		ol.W(ctx, "Shell: kernel process", process.Process.Pid, "quit, shell quit.")
+		return
+	}
+
+	return
 }
 
 func main() {
