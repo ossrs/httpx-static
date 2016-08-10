@@ -30,6 +30,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	oa "github.com/ossrs/go-oryx-lib/asprocess"
 	oj "github.com/ossrs/go-oryx-lib/json"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
@@ -85,6 +86,9 @@ func main() {
 
 	ctx := &kernel.Context{}
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
+
+	// httplb is asprocess of shell
+	oa.Watch(ctx, oa.CheckParentInterval, nil)
 
 	time.Sleep(time.Duration(1) * time.Hour)
 
