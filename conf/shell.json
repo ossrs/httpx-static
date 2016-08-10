@@ -38,7 +38,7 @@
         "ports": { "start": 50000, "stop": 60000 },
         // Service specified config
         "service": {
-            // The binary of big for bms.
+            // The binary of big for bms, ignore when empty.
             "big_binary": "./objs/big_api",
             // The variables to replace the config template to build config file.
             "variables": {

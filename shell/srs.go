@@ -152,7 +152,9 @@ func (v *SrsWorker) Exec() (err error) {
 	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
 
 	// build other variables
-	conf = strings.Replace(conf, s.Variables.BigBinary, s.BigBinary, -1)
+	if len(s.BigBinary) > 0 {
+		conf = strings.Replace(conf, s.Variables.BigBinary, s.BigBinary, -1)
+	}
 
 	v.workDir = path.Join(r.WorkDir, fmt.Sprintf("srs/%v", time.Now().Format("2006-01-02-15:04:05.000")))
 	if wd := path.Join(v.workDir, "objs/nginx/html"); true {
@@ -169,15 +171,15 @@ func (v *SrsWorker) Exec() (err error) {
 		ol.E(ctx, "getwd failed, err is", err)
 		return
 	}
-	if bin := s.BigBinary; !path.IsAbs(bin) {
-		from,to := path.Join(pwd, bin), path.Join(v.workDir, bin)
+	if bin := s.BigBinary; len(bin) > 0 && !path.IsAbs(bin) {
+		from, to := path.Join(pwd, bin), path.Join(v.workDir, bin)
 		if err = os.Symlink(from, to); err != nil {
 			ol.E(ctx, fmt.Sprintf("symlink %v=%v failed, err is %v", from, to, err))
 			return
 		}
 	}
 	if bin := r.Binary; !path.IsAbs(bin) {
-		from,to := path.Join(pwd, bin), path.Join(v.workDir, bin)
+		from, to := path.Join(pwd, bin), path.Join(v.workDir, bin)
 		if err = os.Symlink(from, to); err != nil {
 			ol.E(ctx, fmt.Sprintf("symlink %v=%v failed, err is %v", from, to, err))
 			return
