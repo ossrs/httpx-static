@@ -279,6 +279,10 @@ func NewShellBoss(conf *ShellConfig) *ShellBoss {
 }
 
 func (v *ShellBoss) Close() (err error) {
+	for _, w := range v.workers {
+		w.Close()
+	}
+
 	return v.pool.Close()
 }
 
@@ -335,6 +339,15 @@ func (v *ShellBoss) Cycle() {
 			return
 		}
 
+		// remove workers
+		for i, w := range v.workers {
+			if w.process == process {
+				w.Close()
+				v.workers = append(v.workers[:i], v.workers[i+1:]...)
+				break
+			}
+		}
+
 		// restart worker when terminated.
 		if err = v.execWorker(); err != nil {
 			ol.E(ctx, "Shell: restart worker failed, err is", err)
@@ -357,8 +370,8 @@ func (v *ShellBoss) execWorker() (err error) {
 		return
 	}
 
-	worker := NewSrsWorker(ctx, v, v.conf.SrsConfig())
-	if err = worker.Exec(v.ports); err != nil {
+	worker := NewSrsWorker(ctx, v, v.conf.SrsConfig(), v.ports)
+	if err = worker.Exec(); err != nil {
 		ol.E(ctx, "Shell: start srs worker failed, err is", err)
 		return
 	}

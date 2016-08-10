@@ -28,7 +28,14 @@ package main
 import (
 	"fmt"
 	ol "github.com/ossrs/go-oryx-lib/logger"
+	"io/ioutil"
+	"os"
 	"os/exec"
+	"path"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
 )
 
 // Service SRS specified config.
@@ -40,7 +47,6 @@ type SrsServiceConfig struct {
 		HttpPort  string `json:"http_port"`
 		BigPort   string `json:"big_port"`
 		BigBinary string `json:"big_binary"`
-		PidFile   string `json:"pid_file"`
 		WorkDir   string `json:"work_dir"`
 	} `json:"variables"`
 }
@@ -56,8 +62,6 @@ func (v *SrsServiceConfig) Check() (err error) {
 		return fmt.Errorf("Empty variable big port")
 	} else if len(v.Variables.HttpPort) == 0 {
 		return fmt.Errorf("Empty variable http port")
-	} else if len(v.Variables.PidFile) == 0 {
-		return fmt.Errorf("Empty variable pid file")
 	} else if len(v.Variables.RtmpPort) == 0 {
 		return fmt.Errorf("Empty variable rtmp port")
 	} else if len(v.Variables.WorkDir) == 0 {
@@ -73,19 +77,129 @@ type SrsWorker struct {
 	process *exec.Cmd
 	conf    *SrsServiceConfig
 	ctx     ol.Context
+	lock    *sync.Mutex
+	// the work dir for this process, a sub folder under config.
+	workDir string
+	// the config for this process, under workDir.
+	config string
+	// allocated ports(maybe not used).
+	ports []int
+	pool  *PortPool
+	// the used port.
+	rtmp int
+	http int
+	api  int
+	big  int
 }
 
-func NewSrsWorker(ctx ol.Context, shell *ShellBoss, conf *SrsServiceConfig) *SrsWorker {
-	v := &SrsWorker{ctx: ctx, shell: shell, conf: conf}
+func NewSrsWorker(ctx ol.Context, shell *ShellBoss, conf *SrsServiceConfig, ports *PortPool) *SrsWorker {
+	v := &SrsWorker{
+		ctx: ctx, shell: shell, conf: conf,
+		pool: ports, lock: &sync.Mutex{},
+	}
 	return v
 }
 
-func (v *SrsWorker) Exec(ports *PortPool) (err error) {
-	return
+func (v *SrsWorker) Close() error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	// free the ports.
+	for _, p := range v.ports {
+		v.pool.Free(p)
+	}
+	v.ports = nil
+
+	// TODO: FIXME: cleanup workdir.
+
+	return nil
+}
+
+func (v *SrsWorker) Exec() (err error) {
 	ctx := v.ctx
 	r := v.shell.conf.Worker
+	s := v.shell.conf.SrsConfig()
 
-	if v.process, err = v.shell.pool.Start(r.Binary, "-c", r.Config); err != nil {
+	// read config template from file to build the config for srs.
+	var configTemplate string
+	if f, err := os.Open(r.Config); err != nil {
+		ol.E(ctx, "open config", r.Config, "failed, err is", err)
+		return err
+	} else {
+		defer f.Close()
+		if b, err := ioutil.ReadAll(f); err != nil {
+			ol.E(ctx, "read config failed, err is", err)
+			return err
+		} else {
+			configTemplate = string(b)
+		}
+	}
+
+	// alloc all ports, althrough maybe not use it.
+	if ports, err := v.pool.Alloc(4); err != nil {
+		ol.E(ctx, "alloc ports failed, err is", err)
+		return err
+	} else {
+		v.ports = append(v.ports, ports...)
+		v.rtmp, v.http, v.api, v.big = ports[0], ports[1], ports[2], ports[3]
+	}
+
+	// build all port.
+	conf := configTemplate
+	conf = strings.Replace(conf, s.Variables.RtmpPort, strconv.Itoa(v.rtmp), -1)
+	conf = strings.Replace(conf, s.Variables.HttpPort, strconv.Itoa(v.http), -1)
+	conf = strings.Replace(conf, s.Variables.ApiPort, strconv.Itoa(v.api), -1)
+	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
+
+	// build other variables
+	conf = strings.Replace(conf, s.Variables.BigBinary, s.BigBinary, -1)
+
+	v.workDir = path.Join(r.WorkDir, fmt.Sprintf("srs/%v", time.Now().Format("2006-01-02-15:04:05.000")))
+	if wd := path.Join(v.workDir, "objs/nginx/html"); true {
+		if err = os.MkdirAll(wd, 0755); err != nil {
+			ol.E(ctx, "create srs dir", wd, "failed, err is", err)
+			return
+		}
+	}
+	conf = strings.Replace(conf, s.Variables.WorkDir, v.workDir, -1)
+
+	// symbol link all binaries to work dir.
+	var pwd string
+	if pwd, err = os.Getwd(); err != nil {
+		ol.E(ctx, "getwd failed, err is", err)
+		return
+	}
+	if bin := s.BigBinary; !path.IsAbs(bin) {
+		from,to := path.Join(pwd, bin), path.Join(v.workDir, bin)
+		if err = os.Symlink(from, to); err != nil {
+			ol.E(ctx, fmt.Sprintf("symlink %v=%v failed, err is %v", from, to, err))
+			return
+		}
+	}
+	if bin := r.Binary; !path.IsAbs(bin) {
+		from,to := path.Join(pwd, bin), path.Join(v.workDir, bin)
+		if err = os.Symlink(from, to); err != nil {
+			ol.E(ctx, fmt.Sprintf("symlink %v=%v failed, err is %v", from, to, err))
+			return
+		}
+	}
+
+	// write to config file.
+	v.config = path.Join(v.workDir, "srs.conf")
+	if f, err := os.Create(v.config); err != nil {
+		ol.E(ctx, "create config failed, err is", err)
+		return err
+	} else {
+		defer f.Close()
+		if _, err = f.WriteString(conf); err != nil {
+			ol.E(ctx, "write config failed, err is", err)
+			return err
+		}
+	}
+	ol.T(ctx, fmt.Sprintf("srs ports(rtmp=%v,http=%v,api=%v,big=%v), cwd=%v, config=%v",
+		v.rtmp, v.http, v.api, v.big, v.workDir, v.config))
+
+	if v.process, err = v.shell.pool.Start(r.Binary, "-c", v.config); err != nil {
 		ol.E(ctx, "exec worker failed, err is", err)
 		return
 	}

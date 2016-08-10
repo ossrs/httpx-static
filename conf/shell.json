@@ -28,7 +28,7 @@
         //      srs, simple rtmp server stream provider.
         "provider": "srs",
         // The binary of stream worker.
-        "binary": "./srs",
+        "binary": "./objs/srs",
         // The config file template for srs.
         "config": "../conf/srs.conf",
         // The work dir for stream worker.
@@ -39,7 +39,7 @@
         // Service specified config
         "service": {
             // The binary of big for bms.
-            "big_binary": "./big_api",
+            "big_binary": "./objs/big_api",
             // The variables to replace the config template to build config file.
             "variables": {
                 "rtmp_port": "${rtmp}",
@@ -47,7 +47,6 @@
                 "http_port": "${http}",
                 "big_port": "${big}",
                 "big_binary": "${big_binary}",
-                "pid_file": "${pid}",
                 "work_dir": "${cwd}"
             }
         }
