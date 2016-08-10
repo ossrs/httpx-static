@@ -164,7 +164,10 @@ func (v *ProcessPool) Close() (err error) {
 	ctx := v.ctx
 
 	// notify we are closing, process should drop any info and quit.
-	v.closing <- true
+	select {
+	case v.closing <- true:
+	default:
+	}
 
 	// when disposed, should never dispose again.
 	v.disposeLock.Lock()
@@ -198,4 +201,11 @@ func (v *ProcessPool) Close() (err error) {
 
 	ol.T(ctx, "process pool closed")
 	return
+}
+
+// whether current pool closed.
+func (v *ProcessPool) Closed() bool {
+	v.disposeLock.Lock()
+	defer v.disposeLock.Unlock()
+	return v.disposed
 }

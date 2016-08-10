@@ -36,7 +36,8 @@ import (
 	"github.com/ossrs/go-oryx/kernel"
 	"os"
 	"os/exec"
-	"reflect"
+	"os/signal"
+	"syscall"
 )
 
 var signature = fmt.Sprintf("SHELL/%v", kernel.Version())
@@ -46,20 +47,6 @@ type ServiceProvider string
 
 func (v ServiceProvider) IsSrs() bool {
 	return v == "srs"
-}
-
-// Service SRS specified config.
-type SrsServiceConfig struct {
-	BigBinary string `json:"big_binary"`
-	Variables struct {
-		RtmpPort  string `json:"rtmp_port"`
-		ApiPort   string `json:"api_port"`
-		HttpPort  string `json:"http_port"`
-		BigPort   string `json:"big_port"`
-		BigBinary string `json:"big_binary"`
-		PidFile   string `json:"pid_file"`
-		WorkDir   string `json:"work_dir"`
-	} `json:"variables"`
 }
 
 // The config object for shell module.
@@ -94,16 +81,19 @@ func (v *ShellConfig) String() string {
 	return fmt.Sprintf("%v rtmplb(enabled=%v,binary=%v,config=%v)", &v.Config, r.Enabled, r.Binary, r.Config)
 }
 
-func (v *ShellConfig) SrsConfig() (c *SrsServiceConfig, err error) {
+// nil if not srs config.
+func (v *ShellConfig) SrsConfig() *SrsServiceConfig {
 	r := v.Worker.Service
 
-	if r, ok := r.(*SrsServiceConfig); !ok {
-		return nil, fmt.Errorf("Config is not srs service, actual is %v", reflect.TypeOf(r))
-	} else {
-		return r, nil
+	if !v.Worker.Provider.IsSrs() {
+		return nil
 	}
 
-	return
+	if r, ok := r.(*SrsServiceConfig); !ok {
+		return nil
+	} else {
+		return r
+	}
 }
 
 func (v *ShellConfig) Loads(c string) (err error) {
@@ -208,26 +198,10 @@ func (v *ShellConfig) Loads(c string) (err error) {
 			return fmt.Errorf("Ports zone start=%v should greater than stop=%v", r.Ports.Start, r.Ports.Stop)
 		}
 
-		if r.Provider.IsSrs() {
-			if s, err := v.SrsConfig(); err != nil {
-				ol.E(nil, "Service srs config invalid, err is", err)
-				return err
-			} else if len(s.BigBinary) == 0 {
-				return fmt.Errorf("Empty big binary")
-			} else if len(s.Variables.BigBinary) == 0 {
-				return fmt.Errorf("Empty variable big binary")
-			} else if len(s.Variables.ApiPort) == 0 {
-				return fmt.Errorf("Empty variable api port")
-			} else if len(s.Variables.BigPort) == 0 {
-				return fmt.Errorf("Empty variable big port")
-			} else if len(s.Variables.HttpPort) == 0 {
-				return fmt.Errorf("Empty variable http port")
-			} else if len(s.Variables.PidFile) == 0 {
-				return fmt.Errorf("Empty variable pid file")
-			} else if len(s.Variables.RtmpPort) == 0 {
-				return fmt.Errorf("Empty variable rtmp port")
-			} else if len(s.Variables.WorkDir) == 0 {
-				return fmt.Errorf("Empty variable work dir")
+		if s := v.SrsConfig(); s != nil {
+			if err = s.Check(); err != nil {
+				ol.E(nil, "Check srs config failed, err is", err)
+				return
 			}
 		}
 	}
@@ -235,21 +209,73 @@ func (v *ShellConfig) Loads(c string) (err error) {
 	return
 }
 
+// The port pool manage available ports.
+type PortPool struct {
+	shell *ShellBoss
+	// alloc new port from ports, fill ports from left,
+	// release to ports when free port.
+	ports []int
+	left  []int
+}
+
+// alloc port in [start,stop]
+func NewPortPool(start, stop int) *PortPool {
+	v := &PortPool{}
+	for i := start; i <= stop; i++ {
+		if len(v.ports) < 64 {
+			v.ports = append(v.ports, i)
+		} else {
+			v.left = append(v.left, i)
+		}
+	}
+	return v
+}
+
+func (v *PortPool) Alloc(nbPort int) (ports []int, err error) {
+	if nbPort <= 0 {
+		return nil, fmt.Errorf("invalid ports %v", nbPort)
+	}
+	if len(v.ports)+len(v.left) < nbPort {
+		return nil, fmt.Errorf("no %v port available, left %v", nbPort, len(v.ports)+len(v.left))
+	}
+
+	if len(v.ports) < nbPort {
+		cp := nbPort - len(v.ports)
+		v.ports = append(v.ports, v.left[0:cp]...)
+		v.left = v.left[cp:]
+	}
+
+	ports = v.ports[0:nbPort]
+	v.ports = v.ports[nbPort:]
+	return
+}
+
+func (v *PortPool) Free(port int) {
+	v.ports = append(v.ports, port)
+}
+
 // The shell to exec all processes.
 type ShellBoss struct {
-	conf   *ShellConfig
-	rtmplb *exec.Cmd
-	httplb *exec.Cmd
-	ctx    ol.Context
-	pool   *kernel.ProcessPool
+	conf    *ShellConfig
+	rtmplb  *exec.Cmd
+	httplb  *exec.Cmd
+	ctx     ol.Context
+	pool    *kernel.ProcessPool
+	ports   *PortPool
+	workers []*SrsWorker
 }
 
 func NewShellBoss(conf *ShellConfig) *ShellBoss {
-	return &ShellBoss{
-		conf: conf,
-		ctx:  &kernel.Context{},
-		pool: kernel.NewProcessPool(),
+	v := &ShellBoss{
+		conf:    conf,
+		ctx:     &kernel.Context{},
+		pool:    kernel.NewProcessPool(),
+		workers: make([]*SrsWorker, 0),
 	}
+
+	c := &v.conf.Worker.Ports
+	v.ports = NewPortPool(c.Start, c.Stop)
+	return v
 }
 
 func (v *ShellBoss) Close() (err error) {
@@ -277,29 +303,74 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 		ol.T(ctx, fmt.Sprintf("Shell: exec httplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
+	if err = v.execWorker(); err != nil {
+		return
+	}
+
 	return
 }
 
-func (v *ShellBoss) Wait() {
+// Cycle all processes util quit.
+func (v *ShellBoss) Cycle() {
 	ctx := v.ctx
 
-	var err error
-	var process *exec.Cmd
-	if process, err = v.pool.Wait(); err != nil {
-		ol.W(ctx, "Shell: wait process failed, err is", err)
+	for {
+		var err error
+		var process *exec.Cmd
+		if process, err = v.pool.Wait(); err != nil {
+			ol.W(ctx, "Shell: wait process failed, err is", err)
+			return
+		}
+
+		// ignore events when pool closed
+		if v.pool.Closed() {
+			ol.E(ctx, "Shell: pool terminated")
+			return
+		}
+
+		// when kernel object exited, close pool
+		if process == v.rtmplb || process == v.httplb {
+			ol.E(ctx, "Shell: kernel process", process.Process.Pid, "quit, shell quit.")
+			v.pool.Close()
+			return
+		}
+
+		// restart worker when terminated.
+		if err = v.execWorker(); err != nil {
+			ol.E(ctx, "Shell: restart worker failed, err is", err)
+			return
+		}
+	}
+
+	return
+}
+
+func (v *ShellBoss) execWorker() (err error) {
+	ctx := v.ctx
+
+	r := &v.conf.Worker
+	if !r.Enabled {
 		return
 	}
 
-	if process == v.rtmplb || process == v.httplb {
-		ol.W(ctx, "Shell: kernel process", process.Process.Pid, "quit, shell quit.")
+	if !r.Provider.IsSrs() {
 		return
 	}
 
+	worker := NewSrsWorker(ctx, v, v.conf.SrsConfig())
+	if err = worker.Exec(v.ports); err != nil {
+		ol.E(ctx, "Shell: start srs worker failed, err is", err)
+		return
+	}
+
+	v.workers = append(v.workers, worker)
+	ol.T(ctx, "Shell: exec worker, total", len(v.workers))
 	return
 }
 
 func main() {
 	var err error
+
 	confFile := oo.ParseArgv("conf/shell.json", kernel.Version(), signature)
 	fmt.Println("SHELL is the process forker, config is", confFile)
 
@@ -314,13 +385,28 @@ func main() {
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
 
 	shell := NewShellBoss(conf)
-	if err = shell.ExecBuddies(); err != nil {
-		ol.E(ctx, "Shell exec buddies failed, err is", err)
-		return
+	f := func() {
+		c := make(chan os.Signal)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+		for s := range c {
+			ol.W(ctx, "Shell: got signal", s)
+			shell.Close()
+			return
+		}
+
 	}
-	defer shell.Close()
+	func() {
+		if err = shell.ExecBuddies(); err != nil {
+			ol.E(ctx, "Shell exec buddies failed, err is", err)
+			return
+		}
+		defer shell.Close()
 
-	shell.Wait()
+		go f()
 
+		shell.Cycle()
+	}()
+
+	ol.T(ctx, "Shell: terminated")
 	return
 }

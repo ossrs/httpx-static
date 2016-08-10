@@ -34,7 +34,7 @@
         // The work dir for stream worker.
         // @remark shell will build config file to work dir.
         "work_dir": "./objs/workers",
-        // The ports we can used for worker.
+        // The ports [start,stop] we can used for worker.
         "ports": { "start": 50000, "stop": 60000 },
         // Service specified config
         "service": {
