@@ -30,7 +30,7 @@
         // The binary of stream worker.
         "binary": "./objs/srs",
         // The config file template for srs.
-        "config": "../conf/srs.conf",
+        "config": "../conf/bms.conf",
         // The work dir for stream worker.
         // @remark shell will build config file to work dir.
         "work_dir": "./objs/workers",
