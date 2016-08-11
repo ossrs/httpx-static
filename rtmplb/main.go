@@ -36,13 +36,16 @@ import (
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/kernel"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
@@ -90,6 +93,167 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 	return
 }
 
+type proxy struct {
+	conf       *RtmpLbConfig
+	ctx        ol.Context
+	ports      []int
+	activePort int
+}
+
+func NewProxy(conf *RtmpLbConfig) *proxy {
+	return &proxy{conf: conf, ctx: &kernel.Context{}}
+}
+
+const (
+	// when backend connect error, retry interval.
+	RetryBackend = time.Duration(3) * time.Second
+	// when backend connect error, retry max count.
+	RetryMax = 3
+)
+
+func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
+	ctx := v.ctx
+
+	defer func() {
+		if r := recover(); r != nil {
+			if err == nil {
+				err = fmt.Errorf("panic %v", r)
+				ol.W(ctx, "ignore panic, err is", err)
+			} else {
+				ol.W(ctx, fmt.Sprintf("ignore panic %v, err is %v", r, err))
+			}
+		}
+	}()
+	defer client.Close()
+
+	// connect to backend.
+	var backend *net.TCPConn
+	connectBackend := func() error {
+		defer func() {
+			if backend == nil {
+				time.Sleep(RetryBackend)
+			}
+		}()
+
+		if v.activePort <= 0 {
+			return fmt.Errorf("ignore no backend, port=%v, ports=%v", v.activePort, v.ports)
+		}
+
+		addr := fmt.Sprintf("127.0.0.1:%v", v.activePort)
+		if c, err := net.DialTimeout("tcp", addr, RetryBackend); err != nil {
+			ol.W(ctx, "connect backend", addr, "failed, err is", err)
+			return err
+		} else {
+			backend = c.(*net.TCPConn)
+		}
+
+		return nil
+	}
+	for i := 0; i < RetryMax && backend == nil; i++ {
+		if r := connectBackend(); err == nil {
+			err = r
+		}
+	}
+	if backend == nil {
+		ol.W(ctx, "proxy failed for no backend, err is", err)
+		return
+	}
+	defer backend.Close()
+	ol.T(ctx, "proxy", client.RemoteAddr(), "to", backend.RemoteAddr())
+
+	// proxy c to conn
+	var disposed bool
+	closing := make(chan bool, 1)
+	wait := &sync.WaitGroup{}
+	var nr, nw int64
+	go func() {
+		wait.Add(1)
+		defer wait.Done()
+
+		defer func() {
+			select {
+			case closing <- true:
+			default:
+			}
+		}()
+
+		if nw, err = io.Copy(client, backend); err != nil {
+			if !disposed {
+				ol.E(ctx, fmt.Sprintf("proxy rtmp<=backend failed, nn=%v, err is %v", nw, err))
+			}
+			return
+		}
+	}()
+	go func() {
+		wait.Add(1)
+		defer wait.Done()
+
+		defer func() {
+			select {
+			case closing <- true:
+			default:
+			}
+		}()
+
+		if nr, err = io.Copy(backend, client); err != nil {
+			if !disposed {
+				ol.E(ctx, fmt.Sprintf("proxy rtmp=>backend failed, nn=%v, err is %v", nr, err))
+			}
+			return
+		}
+	}()
+
+	disposed = true
+	<-closing
+	closing <- true
+	wait.Wait()
+	ol.T(ctx, fmt.Sprintf("proxy client ok, read=%v, write=%v", nr, nw))
+
+	return
+}
+
+const (
+	// error when api proxy parse parameters.
+	ApiProxyQuery oh.SystemError = 100 + iota
+)
+
+func (v *proxy) serveApi(w http.ResponseWriter, r *http.Request) {
+	var err error
+	q := r.URL.Query()
+	ctx := v.ctx
+
+	var rtmp string
+	if rtmp = q.Get("rtmp"); len(rtmp) == 0 {
+		msg := fmt.Sprintf("require query rtmp port")
+		oh.CplxError(ctx, ApiProxyQuery, msg).ServeHTTP(w, r)
+		return
+	}
+
+	var port int
+	if port, err = strconv.Atoi(rtmp); err != nil {
+		msg := fmt.Sprintf("rtmp port is not int, err is %v", err)
+		oh.CplxError(ctx, ApiProxyQuery, msg).ServeHTTP(w, r)
+		return
+	}
+
+	ol.T(ctx, fmt.Sprintf("proxy rtmp to %v, previous=%v, ports=%v", port, v.activePort, v.ports))
+	if !v.hasProxyed(port) {
+		v.ports = append(v.ports, port)
+	}
+	v.activePort = port
+
+	oh.Data(v.ctx, nil).ServeHTTP(w, r)
+}
+
+func (v *proxy) hasProxyed(port int) bool {
+	for _, p := range v.ports {
+		if p == port {
+			return true
+		}
+	}
+	return false
+}
+
 func main() {
 	var err error
 	confFile := oo.ParseArgv("../conf/rtmplb.json", kernel.Version(), signature)
@@ -131,6 +295,7 @@ func main() {
 
 	closing := make(chan bool, 1)
 	wait := &sync.WaitGroup{}
+	proxy := NewProxy(conf)
 
 	// rtmp connections
 	go func() {
@@ -158,7 +323,9 @@ func main() {
 				}
 				break
 			}
-			c.Close()
+
+			//ol.T(ctx, "got rtmp client", c.RemoteAddr())
+			go proxy.serveRtmp(c)
 		}
 	}()
 
@@ -178,8 +345,14 @@ func main() {
 
 		oh.Server = signature
 
+		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
 		http.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
 			oh.WriteVersion(w, r, kernel.Version())
+		})
+
+		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?rtmp=19350", apiAddr))
+		http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
+			proxy.serveApi(w, r)
 		})
 
 		server := &http.Server{Addr: apiAddr, Handler: nil}
