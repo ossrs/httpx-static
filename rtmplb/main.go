@@ -28,6 +28,8 @@ SOFTWARE.
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	oa "github.com/ossrs/go-oryx-lib/asprocess"
@@ -55,7 +57,8 @@ type RtmpLbConfig struct {
 	kernel.Config
 	Api  string `json:"api"`
 	Rtmp struct {
-		Listens []string `json:"listens"`
+		Listens      []string `json:"listens"`
+		UseRtmpProxy bool     `json:"proxy"`
 	} `json:"rtmp"`
 }
 
@@ -112,7 +115,7 @@ const (
 )
 
 func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
-	ctx := v.ctx
+	ctx := &kernel.Context{}
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -159,7 +162,8 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 		return
 	}
 	defer backend.Close()
-	ol.T(ctx, "proxy", client.RemoteAddr(), "to", backend.RemoteAddr())
+	ol.T(ctx, fmt.Sprintf("proxy %v to %v, rpp=%v",
+		client.RemoteAddr(), backend.RemoteAddr(), v.conf.Rtmp.UseRtmpProxy))
 
 	// proxy c to conn
 	var disposed bool
@@ -194,6 +198,27 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			default:
 			}
 		}()
+
+		// write proxy header.
+		// @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
+		if v.conf.Rtmp.UseRtmpProxy {
+			var ip []byte
+			if addr, ok := client.RemoteAddr().(*net.TCPAddr); ok {
+				// TODO: support ipv6 client.
+				ip = addr.IP.To4()
+			}
+
+			b := &bytes.Buffer{}
+			b.WriteByte(0xF3)
+			binary.Write(b, binary.BigEndian, uint16(len(ip)))
+			b.Write(ip)
+			//ol.T(ctx, "write rtmp protocol", b.Bytes())
+
+			if _, err = backend.Write(b.Bytes()); err != nil {
+				ol.E(ctx, fmt.Sprintf("write proxy failed, b=%v, err is %v", b.Bytes(), err))
+				return
+			}
+		}
 
 		if nr, err = io.Copy(backend, client); err != nil {
 			if !disposed {
