@@ -103,13 +103,12 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 
 type proxy struct {
 	conf       *RtmpLbConfig
-	ctx        ol.Context
 	ports      []int
 	activePort int
 }
 
 func NewProxy(conf *RtmpLbConfig) *proxy {
-	return &proxy{conf: conf, ctx: &kernel.Context{}}
+	return &proxy{conf: conf}
 }
 
 const (
@@ -251,7 +250,7 @@ const (
 func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) {
 	var err error
 	q := r.URL.Query()
-	ctx := v.ctx
+	ctx := &kernel.Context{}
 
 	var rtmp string
 	if rtmp = q.Get("rtmp"); len(rtmp) == 0 {

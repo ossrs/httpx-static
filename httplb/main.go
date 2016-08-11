@@ -38,8 +38,10 @@ import (
 	"github.com/ossrs/go-oryx/kernel"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -96,19 +98,91 @@ func (v *HttpLbConfig) Loads(c string) (err error) {
 }
 
 type proxy struct {
-	conf *HttpLbConfig
+	conf       *HttpLbConfig
+	ports      []int
+	activePort int
+	rp         *httputil.ReverseProxy
 }
 
 func NewProxy(conf *HttpLbConfig) *proxy {
-	return &proxy{conf: conf}
+	v := &proxy{conf: conf}
+
+	director := func(r *http.Request) {
+		r.URL.Scheme = "http"
+		from := r.URL.String()
+
+		h, _, _ := net.SplitHostPort(r.URL.Host)
+		r.URL.Host = fmt.Sprintf("%v:%v", h, v.activePort)
+		to := r.URL.String()
+
+		ol.W(nil, "proxy", from, "to", to)
+	}
+	v.rp = &httputil.ReverseProxy{Director: director}
+
+	return v
+}
+
+func hasAnySuffixes(s string, suffixes ...string) bool {
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(s, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+func (v *proxy) serveHttp(w http.ResponseWriter, r *http.Request) {
+	ctx := &kernel.Context{}
+
+	if v.activePort <= 0 {
+		oh.Error(ctx, fmt.Errorf("Backend not ready")).ServeHTTP(w, r)
+		return
+	}
+
+	if p := r.URL.Path; !hasAnySuffixes(p, ".flv", ".m3u8", ".ts", ".xml") {
+		http.NotFound(w, r)
+		return
+	}
+
+	v.rp.ServeHTTP(w, r)
 }
 
 const (
-	Success oh.SystemError = 0
+	Success       oh.SystemError = 0
+	ApiProxyQuery oh.SystemError = 100 + iota
 )
 
-func (v *proxy) serveChangeBackendApi(r *http.Request) (msg string, err oh.SystemError) {
+func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) {
+	var err error
+	q := r.URL.Query()
+	ctx := &kernel.Context{}
+
+	var httpPort string
+	if httpPort = q.Get("http"); len(httpPort) == 0 {
+		return fmt.Sprintf("require query http port"), ApiProxyQuery
+	}
+
+	var port int
+	if port, err = strconv.Atoi(httpPort); err != nil {
+		return fmt.Sprintf("http port is not int, err is %v", err), ApiProxyQuery
+	}
+
+	ol.T(ctx, fmt.Sprintf("proxy http to %v, previous=%v, ports=%v", port, v.activePort, v.ports))
+	if !v.hasProxyed(port) {
+		v.ports = append(v.ports, port)
+	}
+	v.activePort = port
+
 	return "", Success
+}
+
+func (v *proxy) hasProxyed(port int) bool {
+	for _, p := range v.ports {
+		if p == port {
+			return true
+		}
+	}
+	return false
 }
 
 func main() {
@@ -168,11 +242,13 @@ func main() {
 
 		defer ol.E(ctx, "http proxy ok")
 
+		ol.T(ctx, fmt.Sprintf("handle http://%v/", httpAddr))
 		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			proxy.serveHttp(w, r)
 		})
 
 		server := &http.Server{Addr: httpNetwork, Handler: nil}
-		if err = server.Serve(apiListener); err != nil {
+		if err = server.Serve(httpListener); err != nil {
 			ol.E(ctx, "http serve failed, err is", err)
 			return
 		}
