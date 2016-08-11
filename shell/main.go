@@ -339,7 +339,12 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
-	// TODO: FIXME: httplb.
+	api = fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Httplb.Api)
+	if err = check_api(api, processRetryMax, processExecInterval); err != nil {
+		ol.E(ctx, fmt.Sprintf("Shell: httplb failed, api=%v, max=%v, interval=%v, err is %v",
+			api, processRetryMax, processExecInterval, err))
+		return
+	}
 	ol.T(ctx, "Shell: proxy ok.")
 
 	// fork workers.
@@ -426,11 +431,17 @@ func (v *ShellBoss) execWorker() (err error) {
 	// notify rtmp and http proxy to update the active backend.
 	url := fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?rtmp=%v", v.conf.Rtmplb.Api, worker.rtmp)
 	if _, _, err := oh.ApiRequest(url); err != nil {
-		ol.E(ctx, "Shell: notify proxy failed, err is", err)
+		ol.E(ctx, "Shell: notify rtmp proxy failed, err is", err)
 		return err
 	}
-	// TODO: FIXME: httplb.
 	ol.T(ctx, "notify rtmp proxy ok, url is", url)
+
+	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?http=%v", v.conf.Httplb.Api, worker.http)
+	if _, _, err := oh.ApiRequest(url); err != nil {
+		ol.E(ctx, "Shell: notify http proxy failed, err is", err)
+		return err
+	}
+	ol.T(ctx, "notify http proxy ok, url is", url)
 
 	return
 }

@@ -57,7 +57,7 @@ type RtmpLbConfig struct {
 	kernel.Config
 	Api  string `json:"api"`
 	Rtmp struct {
-		Listen       string `json:"listens"`
+		Listen       string `json:"listen"`
 		UseRtmpProxy bool   `json:"proxy"`
 	} `json:"rtmp"`
 }
@@ -87,7 +87,7 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 
 	if len(v.Api) == 0 {
 		return fmt.Errorf("No api")
-	} else if nn := strings.Split(v.Api, "://"); nn != 1 {
+	} else if nn := strings.Count(v.Api, "://"); nn != 1 {
 		return fmt.Errorf("Api contains %d network", nn)
 	}
 
