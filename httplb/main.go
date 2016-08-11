@@ -74,7 +74,7 @@ func (v *HttpLbConfig) Loads(c string) (err error) {
 
 func main() {
 	var err error
-	confFile := oo.ParseArgv("conf/httplb.json", kernel.Version(), signature)
+	confFile := oo.ParseArgv("../conf/httplb.json", kernel.Version(), signature)
 	fmt.Println("HTTPLB is the load-balance for http flv/hls+ streaming, config is", confFile)
 
 	conf := &HttpLbConfig{}

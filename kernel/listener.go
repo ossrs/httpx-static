@@ -180,7 +180,7 @@ func (v *TcpListeners) doAcceptFrom(ctx ol.Context, l *net.TCPListener) (err err
 		// we got a connection but not accept by user and listener is closed,
 		// we must close this connection for user never get it.
 		conn.Close()
-		ol.W(ctx, "listener: drop connection", conn.RemoteAddr().String())
+		ol.W(ctx, "listener: drop connection", conn.RemoteAddr())
 	}
 
 	return

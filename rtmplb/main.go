@@ -31,12 +31,18 @@ import (
 	"encoding/json"
 	"fmt"
 	oa "github.com/ossrs/go-oryx-lib/asprocess"
+	oh "github.com/ossrs/go-oryx-lib/http"
 	oj "github.com/ossrs/go-oryx-lib/json"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/kernel"
 	"net"
+	"net/http"
 	"os"
+	"os/signal"
+	"strings"
+	"sync"
+	"syscall"
 )
 
 var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
@@ -44,14 +50,14 @@ var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
 // The config object for rtmplb module.
 type RtmpLbConfig struct {
 	kernel.Config
+	Api  string `json:"api"`
 	Rtmp struct {
-		Listens  []string `json:"listens"`
-		Backends []string `json:"backends"`
+		Listens []string `json:"listens"`
 	} `json:"rtmp"`
 }
 
 func (v *RtmpLbConfig) String() string {
-	return fmt.Sprintf("%v, rtmp(listen=%v,backends=%v)", &v.Config, v.Rtmp.Listens, v.Rtmp.Backends)
+	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v)", &v.Config, v.Api, v.Rtmp.Listens)
 }
 
 func (v *RtmpLbConfig) Loads(c string) (err error) {
@@ -73,10 +79,12 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 		return
 	}
 
-	if r := &v.Rtmp; len(r.Backends) == 0 {
-		return fmt.Errorf("no backends")
-	} else if len(r.Listens) == 0 {
-		return fmt.Errorf("no listens")
+	if len(v.Api) == 0 {
+		return fmt.Errorf("no api")
+	}
+
+	if r := &v.Rtmp; len(r.Listens) == 0 {
+		return fmt.Errorf("no rtmp listens")
 	}
 
 	return
@@ -84,7 +92,7 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 
 func main() {
 	var err error
-	confFile := oo.ParseArgv("conf/rtmplb.json", kernel.Version(), signature)
+	confFile := oo.ParseArgv("../conf/rtmplb.json", kernel.Version(), signature)
 	fmt.Println("RTMPLB is the load-balance for rtmp streaming, config is", confFile)
 
 	conf := &RtmpLbConfig{}
@@ -98,7 +106,8 @@ func main() {
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
 
 	// rtmplb is a asprocess of shell.
-	oa.Watch(ctx, oa.CheckParentInterval, nil)
+	asq := make(chan bool, 1)
+	oa.WatchNoExit(ctx, oa.Interval, asq)
 
 	var listener *kernel.TcpListeners
 	if listener, err = kernel.NewTcpListeners(conf.Rtmp.Listens); err != nil {
@@ -112,17 +121,93 @@ func main() {
 		return
 	}
 
-	for {
-		var c *net.TCPConn
-		if c, err = listener.AcceptTCP(); err != nil {
-			if err != kernel.ListenerDisposed {
-				ol.E(ctx, "accept failed, err is", err)
-			}
-			break
-		}
-
-		c.Close()
+	var apiListener net.Listener
+	apiAddr := strings.Split(conf.Api, "://")[1]
+	if apiListener, err = net.Listen("tcp", apiAddr); err != nil {
+		ol.E(ctx, "http listen failed, err is", err)
+		return
 	}
+	defer apiListener.Close()
+
+	closing := make(chan bool, 1)
+	wait := &sync.WaitGroup{}
+
+	// rtmp connections
+	go func() {
+		wait.Add(1)
+		defer wait.Done()
+
+		defer func() {
+			select {
+			case closing <- true:
+			default:
+			}
+		}()
+
+		defer ol.E(ctx, "rtmp accepter ok")
+
+		defer func() {
+			listener.Close()
+		}()
+
+		for {
+			var c *net.TCPConn
+			if c, err = listener.AcceptTCP(); err != nil {
+				if err != kernel.ListenerDisposed {
+					ol.E(ctx, "accept failed, err is", err)
+				}
+				break
+			}
+			c.Close()
+		}
+	}()
+
+	// control messages
+	go func() {
+		wait.Add(1)
+		defer wait.Done()
+
+		defer func() {
+			select {
+			case closing <- true:
+			default:
+			}
+		}()
+
+		defer ol.E(ctx, "http handler ok")
+
+		oh.Server = signature
+
+		http.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
+			oh.WriteVersion(w, r, kernel.Version())
+		})
+
+		server := &http.Server{Addr: apiAddr, Handler: nil}
+		if err = server.Serve(apiListener); err != nil {
+			ol.E(ctx, "http serve failed, err is", err)
+			return
+		}
+	}()
+
+	// listen singal.
+	go func() {
+		ss := make(chan os.Signal)
+		signal.Notify(ss, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+		for s := range ss {
+			ol.E(ctx, "quit for signal", s)
+			closing <- true
+		}
+	}()
+
+	// cleanup when got closing event.
+	select {
+	case <-closing:
+		closing <- true
+	case <-asq:
+	}
+	listener.Close()
+	apiListener.Close()
+	wait.Wait()
 
 	ol.T(ctx, "serve ok")
 	return
