@@ -109,13 +109,18 @@ func NewProxy(conf *HttpLbConfig) *proxy {
 
 	director := func(r *http.Request) {
 		r.URL.Scheme = "http"
-		from := r.URL.String()
 
-		h, _, _ := net.SplitHostPort(r.URL.Host)
-		r.URL.Host = fmt.Sprintf("%v:%v", h, v.activePort)
-		to := r.URL.String()
+		from := *r.URL
+		if len(from.Host) == 0 {
+			from.Host = r.Host
+		}
 
-		ol.W(nil, "proxy", from, "to", to)
+		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.activePort)
+		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			r.Header.Set("X-Real-IP", ip)
+		}
+		ol.W(nil, fmt.Sprintf("proxy %v %v to %v %v",
+			r.RemoteAddr, from.String(), r.URL.String(), r.UserAgent()))
 	}
 	v.rp = &httputil.ReverseProxy{Director: director}
 
