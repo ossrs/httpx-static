@@ -238,27 +238,24 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 }
 
 const (
+	Success oh.SystemError = 0
 	// error when api proxy parse parameters.
 	ApiProxyQuery oh.SystemError = 100 + iota
 )
 
-func (v *proxy) serveApi(w http.ResponseWriter, r *http.Request) {
+func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) {
 	var err error
 	q := r.URL.Query()
 	ctx := v.ctx
 
 	var rtmp string
 	if rtmp = q.Get("rtmp"); len(rtmp) == 0 {
-		msg := fmt.Sprintf("require query rtmp port")
-		oh.CplxError(ctx, ApiProxyQuery, msg).ServeHTTP(w, r)
-		return
+		return fmt.Sprintf("require query rtmp port"), ApiProxyQuery
 	}
 
 	var port int
 	if port, err = strconv.Atoi(rtmp); err != nil {
-		msg := fmt.Sprintf("rtmp port is not int, err is %v", err)
-		oh.CplxError(ctx, ApiProxyQuery, msg).ServeHTTP(w, r)
-		return
+		return fmt.Sprintf("rtmp port is not int, err is %v", err), ApiProxyQuery
 	}
 
 	ol.T(ctx, fmt.Sprintf("proxy rtmp to %v, previous=%v, ports=%v", port, v.activePort, v.ports))
@@ -267,7 +264,7 @@ func (v *proxy) serveApi(w http.ResponseWriter, r *http.Request) {
 	}
 	v.activePort = port
 
-	oh.Data(v.ctx, nil).ServeHTTP(w, r)
+	return "", Success
 }
 
 func (v *proxy) hasProxyed(port int) bool {
@@ -377,7 +374,11 @@ func main() {
 
 		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?rtmp=19350", apiAddr))
 		http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
-			proxy.serveApi(w, r)
+			if msg, err := proxy.serveChangeBackendApi(r); err != Success {
+				oh.CplxError(ctx, err, msg).ServeHTTP(w, r)
+				return
+			}
+			oh.Data(ctx, nil).ServeHTTP(w, r)
 		})
 
 		server := &http.Server{Addr: apiAddr, Handler: nil}

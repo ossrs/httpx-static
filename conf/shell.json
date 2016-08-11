@@ -11,7 +11,9 @@
         // The binary of rtmplb.
         "binary": "../rtmplb/rtmplb",
         // The config file for rtmplb.
-        "config": "../conf/rtmplb.json"
+        "config": "../conf/rtmplb.json",
+        // The control api port, must equal to rtmplb.json.
+        "api": 2037
     },
     "httplb": {
         // Wether enable the httplb.
@@ -19,7 +21,9 @@
         // The binary of httplb.
         "binary": "../httplb/httplb",
         // The config file for httplb.
-        "config": "../conf/httplb.json"
+        "config": "../conf/httplb.json",
+        // The control api port, must equal to httplb.json.
+        "api": 2038
     },
     "worker": {
         // Wether enable the stream worker.

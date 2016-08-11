@@ -30,6 +30,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	oh "github.com/ossrs/go-oryx-lib/http"
 	oj "github.com/ossrs/go-oryx-lib/json"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
@@ -38,6 +39,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 var signature = fmt.Sprintf("SHELL/%v", kernel.Version())
@@ -56,11 +58,13 @@ type ShellConfig struct {
 		Enabled bool   `json:"enabled"`
 		Binary  string `json:"binary"`
 		Config  string `json:"config"`
+		Api     int    `json:"api"`
 	} `json:"rtmplb"`
 	Httplb struct {
 		Enabled bool   `json:"enabled"`
 		Binary  string `json:"binary"`
 		Config  string `json:"config"`
+		Api     int    `json:"api"`
 	} `json:"httplb"`
 	Worker struct {
 		Enabled  bool            `json:"enabled"`
@@ -254,6 +258,26 @@ func (v *PortPool) Free(port int) {
 	v.ports = append(v.ports, port)
 }
 
+const (
+	// wait for process to start to check api.
+	processExecInterval = time.Duration(200) * time.Millisecond
+	// max retry to check process.
+	processRetryMax = 5
+)
+
+func check_api(api string, max int, retry time.Duration) (err error) {
+	for i := 0; i < max; i++ {
+		time.Sleep(retry)
+
+		if _, _, err = oh.ApiRequest(api); err != nil {
+			continue
+		}
+
+		return
+	}
+	return
+}
+
 // The shell to exec all processes.
 type ShellBoss struct {
 	conf    *ShellConfig
@@ -289,6 +313,7 @@ func (v *ShellBoss) Close() (err error) {
 func (v *ShellBoss) ExecBuddies() (err error) {
 	ctx := v.ctx
 
+	// fork processes.
 	if r := &v.conf.Rtmplb; r.Enabled {
 		if v.rtmplb, err = v.pool.Start(r.Binary, "-c", r.Config); err != nil {
 			ol.E(ctx, "Shell: exec rtmplb failed, err is", err)
@@ -307,6 +332,17 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 		ol.T(ctx, fmt.Sprintf("Shell: exec httplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
+	// sleep for a while and check the api.
+	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Rtmplb.Api)
+	if err = check_api(api, processRetryMax, processExecInterval); err != nil {
+		ol.E(ctx, fmt.Sprintf("Shell: rtmplb failed, api=%v, max=%v, interval=%v, err is %v",
+			api, processRetryMax, processExecInterval, err))
+		return
+	}
+	// TODO: FIXME: httplb.
+	ol.T(ctx, "Shell: proxy ok.")
+
+	// fork workers.
 	if err = v.execWorker(); err != nil {
 		return
 	}
@@ -349,6 +385,7 @@ func (v *ShellBoss) Cycle() {
 		}
 
 		// restart worker when terminated.
+		ol.T(ctx, "fork worker for", process.Process.Pid, "existed")
 		if err = v.execWorker(); err != nil {
 			ol.E(ctx, "Shell: restart worker failed, err is", err)
 			return
@@ -376,15 +413,32 @@ func (v *ShellBoss) execWorker() (err error) {
 		return
 	}
 
+	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/versions", worker.api)
+	if err = check_api(api, processRetryMax, processExecInterval); err != nil {
+		ol.E(ctx, "Shell: srs failed, api=%v, max=%v, interval=%v, err is %v",
+			api, processRetryMax, processExecInterval, err)
+		return
+	}
+
 	v.workers = append(v.workers, worker)
-	ol.T(ctx, "Shell: exec worker, total", len(v.workers))
+	ol.T(ctx, "Shell: exec worker ok, total", len(v.workers))
+
+	// notify rtmp and http proxy to update the active backend.
+	url := fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?rtmp=%v", v.conf.Rtmplb.Api, worker.rtmp)
+	if _, _, err := oh.ApiRequest(url); err != nil {
+		ol.E(ctx, "Shell: notify proxy failed, err is", err)
+		return err
+	}
+	// TODO: FIXME: httplb.
+	ol.T(ctx, "notify rtmp proxy ok, url is", url)
+
 	return
 }
 
 func main() {
 	var err error
 
-	confFile := oo.ParseArgv("conf/shell.json", kernel.Version(), signature)
+	confFile := oo.ParseArgv("../conf/shell.json", kernel.Version(), signature)
 	fmt.Println("SHELL is the process forker, config is", confFile)
 
 	conf := &ShellConfig{}
