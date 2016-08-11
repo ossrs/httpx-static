@@ -213,6 +213,26 @@ func (v *ShellConfig) Loads(c string) (err error) {
 	return
 }
 
+const (
+	// wait for process to start to check api.
+	processExecInterval = time.Duration(200) * time.Millisecond
+	// max retry to check process.
+	processRetryMax = 5
+)
+
+// check the api, retry when failed, error when exceed the max.
+func check_api(api string, max int, retry time.Duration) (err error) {
+	for i := 0; i < max; i++ {
+		if _, _, err = oh.ApiRequest(api); err != nil {
+			time.Sleep(retry)
+			continue
+		}
+
+		return
+	}
+	return
+}
+
 // The port pool manage available ports.
 type PortPool struct {
 	shell *ShellBoss
@@ -256,26 +276,6 @@ func (v *PortPool) Alloc(nbPort int) (ports []int, err error) {
 
 func (v *PortPool) Free(port int) {
 	v.ports = append(v.ports, port)
-}
-
-const (
-	// wait for process to start to check api.
-	processExecInterval = time.Duration(200) * time.Millisecond
-	// max retry to check process.
-	processRetryMax = 5
-)
-
-func check_api(api string, max int, retry time.Duration) (err error) {
-	for i := 0; i < max; i++ {
-		time.Sleep(retry)
-
-		if _, _, err = oh.ApiRequest(api); err != nil {
-			continue
-		}
-
-		return
-	}
-	return
 }
 
 // The shell to exec all processes.
