@@ -57,13 +57,13 @@ type RtmpLbConfig struct {
 	kernel.Config
 	Api  string `json:"api"`
 	Rtmp struct {
-		Listens      []string `json:"listens"`
-		UseRtmpProxy bool     `json:"proxy"`
+		Listen       string `json:"listens"`
+		UseRtmpProxy bool   `json:"proxy"`
 	} `json:"rtmp"`
 }
 
 func (v *RtmpLbConfig) String() string {
-	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v)", &v.Config, v.Api, v.Rtmp.Listens)
+	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v)", &v.Config, v.Api, v.Rtmp.Listen)
 }
 
 func (v *RtmpLbConfig) Loads(c string) (err error) {
@@ -86,11 +86,16 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 	}
 
 	if len(v.Api) == 0 {
-		return fmt.Errorf("no api")
+		return fmt.Errorf("No api")
+	} else if nn := strings.Split(v.Api, "://"); nn != 1 {
+		return fmt.Errorf("Api contains %d network", nn)
 	}
 
-	if r := &v.Rtmp; len(r.Listens) == 0 {
-		return fmt.Errorf("no rtmp listens")
+	if len(v.Rtmp.Listen) == 0 {
+		return fmt.Errorf("No rtmp listens")
+	}
+	if nn := strings.Count(v.Rtmp.Listen, "://"); nn != 1 {
+		return fmt.Errorf("Listen %v contains %v network", v.Rtmp.Listen, nn)
 	}
 
 	return
@@ -296,7 +301,7 @@ func main() {
 	oa.WatchNoExit(ctx, oa.Interval, asq)
 
 	var listener *kernel.TcpListeners
-	if listener, err = kernel.NewTcpListeners(conf.Rtmp.Listens); err != nil {
+	if listener, err = kernel.NewTcpListeners([]string{conf.Rtmp.Listen}); err != nil {
 		ol.E(ctx, "create listener failed, err is", err)
 		return
 	}
@@ -308,8 +313,9 @@ func main() {
 	}
 
 	var apiListener net.Listener
-	apiAddr := strings.Split(conf.Api, "://")[1]
-	if apiListener, err = net.Listen("tcp", apiAddr); err != nil {
+	addrs := strings.Split(conf.Api, "://")
+	apiNetwork, apiAddr := addrs[0], addrs[1]
+	if apiListener, err = net.Listen(apiNetwork, apiAddr); err != nil {
 		ol.E(ctx, "http listen failed, err is", err)
 		return
 	}

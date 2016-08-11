@@ -5,15 +5,15 @@
         // The log file path, only for tank file.
         "file": "./rtmplb.log"
     },
-    // The control api listen tcp4 or tcp6 addrs, for example,
-    // tcp://127.0.0.1:2037, tcp4://127.0.0.1:2037
-    "api": "tcp://127.0.0.1:2037",
     "rtmp": {
         // The listen tcp4 or tcp6 addrs for rtmp load-balance proxy,
         // for example, tcp://:1935, tcp://0.0.0.0:1935, tcp4://:1935, tcp6://:1935
-        "listens": ["tcp://:1935"],
+        "listen": "tcp://:1935",
         // Whether use rtmp proxy protocol to connect to backend.
         // @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
         "proxy": true
-    }
+    },
+    // The control api listen tcp4 or tcp6 addrs, for example,
+    // tcp://127.0.0.1:2037, tcp4://127.0.0.1:2037
+    "api": "tcp://127.0.0.1:2037"
 }

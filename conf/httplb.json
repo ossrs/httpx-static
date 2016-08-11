@@ -4,5 +4,13 @@
         "tank": "console",
         // The log file path, only for tank file.
         "file": "./httplb.log"
-    }
+    },
+    "http": {
+        // The listen tcp4 or tcp6 addrs for rtmp load-balance proxy,
+        // for example, tcp://:8080, tcp://0.0.0.0:8080, tcp4://:8080, tcp6://:8080
+        "listen": "tcp://:8080"
+    },
+    // The control api listen tcp4 or tcp6 addrs, for example,
+    // tcp://127.0.0.1:2038, tcp4://127.0.0.1:2038
+    "api": "tcp://127.0.0.1:2038"
 }
