@@ -41,6 +41,7 @@ import (
 	"net/http/httputil"
 	"os"
 	"os/signal"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -291,16 +292,11 @@ func (v *proxy) serveHttpStream(w http.ResponseWriter, r *http.Request) {
 		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 			r.Header.Set("X-Real-IP", ip)
 		}
-		ol.W(ctx, fmt.Sprintf("proxy stream %v to %v", r.RemoteAddr, r.URL.String()))
+		ol.W(ctx, fmt.Sprintf("proxy http %v to %v", r.RemoteAddr, r.URL.String()))
 	}
 
-	if strings.HasSuffix(r.URL.Path, ".xml") {
-		// use default for xml requests.
-		v.httpStreamProxy.Transport = http.DefaultTransport
-	} else {
-		// each http stream use isolate transport.
-		v.httpStreamProxy.Transport = createHttpTransport()
-	}
+	// each http stream use isolate transport.
+	v.httpStreamProxy.Transport = createHttpTransport()
 
 	v.httpStreamProxy.ServeHTTP(w, r)
 }
@@ -334,11 +330,34 @@ func (v *proxy) serveHttp(w http.ResponseWriter, r *http.Request) {
 		}
 		return false
 	}
-
-	if hasAnySuffixes(p, ".flv", ".ts", ".aac", ".mp3", ".xml") {
+	if hasAnySuffixes(p, ".flv", ".ts", ".aac", ".mp3") {
 		v.serveHttpStream(w, r)
 		return
 	}
+
+	if r.URL.Path == "/crossdomain.xml" {
+		oh.SetHeader(w)
+		w.Header().Set("Content-Type", "text/xml")
+		w.Write([]byte(`<cross-domain-policy><allow-access-from domain="*"/></cross-domain-policy>`))
+		return
+	}
+
+	if hasAnySuffixes(p, ".htm", ".html") {
+		oh.SetHeader(w)
+		w.Header().Set("Content-Type", "text/html")
+
+		m3u8 := path.Base(r.URL.Path)
+		if i := strings.LastIndex(m3u8, "."); i > 0 {
+			m3u8 = m3u8[0:i]
+		}
+		m3u8 = fmt.Sprintf("%v.m3u8", m3u8)
+		format := "<video autoplay controls autobuffer src='%v' type='application/vnd.apple.mpegurl'></video>"
+		w.Write([]byte(fmt.Sprintf(format, m3u8)))
+		return
+	}
+
+	http.NotFound(w, r)
+	return
 }
 
 const (
