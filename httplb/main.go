@@ -118,15 +118,15 @@ type hlsPlusVirtualConnection struct {
 	// for safari or srs player, identify by xpsid if no uuid.
 	xpsid string
 	// for jwplayer, without uuid/xpsid, identify by tcp connection.
-	remoteAddr string
+	addrs []string
 	// each connection use one tcp connection for backend.
 	transport  http.RoundTripper
 	lastUpdate time.Time
 }
 
-func NewHlsPlusVirtualConnection(uuid, xpsid, addr string) *hlsPlusVirtualConnection {
+func NewHlsPlusVirtualConnection(uuid, xpsid string) *hlsPlusVirtualConnection {
 	v := &hlsPlusVirtualConnection{
-		uuid: uuid, xpsid: xpsid, remoteAddr: addr,
+		uuid: uuid, xpsid: xpsid,
 		lastUpdate: time.Now(),
 		transport:  createHttpTransport(),
 	}
@@ -134,7 +134,7 @@ func NewHlsPlusVirtualConnection(uuid, xpsid, addr string) *hlsPlusVirtualConnec
 }
 
 func (v *hlsPlusVirtualConnection) String() string {
-	return fmt.Sprintf("uuid=%v, addr=%v, xpsid=%v", v.uuid, v.remoteAddr, v.xpsid)
+	return fmt.Sprintf("uuid=%v, xpsid=%v, addr=%v", v.uuid, v.xpsid, len(v.addrs))
 }
 
 // The proxyer for hls+
@@ -183,13 +183,13 @@ func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 		vconn, ok = v.virtualConns[uuid]
 	}
 	if len(xpsid) > 0 && !ok {
-		vconn, ok = v.appConns[uuid]
+		vconn, ok = v.appConns[xpsid]
 	}
 	if len(addr) > 0 && !ok {
 		vconn, ok = v.tcpConns[addr]
 	}
 	if vconn == nil {
-		vconn = NewHlsPlusVirtualConnection(uuid, xpsid, addr)
+		vconn = NewHlsPlusVirtualConnection(uuid, xpsid)
 	}
 	vconn.lastUpdate = time.Now()
 	//ol.T(ctx, "identify", vconn)
@@ -197,12 +197,15 @@ func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 	// update the cache
 	if len(uuid) > 0 {
 		v.virtualConns[uuid] = vconn
+		vconn.uuid = uuid
 	}
 	if len(xpsid) > 0 {
 		v.appConns[xpsid] = vconn
+		vconn.xpsid = xpsid
 	}
 	if len(addr) > 0 {
 		v.tcpConns[addr] = vconn
+		vconn.addrs = append(vconn.addrs, addr)
 	}
 
 	// proxy request.
@@ -216,7 +219,7 @@ func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 			r.Header.Set("X-Real-IP", ip)
 		}
-		ol.W(ctx, fmt.Sprintf("proxy hls+ %v to %v", vconn, r.URL.String()))
+		ol.T(ctx, fmt.Sprintf("proxy hls+ %v to %v", vconn, r.URL.String()))
 	}
 	v.rp.Transport = vconn.transport
 
@@ -241,8 +244,8 @@ func (v *hlsPlusProxy) cleanup(ctx ol.Context) {
 			continue
 		}
 
-		if len(conn.remoteAddr) > 0 {
-			delete(v.tcpConns, conn.remoteAddr)
+		for _, addr := range conn.addrs {
+			delete(v.tcpConns, addr)
 		}
 		if len(conn.xpsid) > 0 {
 			delete(v.appConns, conn.xpsid)
