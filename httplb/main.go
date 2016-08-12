@@ -45,6 +45,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 var signature = fmt.Sprintf("HTTPLB/%v", kernel.Version())
@@ -97,43 +98,211 @@ func (v *HttpLbConfig) Loads(c string) (err error) {
 	return
 }
 
+// Create isolate transport for http stream and hls+.
+func createHttpTransport() http.RoundTripper {
+	return &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		Dial: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+}
+
+// The virtual connection for hls+
+type hlsPlusVirtualConnection struct {
+	// for standard player, identify by uuid.
+	uuid string
+	// for safari or srs player, identify by xpsid if no uuid.
+	xpsid string
+	// for jwplayer, without uuid/xpsid, identify by tcp connection.
+	remoteAddr string
+	// each connection use one tcp connection for backend.
+	transport  http.RoundTripper
+	lastUpdate time.Time
+}
+
+func NewHlsPlusVirtualConnection(uuid, xpsid, addr string) *hlsPlusVirtualConnection {
+	v := &hlsPlusVirtualConnection{
+		uuid: uuid, xpsid: xpsid, remoteAddr: addr,
+		lastUpdate: time.Now(),
+		transport:  createHttpTransport(),
+	}
+	return v
+}
+
+func (v *hlsPlusVirtualConnection) String() string {
+	return fmt.Sprintf("uuid=%v, addr=%v, xpsid=%v", v.uuid, v.remoteAddr, v.xpsid)
+}
+
+// The proxyer for hls+
+type hlsPlusProxy struct {
+	proxy *proxy
+	rp    *httputil.ReverseProxy
+	lock  *sync.Mutex
+	// hls+: virtual connections, key is uuid
+	virtualConns map[string]*hlsPlusVirtualConnection
+	// hls+: application id for safari or srs player, key is xpsid
+	appConns map[string]*hlsPlusVirtualConnection
+	// hls+: tcp connections to locate jwplayer, key is removeAddr
+	tcpConns map[string]*hlsPlusVirtualConnection
+}
+
+func NewHlsPlusProxy(proxy *proxy) *hlsPlusProxy {
+	return &hlsPlusProxy{
+		proxy:        proxy,
+		lock:         &sync.Mutex{},
+		virtualConns: make(map[string]*hlsPlusVirtualConnection),
+		tcpConns:     make(map[string]*hlsPlusVirtualConnection),
+		appConns:     make(map[string]*hlsPlusVirtualConnection),
+		rp:           &httputil.ReverseProxy{Director: nil},
+	}
+}
+
+func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
+	ctx := &kernel.Context{}
+
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	// idnetify by uuid, then xpsid, then addr(tcp connection).
+	var uuid, xpsid, addr string
+	q := r.URL.Query()
+	uuid = q.Get("shp_uuid")
+	if xpsid = q.Get("shp_xpsid"); len(xpsid) == 0 {
+		xpsid = r.Header.Get("X-Playback-Session-Id")
+	}
+	addr = r.RemoteAddr
+
+	// identify virtual connection
+	var ok bool
+	var vconn *hlsPlusVirtualConnection
+	if len(uuid) > 0 && !ok {
+		vconn, ok = v.virtualConns[uuid]
+	}
+	if len(xpsid) > 0 && !ok {
+		vconn, ok = v.appConns[uuid]
+	}
+	if len(addr) > 0 && !ok {
+		vconn, ok = v.tcpConns[addr]
+	}
+	if vconn == nil {
+		vconn = NewHlsPlusVirtualConnection(uuid, xpsid, addr)
+	}
+	vconn.lastUpdate = time.Now()
+	//ol.T(ctx, "identify", vconn)
+
+	// update the cache
+	if len(uuid) > 0 {
+		v.virtualConns[uuid] = vconn
+	}
+	if len(xpsid) > 0 {
+		v.appConns[xpsid] = vconn
+	}
+	if len(addr) > 0 {
+		v.tcpConns[addr] = vconn
+	}
+
+	// proxy request.
+	v.rp.Director = func(r *http.Request) {
+		r.URL.Scheme = "http"
+
+		// to prevent the m3u8 request by proxy.
+		//r.Header.Set("X-Hls-Plus", "Proxy")
+
+		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.proxy.activePort)
+		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			r.Header.Set("X-Real-IP", ip)
+		}
+		ol.W(ctx, fmt.Sprintf("proxy hls+ %v to %v", vconn, r.URL.String()))
+	}
+	v.rp.Transport = vconn.transport
+
+	v.rp.ServeHTTP(w, r)
+}
+
+const (
+	proxyCleanupInterval  = time.Duration(10) * time.Second
+	hlsPlusSessionTimeout = time.Duration(120) * time.Second
+)
+
+func (v *hlsPlusProxy) cleanup(ctx ol.Context) {
+	defer time.Sleep(proxyCleanupInterval)
+
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	die := time.Now().Add(-1 * hlsPlusSessionTimeout)
+
+	for _, conn := range v.tcpConns {
+		if conn.lastUpdate.After(die) {
+			continue
+		}
+
+		if len(conn.remoteAddr) > 0 {
+			delete(v.tcpConns, conn.remoteAddr)
+		}
+		if len(conn.xpsid) > 0 {
+			delete(v.appConns, conn.xpsid)
+		}
+		if len(conn.uuid) > 0 {
+			delete(v.virtualConns, conn.uuid)
+		}
+
+		ol.W(ctx, fmt.Sprintf("remove %v from total=%v/%v/%v",
+			conn, len(v.virtualConns), len(v.tcpConns), len(v.appConns)))
+	}
+}
+
+// The proxy object, serve http stream and hls+.
 type proxy struct {
-	conf       *HttpLbConfig
-	ports      []int
-	activePort int
-	rp         *httputil.ReverseProxy
+	conf            *HttpLbConfig
+	ports           []int
+	activePort      int
+	httpStreamProxy *httputil.ReverseProxy
+	hlsPlus         *hlsPlusProxy
 }
 
 func NewProxy(conf *HttpLbConfig) *proxy {
-	v := &proxy{conf: conf}
+	v := &proxy{
+		conf:            conf,
+		httpStreamProxy: &httputil.ReverseProxy{Director: nil},
+	}
+	v.hlsPlus = NewHlsPlusProxy(v)
+	return v
+}
 
-	director := func(r *http.Request) {
+func (v *proxy) serveHlsPlus(w http.ResponseWriter, r *http.Request) {
+	v.hlsPlus.serve(w, r)
+}
+
+func (v *proxy) cleanup(ctx ol.Context) {
+	v.hlsPlus.cleanup(ctx)
+}
+
+func (v *proxy) serveHttpStream(w http.ResponseWriter, r *http.Request) {
+	ctx := &kernel.Context{}
+
+	v.httpStreamProxy.Director = func(r *http.Request) {
 		r.URL.Scheme = "http"
-
-		from := *r.URL
-		if len(from.Host) == 0 {
-			from.Host = r.Host
-		}
 
 		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.activePort)
 		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 			r.Header.Set("X-Real-IP", ip)
 		}
-		ol.W(nil, fmt.Sprintf("proxy %v %v to %v %v",
-			r.RemoteAddr, from.String(), r.URL.String(), r.UserAgent()))
+		ol.W(ctx, fmt.Sprintf("proxy stream %v to %v", r.RemoteAddr, r.URL.String()))
 	}
-	v.rp = &httputil.ReverseProxy{Director: director}
 
-	return v
-}
-
-func hasAnySuffixes(s string, suffixes ...string) bool {
-	for _, suffix := range suffixes {
-		if strings.HasSuffix(s, suffix) {
-			return true
-		}
+	if strings.HasSuffix(r.URL.Path, ".xml") {
+		// use default for xml requests.
+		v.httpStreamProxy.Transport = http.DefaultTransport
+	} else {
+		// each http stream use isolate transport.
+		v.httpStreamProxy.Transport = createHttpTransport()
 	}
-	return false
+
+	v.httpStreamProxy.ServeHTTP(w, r)
 }
 
 func (v *proxy) serveHttp(w http.ResponseWriter, r *http.Request) {
@@ -144,12 +313,32 @@ func (v *proxy) serveHttp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if p := r.URL.Path; !hasAnySuffixes(p, ".flv", ".m3u8", ".ts", ".xml") {
-		http.NotFound(w, r)
+	p := r.URL.Path
+	q := r.URL.Query()
+
+	isHlsPlus := strings.HasSuffix(p, ".m3u8")
+	if strings.HasSuffix(p, ".ts") && len(q.Get("shp_uuid")) > 0 {
+		isHlsPlus = true
+	}
+
+	if isHlsPlus {
+		v.serveHlsPlus(w, r)
 		return
 	}
 
-	v.rp.ServeHTTP(w, r)
+	hasAnySuffixes := func(s string, suffixes ...string) bool {
+		for _, suffix := range suffixes {
+			if strings.HasSuffix(s, suffix) {
+				return true
+			}
+		}
+		return false
+	}
+
+	if hasAnySuffixes(p, ".flv", ".ts", ".aac", ".mp3", ".xml") {
+		v.serveHttpStream(w, r)
+		return
+	}
 }
 
 const (
@@ -172,22 +361,22 @@ func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) 
 		return fmt.Sprintf("http port is not int, err is %v", err), ApiProxyQuery
 	}
 
+	hasProxyed := func(port int) bool {
+		for _, p := range v.ports {
+			if p == port {
+				return true
+			}
+		}
+		return false
+	}
+
 	ol.T(ctx, fmt.Sprintf("proxy http to %v, previous=%v, ports=%v", port, v.activePort, v.ports))
-	if !v.hasProxyed(port) {
+	if !hasProxyed(port) {
 		v.ports = append(v.ports, port)
 	}
 	v.activePort = port
 
 	return "", Success
-}
-
-func (v *proxy) hasProxyed(port int) bool {
-	for _, p := range v.ports {
-		if p == port {
-			return true
-		}
-	}
-	return false
 }
 
 func main() {
@@ -230,6 +419,14 @@ func main() {
 	closing := make(chan bool, 1)
 	wait := &sync.WaitGroup{}
 	proxy := NewProxy(conf)
+
+	// cleanup the proxy.
+	go func() {
+		ctx := &kernel.Context{}
+		for {
+			proxy.cleanup(ctx)
+		}
+	}()
 
 	oh.Server = signature
 

@@ -42,12 +42,13 @@ import (
 type SrsServiceConfig struct {
 	BigBinary string `json:"big_binary"`
 	Variables struct {
-		RtmpPort  string `json:"rtmp_port"`
-		ApiPort   string `json:"api_port"`
-		HttpPort  string `json:"http_port"`
-		BigPort   string `json:"big_port"`
-		BigBinary string `json:"big_binary"`
-		WorkDir   string `json:"work_dir"`
+		RtmpPort      string `json:"rtmp_port"`
+		ApiPort       string `json:"api_port"`
+		HttpPort      string `json:"http_port"`
+		BigPort       string `json:"big_port"`
+		BigBinary     string `json:"big_binary"`
+		WorkDir       string `json:"work_dir"`
+		HttpProxyPort string `json:"http_proxy_port"`
 	} `json:"variables"`
 }
 
@@ -66,6 +67,8 @@ func (v *SrsServiceConfig) Check() (err error) {
 		return fmt.Errorf("Empty variable rtmp port")
 	} else if len(v.Variables.WorkDir) == 0 {
 		return fmt.Errorf("Empty variable work dir")
+	} else if len(v.Variables.HttpProxyPort) == 0 {
+		return fmt.Errorf("Empty variable http proxy port")
 	}
 
 	return
@@ -150,6 +153,8 @@ func (v *SrsWorker) Exec() (err error) {
 	conf = strings.Replace(conf, s.Variables.HttpPort, strconv.Itoa(v.http), -1)
 	conf = strings.Replace(conf, s.Variables.ApiPort, strconv.Itoa(v.api), -1)
 	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
+	// for http proxy for hls+
+	conf = strings.Replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
 
 	// build other variables
 	if len(s.BigBinary) > 0 {

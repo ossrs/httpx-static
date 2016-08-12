@@ -262,22 +262,22 @@ func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) 
 		return fmt.Sprintf("rtmp port is not int, err is %v", err), ApiProxyQuery
 	}
 
+	hasProxyed := func(port int) bool {
+		for _, p := range v.ports {
+			if p == port {
+				return true
+			}
+		}
+		return false
+	}
+
 	ol.T(ctx, fmt.Sprintf("proxy rtmp to %v, previous=%v, ports=%v", port, v.activePort, v.ports))
-	if !v.hasProxyed(port) {
+	if !hasProxyed(port) {
 		v.ports = append(v.ports, port)
 	}
 	v.activePort = port
 
 	return "", Success
-}
-
-func (v *proxy) hasProxyed(port int) bool {
-	for _, p := range v.ports {
-		if p == port {
-			return true
-		}
-	}
-	return false
 }
 
 func main() {

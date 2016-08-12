@@ -23,7 +23,9 @@
         // The config file for httplb.
         "config": "../conf/httplb.json",
         // The control api port, must equal to httplb.json.
-        "api": 2038
+        "api": 2038,
+        // The serve port, must equal to httplb.json
+        "http": 8080
     },
     "worker": {
         // Wether enable the stream worker.
@@ -39,7 +41,7 @@
         // @remark shell will build config file to work dir.
         "work_dir": "./objs/workers",
         // The ports [start,stop] we can used for worker.
-        "ports": { "start": 50000, "stop": 60000 },
+        "ports": { "start": 50000, "stop": 51000 },
         // Service specified config
         "service": {
             // The binary of big for bms, ignore when empty.
@@ -51,7 +53,8 @@
                 "http_port": "${http}",
                 "big_port": "${big}",
                 "big_binary": "${big_binary}",
-                "work_dir": "${cwd}"
+                "work_dir": "${cwd}",
+                "http_proxy_port": "${http_proxy_port}"
             }
         }
     }

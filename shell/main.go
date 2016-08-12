@@ -65,6 +65,7 @@ type ShellConfig struct {
 		Binary  string `json:"binary"`
 		Config  string `json:"config"`
 		Api     int    `json:"api"`
+		Http    int    `json:"http"`
 	} `json:"httplb"`
 	Worker struct {
 		Enabled  bool            `json:"enabled"`
@@ -154,6 +155,9 @@ func (v *ShellConfig) Loads(c string) (err error) {
 			ol.E(nil, fmt.Sprintf("Invalid rtmplb config=%v, err is %v", r.Config, err))
 			return
 		}
+		if r.Api == 0 {
+			return fmt.Errorf("Empty rtmplb api port")
+		}
 	}
 
 	if r := &v.Httplb; r.Enabled {
@@ -167,6 +171,12 @@ func (v *ShellConfig) Loads(c string) (err error) {
 		if _, err = os.Lstat(r.Config); err != nil {
 			ol.E(nil, fmt.Sprintf("Invalid httplb config=%v, err is %v", r.Config, err))
 			return
+		}
+		if r.Api == 0 {
+			return fmt.Errorf("Empty httplb api port")
+		}
+		if r.Http == 0 {
+			return fmt.Errorf("Empty httplb http port")
 		}
 	}
 
@@ -221,7 +231,7 @@ const (
 )
 
 // check the api, retry when failed, error when exceed the max.
-func check_api(api string, max int, retry time.Duration) (err error) {
+func checkApi(api string, max int, retry time.Duration) (err error) {
 	for i := 0; i < max; i++ {
 		if _, _, err = oh.ApiRequest(api); err != nil {
 			time.Sleep(retry)
@@ -334,13 +344,13 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 
 	// sleep for a while and check the api.
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Rtmplb.Api)
-	if err = check_api(api, processRetryMax, processExecInterval); err != nil {
+	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
 		ol.E(ctx, fmt.Sprintf("Shell: rtmplb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
 	api = fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Httplb.Api)
-	if err = check_api(api, processRetryMax, processExecInterval); err != nil {
+	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
 		ol.E(ctx, fmt.Sprintf("Shell: httplb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
@@ -419,7 +429,7 @@ func (v *ShellBoss) execWorker() (err error) {
 	}
 
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/versions", worker.api)
-	if err = check_api(api, processRetryMax, processExecInterval); err != nil {
+	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
 		ol.E(ctx, "Shell: srs failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err)
 		return
