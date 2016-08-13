@@ -52,6 +52,12 @@ type SrsServiceConfig struct {
 	} `json:"variables"`
 }
 
+func (v *SrsServiceConfig) String() string {
+	r := &v.Variables
+	return fmt.Sprintf("srs<binary=%v,rtmp=%v,api=%v,http=%v,big=%v,bigbin=%v,dir=%v,proxy=%v>",
+		v.BigBinary, r.RtmpPort, r.ApiPort, r.HttpPort, r.BigPort, r.BigBinary, r.WorkDir, r.HttpProxyPort)
+}
+
 func (v *SrsServiceConfig) Check() (err error) {
 	if len(v.BigBinary) == 0 {
 		return fmt.Errorf("Empty big binary")

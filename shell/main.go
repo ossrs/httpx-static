@@ -68,6 +68,14 @@ type ShellConfig struct {
 		Api     int    `json:"api"`
 		Http    int    `json:"http"`
 	} `json:"httplb"`
+	Apilb struct {
+		Enabled bool   `json:"enabled"`
+		Binary  string `json:"binary"`
+		Config  string `json:"config"`
+		Api     int    `json:"api"`
+		Srs     int    `json:"srs"`
+		Big     int    `json:"big"`
+	} `json:"apilb"`
 	Worker struct {
 		Enabled  bool            `json:"enabled"`
 		Provider ServiceProvider `json:"provider"`
@@ -83,8 +91,24 @@ type ShellConfig struct {
 }
 
 func (v *ShellConfig) String() string {
-	r := &v.Rtmplb
-	return fmt.Sprintf("%v rtmplb(enabled=%v,binary=%v,config=%v)", &v.Config, r.Enabled, r.Binary, r.Config)
+	var rtmplb, httplb, apilb, worker string
+	if r := &v.Rtmplb; true {
+		rtmplb = fmt.Sprintf("rtmplb(%v,binary=%v,config=%v,api=%v,rtmp=%v)",
+			r.Enabled, r.Binary, r.Config, r.Api, r.Rtmp)
+	}
+	if r := &v.Httplb; true {
+		httplb = fmt.Sprintf("httplb(%v,binary=%v,config=%v,api=%v,http=%v)",
+			r.Enabled, r.Binary, r.Config, r.Api, r.Http)
+	}
+	if r := &v.Apilb; true {
+		apilb = fmt.Sprintf("apilb(%v,binary=%v,config=%v,api=%v,srs=%v,big=%v)",
+			r.Enabled, r.Binary, r.Config, r.Api, r.Srs, r.Big)
+	}
+	if r := &v.Worker; true {
+		worker = fmt.Sprintf("worker(%v,provider=%v,binary=%v,config=%v,dir=%v,ports=[%v,%v],service=%v)",
+			r.Enabled, r.Provider, r.Binary, r.Config, r.WorkDir, r.Ports.Start, r.Ports.Stop, r.Service)
+	}
+	return fmt.Sprintf("%v, %v, %v, %v, %v", &v.Config, rtmplb, httplb, apilb, worker)
 }
 
 // nil if not srs config.
@@ -181,6 +205,24 @@ func (v *ShellConfig) Loads(c string) (err error) {
 		}
 		if r.Http == 0 {
 			return fmt.Errorf("Empty httplb http port")
+		}
+	}
+
+	if r := &v.Apilb; r.Enabled {
+		if len(r.Binary) == 0 {
+			return fmt.Errorf("Empty apilb binary")
+		}
+		if len(r.Config) == 0 {
+			return fmt.Errorf("Empty apilb config")
+		}
+		if r.Api == 0 {
+			return fmt.Errorf("Empty apilb api")
+		}
+		if r.Srs == 0 {
+			return fmt.Errorf("Empty srs api")
+		}
+		if r.Big == 0 {
+			return fmt.Errorf("Empty big api")
 		}
 	}
 
@@ -297,6 +339,7 @@ type ShellBoss struct {
 	conf    *ShellConfig
 	rtmplb  *exec.Cmd
 	httplb  *exec.Cmd
+	apilb   *exec.Cmd
 	ctx     ol.Context
 	pool    *kernel.ProcessPool
 	ports   *PortPool
@@ -352,6 +395,19 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 		ol.T(ctx, fmt.Sprintf("Shell: exec httplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
+	if r := &v.conf.Apilb; r.Enabled {
+		args := []string{"-c", r.Config,
+			"-api", fmt.Sprintf("tcp://127.0.0.1:%v", r.Api),
+			"-srs", fmt.Sprintf("tcp://:%v", r.Srs), "-big", fmt.Sprintf("tcp://:%v", r.Big),
+		}
+		if v.apilb, err = v.pool.Start(r.Binary, args...); err != nil {
+			ol.E(ctx, "Shell: exec apilb failed, err is", err)
+			return
+		}
+		p := v.apilb
+		ol.T(ctx, fmt.Sprintf("Shell: exec apilb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
+	}
+
 	// sleep for a while and check the api.
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Rtmplb.Api)
 	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
@@ -365,7 +421,13 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
-	ol.T(ctx, "Shell: proxy ok.")
+	api = fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Apilb.Api)
+	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
+		ol.E(ctx, fmt.Sprintf("Shell: apilb failed, api=%v, max=%v, interval=%v, err is %v",
+			api, processRetryMax, processExecInterval, err))
+		return
+	}
+	ol.T(ctx, "Shell: kernel process ok.")
 
 	// fork workers.
 	if err = v.execWorker(); err != nil {
@@ -394,7 +456,7 @@ func (v *ShellBoss) Cycle() {
 		}
 
 		// when kernel object exited, close pool
-		if process == v.rtmplb || process == v.httplb {
+		if process == v.rtmplb || process == v.httplb || process == v.apilb {
 			ol.E(ctx, "Shell: kernel process", process.Process.Pid, "quit, shell quit.")
 			v.pool.Close()
 			return
@@ -454,14 +516,30 @@ func (v *ShellBoss) execWorker() (err error) {
 		ol.E(ctx, "Shell: notify rtmp proxy failed, err is", err)
 		return err
 	}
-	ol.T(ctx, "notify rtmp proxy ok, url is", url)
+	ol.T(ctx, "Shell: notify rtmp proxy ok, url is", url)
 
 	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?http=%v", v.conf.Httplb.Api, worker.http)
 	if _, _, err := oh.ApiRequest(url); err != nil {
 		ol.E(ctx, "Shell: notify http proxy failed, err is", err)
 		return err
 	}
-	ol.T(ctx, "notify http proxy ok, url is", url)
+	ol.T(ctx, "Shell: notify http proxy ok, url is", url)
+
+	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy/srs?port=%v", v.conf.Apilb.Api, worker.api)
+	if _, _, err := oh.ApiRequest(url); err != nil {
+		ol.E(ctx, "Shell: notify api proxy failed, err is", err)
+		return err
+	}
+	ol.T(ctx, "Shell: notify api proxy ok, url is", url)
+
+	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy/big?port=%v", v.conf.Apilb.Api, worker.big)
+	if _, _, err := oh.ApiRequest(url); err != nil {
+		ol.E(ctx, "Shell: notify api proxy failed, err is", err)
+		return err
+	}
+	ol.T(ctx, "Shell: notify api proxy ok, url is", url)
+
+	ol.T(ctx, "Shell: worker process ok.")
 
 	return
 }

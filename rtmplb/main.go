@@ -64,7 +64,8 @@ type RtmpLbConfig struct {
 }
 
 func (v *RtmpLbConfig) String() string {
-	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v)", &v.Config, v.Api, v.Rtmp.Listen)
+	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v,proxy=%v)",
+		&v.Config, v.Api, v.Rtmp.Listen, v.Rtmp.UseRtmpProxy)
 }
 
 func (v *RtmpLbConfig) Loads(c string) (err error) {
@@ -102,6 +103,7 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 	return
 }
 
+// The tcp porxy for rtmp backend.
 type proxy struct {
 	conf       *RtmpLbConfig
 	ports      []int
@@ -248,10 +250,9 @@ const (
 	ApiProxyQuery oh.SystemError = 100 + iota
 )
 
-func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) {
+func (v *proxy) serveChangeBackendApi(ctx ol.Context, r *http.Request) (string, oh.SystemError) {
 	var err error
 	q := r.URL.Query()
-	ctx := &kernel.Context{}
 
 	var rtmp string
 	if rtmp = q.Get("rtmp"); len(rtmp) == 0 {
@@ -394,7 +395,8 @@ func main() {
 
 		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?rtmp=19350", apiAddr))
 		http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
-			if msg, err := proxy.serveChangeBackendApi(r); err != Success {
+			ctx := &kernel.Context{}
+			if msg, err := proxy.serveChangeBackendApi(ctx, r); err != Success {
 				oh.CplxError(ctx, err, msg).ServeHTTP(w, r)
 				return
 			}

@@ -62,7 +62,7 @@ type HttpLbConfig struct {
 }
 
 func (v *HttpLbConfig) String() string {
-	return fmt.Sprintf("%v", &v.Config)
+	return fmt.Sprintf("%v, api=%v, http(listen=%v)", &v.Config, v.Api, v.Http.Listen)
 }
 
 func (v *HttpLbConfig) Loads(c string) (err error) {
@@ -369,10 +369,9 @@ const (
 	ApiProxyQuery oh.SystemError = 100 + iota
 )
 
-func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) {
+func (v *proxy) serveChangeBackendApi(ctx ol.Context, r *http.Request) (string, oh.SystemError) {
 	var err error
 	q := r.URL.Query()
-	ctx := &kernel.Context{}
 
 	var httpPort string
 	if httpPort = q.Get("http"); len(httpPort) == 0 {
@@ -481,12 +480,14 @@ func main() {
 
 		defer ol.E(ctx, "http proxy ok")
 
+		handler := http.NewServeMux()
+
 		ol.T(ctx, fmt.Sprintf("handle http://%v/", httpAddr))
-		http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			proxy.serveHttp(w, r)
 		})
 
-		server := &http.Server{Addr: httpNetwork, Handler: nil}
+		server := &http.Server{Addr: httpNetwork, Handler: handler}
 		if err = server.Serve(httpListener); err != nil {
 			ol.E(ctx, "http serve failed, err is", err)
 			return
@@ -507,23 +508,24 @@ func main() {
 
 		defer ol.E(ctx, "http handler ok")
 
-		oh.Server = signature
+		handler := http.NewServeMux()
 
 		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
-		http.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
+		handler.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
 			oh.WriteVersion(w, r, kernel.Version())
 		})
 
 		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?http=8081", apiAddr))
-		http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
-			if msg, err := proxy.serveChangeBackendApi(r); err != Success {
+		handler.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
+			ctx := &kernel.Context{}
+			if msg, err := proxy.serveChangeBackendApi(ctx, r); err != Success {
 				oh.CplxError(ctx, err, msg).ServeHTTP(w, r)
 				return
 			}
 			oh.Data(ctx, nil).ServeHTTP(w, r)
 		})
 
-		server := &http.Server{Addr: apiAddr, Handler: nil}
+		server := &http.Server{Addr: apiAddr, Handler: handler}
 		if err = server.Serve(apiListener); err != nil {
 			ol.E(ctx, "http serve failed, err is", err)
 			return

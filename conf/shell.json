@@ -6,7 +6,7 @@
         "file": "./shell.log"
     },
     "rtmplb": {
-        // Wether enable the rtmplb.
+        // Whether enable the rtmplb.
         "enabled": true,
         // The binary of rtmplb.
         "binary": "../rtmplb/rtmplb",
@@ -18,7 +18,7 @@
         "rtmp": 1935
     },
     "httplb": {
-        // Wether enable the httplb.
+        // Whether enable the httplb.
         "enabled": true,
         // The binary of httplb.
         "binary": "../httplb/httplb",
@@ -29,8 +29,22 @@
         // The serve port, pass to httplb.
         "http": 8080
     },
+    "apilb": {
+        // Whether enable the apilb.
+        "enabled": true,
+        // The binary of apilb.
+        "binary": "../apilb/apilb",
+        // The config file for apilb.
+        "config": "../conf/apilb.json",
+        // The control api port, pass to apilb.
+        "api": 2039,
+        // The srs api port, pass to apilb.
+        "srs": 1985,
+        // The big api port, pass to apilb.
+        "big": 1990
+    },
     "worker": {
-        // Wether enable the stream worker.
+        // Whether enable the stream worker.
         "enabled": true,
         // The worker provider, can be bellow:
         //      srs, simple rtmp server stream provider.
