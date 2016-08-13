@@ -29,6 +29,7 @@ package main
 
 import (
 	"encoding/json"
+	"flag"
 	"fmt"
 	oa "github.com/ossrs/go-oryx-lib/asprocess"
 	oh "github.com/ossrs/go-oryx-lib/http"
@@ -403,6 +404,12 @@ func (v *proxy) serveChangeBackendApi(r *http.Request) (string, oh.SystemError) 
 
 func main() {
 	var err error
+
+	// for shell.
+	var api, port string
+	flag.StringVar(&api, "a", "", "The api tcp://host:port, optional.")
+	flag.StringVar(&port, "l", "", "The listen tcp://host:port, optional.")
+
 	confFile := oo.ParseArgv("../conf/httplb.json", kernel.Version(), signature)
 	fmt.Println("HTTPLB is the load-balance for http flv/hls+ streaming, config is", confFile)
 
@@ -412,6 +419,14 @@ func main() {
 		return
 	}
 	defer conf.Close()
+
+	// override by shell.
+	if len(api) > 0 {
+		conf.Api = api
+	}
+	if len(port) > 0 {
+		conf.Http.Listen = port
+	}
 
 	ctx := &kernel.Context{}
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))

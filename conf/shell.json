@@ -12,8 +12,10 @@
         "binary": "../rtmplb/rtmplb",
         // The config file for rtmplb.
         "config": "../conf/rtmplb.json",
-        // The control api port, must equal to rtmplb.json.
-        "api": 2037
+        // The control api port, pass to rtmplb.
+        "api": 2037,
+        // The serve port, pass to rtmplb.
+        "rtmp": 1935
     },
     "httplb": {
         // Wether enable the httplb.
@@ -22,9 +24,9 @@
         "binary": "../httplb/httplb",
         // The config file for httplb.
         "config": "../conf/httplb.json",
-        // The control api port, must equal to httplb.json.
+        // The control api port, pass to httplb.
         "api": 2038,
-        // The serve port, must equal to httplb.json
+        // The serve port, pass to httplb.
         "http": 8080
     },
     "worker": {

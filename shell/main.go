@@ -59,6 +59,7 @@ type ShellConfig struct {
 		Binary  string `json:"binary"`
 		Config  string `json:"config"`
 		Api     int    `json:"api"`
+		Rtmp    int    `json:"rtmp"`
 	} `json:"rtmplb"`
 	Httplb struct {
 		Enabled bool   `json:"enabled"`
@@ -157,6 +158,9 @@ func (v *ShellConfig) Loads(c string) (err error) {
 		}
 		if r.Api == 0 {
 			return fmt.Errorf("Empty rtmplb api port")
+		}
+		if r.Rtmp == 0 {
+			return fmt.Errorf("Empty rtmplb rtmp port")
 		}
 	}
 
@@ -325,7 +329,10 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 
 	// fork processes.
 	if r := &v.conf.Rtmplb; r.Enabled {
-		if v.rtmplb, err = v.pool.Start(r.Binary, "-c", r.Config); err != nil {
+		args := []string{"-c", r.Config,
+			"-a", fmt.Sprintf("tcp://127.0.0.1:%v", r.Api), "-l", fmt.Sprintf("tcp://:%v", r.Rtmp),
+		}
+		if v.rtmplb, err = v.pool.Start(r.Binary, args...); err != nil {
 			ol.E(ctx, "Shell: exec rtmplb failed, err is", err)
 			return
 		}
@@ -334,7 +341,10 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 	}
 
 	if r := &v.conf.Httplb; r.Enabled {
-		if v.httplb, err = v.pool.Start(r.Binary, "-c", r.Config); err != nil {
+		args := []string{"-c", r.Config,
+			"-a", fmt.Sprintf("tcp://127.0.0.1:%v", r.Api), "-l", fmt.Sprintf("tcp://:%v", r.Http),
+		}
+		if v.httplb, err = v.pool.Start(r.Binary, args...); err != nil {
 			ol.E(ctx, "Shell: exec httplb failed, err is", err)
 			return
 		}
