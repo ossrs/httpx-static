@@ -445,7 +445,9 @@ func (v *ShellBoss) Cycle() {
 		var err error
 		var process *exec.Cmd
 		if process, err = v.pool.Wait(); err != nil {
-			ol.W(ctx, "Shell: wait process failed, err is", err)
+			if err != kernel.PoolDisposed {
+				ol.W(ctx, "Shell: wait process failed, err is", err)
+			}
 			return
 		}
 
@@ -559,9 +561,18 @@ func main() {
 
 	ctx := &kernel.Context{}
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
+	defer ol.T(ctx, "Shell: terminated")
 
 	shell := NewShellBoss(conf)
-	f := func() {
+
+	if err = shell.ExecBuddies(); err != nil {
+		ol.E(ctx, "Shell exec buddies failed, err is", err)
+		return
+	}
+	defer shell.Close()
+
+	// process singals
+	go func() {
 		c := make(chan os.Signal)
 		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 		for s := range c {
@@ -570,19 +581,10 @@ func main() {
 			return
 		}
 
-	}
-	func() {
-		if err = shell.ExecBuddies(); err != nil {
-			ol.E(ctx, "Shell exec buddies failed, err is", err)
-			return
-		}
-		defer shell.Close()
-
-		go f()
-
-		shell.Cycle()
 	}()
 
-	ol.T(ctx, "Shell: terminated")
+	// cycle shell util quit.
+	shell.Cycle()
+
 	return
 }
