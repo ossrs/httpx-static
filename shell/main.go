@@ -28,6 +28,7 @@ SOFTWARE.
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	oh "github.com/ossrs/go-oryx-lib/http"
@@ -40,6 +41,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -362,21 +364,19 @@ func (v *SrsVersion) String() string {
 
 // The shell to exec all processes.
 type ShellBoss struct {
-	conf    *ShellConfig
-	rtmplb  *exec.Cmd
-	httplb  *exec.Cmd
-	apilb   *exec.Cmd
-	ctx     ol.Context
-	pool    *kernel.ProcessPool
-	ports   *PortPool
-	workers []*SrsWorker
-	version *SrsVersion
+	conf         *ShellConfig
+	rtmplb       *exec.Cmd
+	httplb       *exec.Cmd
+	apilb        *exec.Cmd
+	pool         *kernel.ProcessPool
+	ports        *PortPool
+	workers      []*SrsWorker
+	activeWorker *SrsWorker
 }
 
 func NewShellBoss(conf *ShellConfig) *ShellBoss {
 	v := &ShellBoss{
 		conf:    conf,
-		ctx:     &kernel.Context{},
 		pool:    kernel.NewProcessPool(),
 		workers: make([]*SrsWorker, 0),
 	}
@@ -386,44 +386,118 @@ func NewShellBoss(conf *ShellConfig) *ShellBoss {
 	return v
 }
 
-func (v *ShellBoss) Close() (err error) {
+func (v *ShellBoss) Close(ctx ol.Context) (err error) {
 	for _, w := range v.workers {
 		w.Close()
 	}
 
-	return v.pool.Close()
+	return v.pool.Close(ctx)
 }
 
-func (v *ShellBoss) Upgrade() (err error) {
+func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
+	ver := &SrsVersion{}
+	if true {
+		var b bytes.Buffer
+		cmd := exec.Command(v.conf.Worker.Binary, "-v")
+		cmd.Stderr = &b
+		if err = cmd.Run(); err != nil {
+			ol.E(ctx, "upgrade get version failed, err is", err)
+			return
+		}
+
+		version := strings.TrimSpace(string(b.Bytes()))
+		vers := strings.Split(version, "-")
+		if len(vers) > 1 {
+			extra := vers[1]
+			if ver.Extra, err = strconv.Atoi(extra); err != nil {
+				ol.E(ctx, fmt.Sprintf("upgrade extra failed, version=%v, err is", version, err))
+				return
+			}
+		}
+
+		if vers = strings.Split(vers[0], "."); len(vers) != 3 {
+			ol.E(ctx, fmt.Sprintf("upgrade version invalid, version=%v, err is %v", version, err))
+			return
+		}
+		if ver.Major, err = strconv.Atoi(vers[0]); err != nil {
+			ol.E(ctx, fmt.Sprintf("upgrade major failed, version=%v, err is %v", version, err))
+			return
+		}
+		if ver.Minor, err = strconv.Atoi(vers[1]); err != nil {
+			ol.E(ctx, fmt.Sprintf("upgrade minor failed, version=%v, err is %v", version, err))
+			return
+		}
+		if ver.Revision, err = strconv.Atoi(vers[2]); err != nil {
+			ol.E(ctx, fmt.Sprintf("upgrade revision failed, version=%v, err is %v", version, err))
+			return
+		}
+	}
+
+	if ver.String() == v.activeWorker.version.String() {
+		ol.W(ctx, fmt.Sprintf("upgrade ignore version=%v, signature=%v",
+			ver.String(), v.activeWorker.version.Signature))
+		return
+	}
+	ol.T(ctx, fmt.Sprintf("upgrade %v to %v, signature=%v",
+		v.activeWorker.version.String(), ver.String(), v.activeWorker.version.Signature))
+
+	// start a new worker.
+	var worker *SrsWorker
+	if worker, err = v.execWorker(ctx); err != nil {
+		ol.E(ctx, "upgrade exec worker failed, err is", err)
+
+		// rollback api when worker failed.
+		if err = v.updateProxyApi(ctx, v.activeWorker); err != nil {
+			ol.E(ctx, "upgrade rollback proxy api failed, err is", err)
+			v.Close(ctx)
+		}
+		return
+	}
+
+	// upgrade ok, update the active worker and set others to deprecated.
+	worker.state = SrsStateActive
+	v.activeWorker = worker
+
+	for _, w := range v.workers {
+		if worker == w {
+			continue
+		}
+		if w.state != SrsStateActive {
+			continue
+		}
+		w.state = SrsStateDeprecated
+		r0 := w.process.Process.Signal(syscall.SIGUSR2)
+		ol.T(ctx, fmt.Sprintf("upgrade deprecated %v, r0=%v ok", w, r0))
+	}
+
+	ol.T(ctx, fmt.Sprintf("upgrade ok, %v", worker))
 	return
 }
 
-func (v *ShellBoss) ExecBuddies() (err error) {
-	ctx := v.ctx
-
+func (v *ShellBoss) ExecBuddies(ctx ol.Context) (err error) {
 	// fork processes.
 	if r := &v.conf.Rtmplb; r.Enabled {
 		args := []string{"-c", r.Config,
 			"-a", fmt.Sprintf("tcp://127.0.0.1:%v", r.Api), "-l", fmt.Sprintf("tcp://:%v", r.Rtmp),
 		}
-		if v.rtmplb, err = v.pool.Start(r.Binary, args...); err != nil {
-			ol.E(ctx, "Shell: exec rtmplb failed, err is", err)
+		if v.rtmplb, err = v.pool.Start(ctx, r.Binary, args...); err != nil {
+			ol.E(ctx, "exec rtmplb failed, err is", err)
 			return
 		}
 		p := v.rtmplb
-		ol.T(ctx, fmt.Sprintf("Shell: exec rtmplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
+		ol.T(ctx, fmt.Sprintf("exec rtmplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
 	if r := &v.conf.Httplb; r.Enabled {
 		args := []string{"-c", r.Config,
 			"-a", fmt.Sprintf("tcp://127.0.0.1:%v", r.Api), "-l", fmt.Sprintf("tcp://:%v", r.Http),
 		}
-		if v.httplb, err = v.pool.Start(r.Binary, args...); err != nil {
-			ol.E(ctx, "Shell: exec httplb failed, err is", err)
+		if v.httplb, err = v.pool.Start(ctx, r.Binary, args...); err != nil {
+			ol.E(ctx, "exec httplb failed, err is", err)
 			return
 		}
 		p := v.httplb
-		ol.T(ctx, fmt.Sprintf("Shell: exec httplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
+		ol.T(ctx, fmt.Sprintf("exec httplb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
 	if r := &v.conf.Apilb; r.Enabled {
@@ -431,85 +505,101 @@ func (v *ShellBoss) ExecBuddies() (err error) {
 			"-api", fmt.Sprintf("tcp://127.0.0.1:%v", r.Api),
 			"-srs", fmt.Sprintf("tcp://:%v", r.Srs), "-big", fmt.Sprintf("tcp://:%v", r.Big),
 		}
-		if v.apilb, err = v.pool.Start(r.Binary, args...); err != nil {
-			ol.E(ctx, "Shell: exec apilb failed, err is", err)
+		if v.apilb, err = v.pool.Start(ctx, r.Binary, args...); err != nil {
+			ol.E(ctx, "exec apilb failed, err is", err)
 			return
 		}
 		p := v.apilb
-		ol.T(ctx, fmt.Sprintf("Shell: exec apilb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
+		ol.T(ctx, fmt.Sprintf("exec apilb ok, args=%v, pid=%v", p.Args, p.Process.Pid))
 	}
 
 	// sleep for a while and check the api.
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Rtmplb.Api)
 	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
-		ol.E(ctx, fmt.Sprintf("Shell: rtmplb failed, api=%v, max=%v, interval=%v, err is %v",
+		ol.E(ctx, fmt.Sprintf("rtmplb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
 	api = fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Httplb.Api)
 	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
-		ol.E(ctx, fmt.Sprintf("Shell: httplb failed, api=%v, max=%v, interval=%v, err is %v",
+		ol.E(ctx, fmt.Sprintf("httplb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
 	api = fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Apilb.Api)
 	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
-		ol.E(ctx, fmt.Sprintf("Shell: apilb failed, api=%v, max=%v, interval=%v, err is %v",
+		ol.E(ctx, fmt.Sprintf("apilb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
-	ol.T(ctx, "Shell: kernel process ok.")
+	ol.T(ctx, "kernel process ok.")
 
 	// fork workers.
-	if err = v.execWorker(); err != nil {
+	var worker *SrsWorker
+	if worker, err = v.execWorker(ctx); err != nil {
+		ol.E(ctx, "exec worker failed, err is", err)
 		return
 	}
+	v.activeWorker = worker
+	worker.state = SrsStateActive
+	ol.T(ctx, fmt.Sprintf("worker process ok, %v", worker))
 
+	ol.T(ctx, fmt.Sprintf("all buddies ok"))
 	return
 }
 
 // Cycle all processes util quit.
-func (v *ShellBoss) Cycle() {
-	ctx := v.ctx
-
+func (v *ShellBoss) Cycle(ctx ol.Context) {
 	for {
 		var err error
 		var process *exec.Cmd
 		if process, err = v.pool.Wait(); err != nil {
 			if err != kernel.PoolDisposed {
-				ol.W(ctx, "Shell: wait process failed, err is", err)
+				ol.W(ctx, "wait process failed, err is", err)
 			}
 			return
 		}
 
 		// ignore events when pool closed
 		if v.pool.Closed() {
-			ol.E(ctx, "Shell: pool terminated")
+			ol.E(ctx, "pool terminated")
 			return
 		}
 
 		// when kernel object exited, close pool
 		if process == v.rtmplb || process == v.httplb || process == v.apilb {
-			ol.E(ctx, "Shell: kernel process", process.Process.Pid, "quit, shell quit.")
-			v.pool.Close()
+			ol.E(ctx, "kernel process", process.Process.Pid, "quit, shell quit.")
+			v.pool.Close(ctx)
 			return
 		}
 
 		// remove workers
+		var worker *SrsWorker
 		for i, w := range v.workers {
 			if w.process == process {
-				w.Close()
+				worker = w
+				worker.Close()
 				v.workers = append(v.workers[:i], v.workers[i+1:]...)
 				break
 			}
 		}
 
+		// ignore the worker not in active.
+		if worker.state != SrsStateActive {
+			ol.T(ctx, fmt.Sprintf("ignore worker terminated, %v", worker))
+			continue
+		} else {
+			ol.W(ctx, fmt.Sprintf("restart worker %v", worker))
+		}
+
 		// restart worker when terminated.
-		ol.T(ctx, "fork worker for", process.Process.Pid, "existed")
-		if err = v.execWorker(); err != nil {
-			ol.E(ctx, "Shell: restart worker failed, err is", err)
+		if worker, err = v.execWorker(ctx); err != nil {
+			ol.E(ctx, "restart worker failed, err is", err)
 			return
 		}
+		worker.state = SrsStateActive
+		v.activeWorker = worker
+		ol.T(ctx, fmt.Sprintf("fork worker ok, %v", worker))
 	}
 
 	return
@@ -519,9 +609,7 @@ const (
 	ApiUpgradeError oh.SystemError = 100 + iota
 )
 
-func (v *ShellBoss) execWorker() (err error) {
-	ctx := v.ctx
-
+func (v *ShellBoss) execWorker(ctx ol.Context) (worker *SrsWorker, err error) {
 	r := &v.conf.Worker
 	if !r.Enabled {
 		return
@@ -531,25 +619,42 @@ func (v *ShellBoss) execWorker() (err error) {
 		return
 	}
 
-	worker := NewSrsWorker(ctx, v, v.conf.SrsConfig(), v.ports)
+	worker = NewSrsWorker(ctx, v, v.conf.SrsConfig(), v.ports)
 	if err = worker.Exec(); err != nil {
-		ol.E(ctx, "Shell: start srs worker failed, err is", err)
+		ol.E(ctx, "start srs worker failed, err is", err)
 		return
 	}
+	ol.T(ctx, "start srs worker ok")
 
+	if err = v.checkWorkerApi(ctx, worker); err != nil {
+		ol.E(ctx, "check worker api failed, err is", err)
+		return
+	}
+	ol.T(ctx, "check srs worker api ok")
+
+	if err = v.updateProxyApi(ctx, worker); err != nil {
+		ol.E(ctx, "update proxy api failed, err is", err)
+		return
+	}
+	ol.T(ctx, "exec process ok.")
+
+	return
+}
+
+func (v *ShellBoss) checkWorkerApi(ctx ol.Context, worker *SrsWorker) (err error) {
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/versions", worker.api)
 	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
-		ol.E(ctx, fmt.Sprintf("Shell: srs failed, api=%v, max=%v, interval=%v, err is %v",
+		ol.E(ctx, fmt.Sprintf("srs failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
 
 	v.workers = append(v.workers, worker)
-	ol.T(ctx, fmt.Sprintf("Shell: exec worker ok, api=%v, total=%v", api, len(v.workers)))
+	ol.T(ctx, fmt.Sprintf("exec worker ok, api=%v, total=%v", api, len(v.workers)))
 
 	// update current version
 	if _, body, err := oh.ApiRequest(api); err != nil {
-		ol.E(ctx, "Shell: request srs version failed, err is", err)
+		ol.E(ctx, "request srs version failed, err is", err)
 		return err
 	} else {
 		s := struct {
@@ -557,44 +662,47 @@ func (v *ShellBoss) execWorker() (err error) {
 			Data SrsVersion `json:"data"`
 		}{}
 		if err = json.Unmarshal(body, &s); err != nil {
-			ol.E(ctx, "Shell: request srs version failed, err is", err)
+			ol.E(ctx, "request srs version failed, err is", err)
 			return err
 		}
 
-		v.version = &s.Data
-		ol.T(ctx, fmt.Sprintf("Shell: update version to %v, signature=%v", v.version, v.version.Signature))
+		worker.version = &s.Data
+		ol.T(ctx, fmt.Sprintf("update version to %v, signature=%v",
+			worker.version, worker.version.Signature))
 	}
 
+	return
+}
+
+func (v *ShellBoss) updateProxyApi(ctx ol.Context, worker *SrsWorker) (err error) {
 	// notify rtmp and http proxy to update the active backend.
 	url := fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?rtmp=%v", v.conf.Rtmplb.Api, worker.rtmp)
 	if _, _, err := oh.ApiRequest(url); err != nil {
-		ol.E(ctx, "Shell: notify rtmp proxy failed, err is", err)
+		ol.E(ctx, "notify rtmp proxy failed, err is", err)
 		return err
 	}
-	ol.T(ctx, "Shell: notify rtmp proxy ok, url is", url)
+	ol.T(ctx, "notify rtmp proxy ok, url is", url)
 
 	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?http=%v", v.conf.Httplb.Api, worker.http)
 	if _, _, err := oh.ApiRequest(url); err != nil {
-		ol.E(ctx, "Shell: notify http proxy failed, err is", err)
+		ol.E(ctx, "notify http proxy failed, err is", err)
 		return err
 	}
-	ol.T(ctx, "Shell: notify http proxy ok, url is", url)
+	ol.T(ctx, "notify http proxy ok, url is", url)
 
 	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy/srs?port=%v", v.conf.Apilb.Api, worker.api)
 	if _, _, err := oh.ApiRequest(url); err != nil {
-		ol.E(ctx, "Shell: notify api proxy failed, err is", err)
+		ol.E(ctx, "notify api proxy failed, err is", err)
 		return err
 	}
-	ol.T(ctx, "Shell: notify api proxy ok, url is", url)
+	ol.T(ctx, "notify api proxy ok, url is", url)
 
 	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy/big?port=%v", v.conf.Apilb.Api, worker.big)
 	if _, _, err := oh.ApiRequest(url); err != nil {
-		ol.E(ctx, "Shell: notify api proxy failed, err is", err)
+		ol.E(ctx, "notify api proxy failed, err is", err)
 		return err
 	}
-	ol.T(ctx, "Shell: notify api proxy ok, url is", url)
-
-	ol.T(ctx, "Shell: worker process ok.")
+	ol.T(ctx, "notify api proxy ok, url is", url)
 
 	return
 }
@@ -618,11 +726,11 @@ func main() {
 
 	shell := NewShellBoss(conf)
 
-	if err = shell.ExecBuddies(); err != nil {
+	if err = shell.ExecBuddies(ctx); err != nil {
 		ol.E(ctx, "Shell exec buddies failed, err is", err)
 		return
 	}
-	defer shell.Close()
+	defer shell.Close(ctx)
 
 	var apiListener net.Listener
 	addrs := strings.Split(conf.Api, "://")
@@ -650,7 +758,9 @@ func main() {
 			}
 		}()
 
-		defer ol.T(ctx, "Shell: signal ok.")
+		ctx := &kernel.Context{}
+		ol.T(ctx, "Signal: ready")
+		defer ol.T(ctx, "Signal: signal ok.")
 
 		c := make(chan os.Signal)
 		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGUSR2)
@@ -658,15 +768,15 @@ func main() {
 			// for night-club upgrade.
 			if s == syscall.SIGUSR2 {
 				// when upgrade failed, we serve as current workers.
-				if err = shell.Upgrade(); err != nil {
-					ol.W(ctx, "Shell: upgrade failed, err is", err)
+				if err = shell.Upgrade(ctx); err != nil {
+					ol.W(ctx, "Signal: upgrade failed, err is", err)
 				} else {
-					ol.T(ctx, "Shell: upgrade ok.")
+					ol.T(ctx, "Signal: upgrade ok.")
 				}
 				continue
 			}
 
-			ol.W(ctx, "Shell: got signal", s)
+			ol.W(ctx, "Signal: got signal", s)
 			return
 		}
 
@@ -684,36 +794,38 @@ func main() {
 			}
 		}()
 
-		defer ol.E(ctx, "http handler ok")
+		ctx := &kernel.Context{}
+		ol.T(ctx, "Api: ready")
+		defer ol.E(ctx, "Api: http handler ok")
 
 		handler := http.NewServeMux()
 
-		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
+		ol.T(ctx, fmt.Sprintf("Api: handle http://%v/api/v1/version", apiAddr))
 		handler.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
 			oh.WriteVersion(w, r, kernel.Version())
 		})
 
-		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/summary", apiAddr))
+		ol.T(ctx, fmt.Sprintf("Api: handle http://%v/api/v1/summary", apiAddr))
 		handler.HandleFunc("/api/v1/summary", func(w http.ResponseWriter, r *http.Request) {
 			oh.WriteVersion(w, r, kernel.Version())
 		})
 
-		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/upgrade", apiAddr))
+		ol.T(ctx, fmt.Sprintf("Api: handle http://%v/api/v1/upgrade", apiAddr))
 		handler.HandleFunc("/api/v1/upgrade", func(w http.ResponseWriter, r *http.Request) {
 			ctx := &kernel.Context{}
-			if err = shell.Upgrade(); err != nil {
+			if err = shell.Upgrade(ctx); err != nil {
 				msg := fmt.Sprintf("upgrade failed, err is %v", err)
 				oh.WriteCplxError(ctx, w, r, ApiUpgradeError, msg)
 				return
 			}
 
-			ol.T(ctx, "Shell: upgrade ok.")
+			ol.T(ctx, "Api: upgrade ok.")
 			oh.WriteData(ctx, w, r, nil)
 		})
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}
 		if err = server.Serve(apiListener); err != nil {
-			ol.E(ctx, "http serve failed, err is", err)
+			ol.E(ctx, "Api: http serve failed, err is", err)
 			return
 		}
 	}()
@@ -730,15 +842,17 @@ func main() {
 			}
 		}()
 
-		defer ol.T(ctx, "Shell: terminated")
+		ctx := &kernel.Context{}
+		ol.T(ctx, "Cycle: ready")
+		defer ol.T(ctx, "Cycle: terminated")
 
-		shell.Cycle()
+		shell.Cycle(ctx)
 	}()
 
 	// wait for quit.
 	<-closing
 	closing <- true
-	shell.Close()
+	shell.Close(ctx)
 	apiListener.Close()
 	wait.Wait()
 

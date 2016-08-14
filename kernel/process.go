@@ -66,7 +66,6 @@ type ProcessPool struct {
 
 func NewProcessPool() *ProcessPool {
 	return &ProcessPool{
-		ctx:             &Context{},
 		wait:            &sync.WaitGroup{},
 		exitedProcesses: make(chan *ProcessDeadBody),
 		processLock:     &sync.Mutex{},
@@ -78,9 +77,7 @@ func NewProcessPool() *ProcessPool {
 
 // Start new process, user can start many processes.
 // @return error PoolDisposed when pool disposed.
-func (v *ProcessPool) Start(name string, arg ...string) (c *exec.Cmd, err error) {
-	ctx := v.ctx
-
+func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec.Cmd, err error) {
 	// when disposed, should never use it again.
 	v.disposeLock.Lock()
 	defer v.disposeLock.Unlock()
@@ -89,8 +86,8 @@ func (v *ProcessPool) Start(name string, arg ...string) (c *exec.Cmd, err error)
 	}
 
 	// create command and start process.
-	var process *exec.Cmd
-	process = exec.Command(name, arg...)
+	var process *exec.Cmd = exec.Command(name, arg...)
+
 	if err = process.Start(); err != nil {
 		ol.E(ctx, "start", name, arg, "failed, err is", err)
 		return
@@ -139,11 +136,17 @@ func (v *ProcessPool) Start(name string, arg ...string) (c *exec.Cmd, err error)
 // Wait for a dead process.
 // @return error PoolDisposed when pool disposed.
 func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
-	// when disposed, should never use it again.
-	v.disposeLock.Lock()
-	defer v.disposeLock.Unlock()
-	if v.disposed {
-		return nil, PoolDisposed
+	// should never lock, for it's wait gotoutine.
+	if err = func() error {
+		// when disposed, should never use it again.
+		v.disposeLock.Lock()
+		defer v.disposeLock.Unlock()
+		if v.disposed {
+			return PoolDisposed
+		}
+		return nil
+	}(); err != nil {
+		return
 	}
 
 	select {
@@ -160,9 +163,7 @@ func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
 
 // interface io.Closer
 // @return error PoolDisposed when pool disposed.
-func (v *ProcessPool) Close() (err error) {
-	ctx := v.ctx
-
+func (v *ProcessPool) Close(ctx ol.Context) (err error) {
 	// notify we are closing, process should drop any info and quit.
 	select {
 	case v.closing <- true:

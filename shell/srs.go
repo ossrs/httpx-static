@@ -80,6 +80,33 @@ func (v *SrsServiceConfig) Check() (err error) {
 	return
 }
 
+// The state of srs worker
+type SrsState int
+
+const (
+	// worker is init and not start.
+	SrsStateInit SrsState = 1 << iota
+	// worker is active serving state.
+	SrsStateActive
+	// worker is deprecated state, should ignore its terminated.
+	// for example, when new process change from init to active,
+	// the old processes should change to deprecated.
+	SrsStateDeprecated
+)
+
+func (v SrsState) String() string {
+	switch v {
+	case SrsStateInit:
+		return "init"
+	case SrsStateActive:
+		return "active"
+	case SrsStateDeprecated:
+		return "deprecated"
+	default:
+		return "unknown"
+	}
+}
+
 // The srs stream worker.
 type SrsWorker struct {
 	shell   *ShellBoss
@@ -99,14 +126,23 @@ type SrsWorker struct {
 	http int
 	api  int
 	big  int
+	// version of worker.
+	version *SrsVersion
+	// the state of process.
+	state SrsState
 }
 
 func NewSrsWorker(ctx ol.Context, shell *ShellBoss, conf *SrsServiceConfig, ports *PortPool) *SrsWorker {
 	v := &SrsWorker{
 		ctx: ctx, shell: shell, conf: conf,
 		pool: ports, lock: &sync.Mutex{},
+		state: SrsStateInit,
 	}
 	return v
+}
+
+func (v *SrsWorker) String() string {
+	return fmt.Sprintf("srs worker, pid=%v, state=%v, version=%v", v.process.Process.Pid, v.state, v.version)
 }
 
 func (v *SrsWorker) Close() error {
@@ -212,7 +248,7 @@ func (v *SrsWorker) Exec() (err error) {
 	ol.T(ctx, fmt.Sprintf("srs ports(rtmp=%v,http=%v,api=%v,big=%v), cwd=%v, config=%v",
 		v.rtmp, v.http, v.api, v.big, v.workDir, v.config))
 
-	if v.process, err = v.shell.pool.Start(r.Binary, "-c", v.config); err != nil {
+	if v.process, err = v.shell.pool.Start(ctx, r.Binary, "-c", v.config); err != nil {
 		ol.E(ctx, "exec worker failed, err is", err)
 		return
 	}
