@@ -452,6 +452,8 @@ func main() {
 	}
 	defer apiListener.Close()
 
+	oh.Server = signature
+
 	closing := make(chan bool, 1)
 	wait := &sync.WaitGroup{}
 	proxy := NewProxy(conf)
@@ -463,8 +465,6 @@ func main() {
 			proxy.cleanup(ctx)
 		}
 	}()
-
-	oh.Server = signature
 
 	// http proxy.
 	go func() {

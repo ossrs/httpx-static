@@ -35,9 +35,13 @@ import (
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/kernel"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -88,6 +92,7 @@ type ShellConfig struct {
 		} `json:"ports"`
 		Service interface{} `json:"service"`
 	} `json:"worker"`
+	Api string `json:"api"`
 }
 
 func (v *ShellConfig) String() string {
@@ -108,7 +113,7 @@ func (v *ShellConfig) String() string {
 		worker = fmt.Sprintf("worker(%v,provider=%v,binary=%v,config=%v,dir=%v,ports=[%v,%v],service=%v)",
 			r.Enabled, r.Provider, r.Binary, r.Config, r.WorkDir, r.Ports.Start, r.Ports.Stop, r.Service)
 	}
-	return fmt.Sprintf("%v, %v, %v, %v, %v", &v.Config, rtmplb, httplb, apilb, worker)
+	return fmt.Sprintf("%v, api=%v, %v, %v, %v, %v", &v.Config, v.Api, rtmplb, httplb, apilb, worker)
 }
 
 // nil if not srs config.
@@ -266,6 +271,10 @@ func (v *ShellConfig) Loads(c string) (err error) {
 		}
 	}
 
+	if len(v.Api) == 0 {
+		return fmt.Errorf("Empty api listen")
+	}
+
 	return
 }
 
@@ -334,6 +343,23 @@ func (v *PortPool) Free(port int) {
 	v.ports = append(v.ports, port)
 }
 
+// The version of srs.
+type SrsVersion struct {
+	Major     int    `json:"major"`
+	Minor     int    `json:"minor"`
+	Revision  int    `json:"revision"`
+	Extra     int    `json:"extra"`
+	Signature string `json:"signature"`
+}
+
+func (v *SrsVersion) String() string {
+	if v.Extra <= 0 {
+		return fmt.Sprintf("%v.%v.%v", v.Major, v.Minor, v.Revision)
+	} else {
+		return fmt.Sprintf("%v.%v.%v-%v", v.Major, v.Minor, v.Revision, v.Extra)
+	}
+}
+
 // The shell to exec all processes.
 type ShellBoss struct {
 	conf    *ShellConfig
@@ -344,6 +370,7 @@ type ShellBoss struct {
 	pool    *kernel.ProcessPool
 	ports   *PortPool
 	workers []*SrsWorker
+	version *SrsVersion
 }
 
 func NewShellBoss(conf *ShellConfig) *ShellBoss {
@@ -365,6 +392,10 @@ func (v *ShellBoss) Close() (err error) {
 	}
 
 	return v.pool.Close()
+}
+
+func (v *ShellBoss) Upgrade() (err error) {
+	return
 }
 
 func (v *ShellBoss) ExecBuddies() (err error) {
@@ -484,6 +515,10 @@ func (v *ShellBoss) Cycle() {
 	return
 }
 
+const (
+	ApiUpgradeError oh.SystemError = 100 + iota
+)
+
 func (v *ShellBoss) execWorker() (err error) {
 	ctx := v.ctx
 
@@ -504,13 +539,31 @@ func (v *ShellBoss) execWorker() (err error) {
 
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/versions", worker.api)
 	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
-		ol.E(ctx, "Shell: srs failed, api=%v, max=%v, interval=%v, err is %v",
-			api, processRetryMax, processExecInterval, err)
+		ol.E(ctx, fmt.Sprintf("Shell: srs failed, api=%v, max=%v, interval=%v, err is %v",
+			api, processRetryMax, processExecInterval, err))
 		return
 	}
 
 	v.workers = append(v.workers, worker)
-	ol.T(ctx, "Shell: exec worker ok, total", len(v.workers))
+	ol.T(ctx, fmt.Sprintf("Shell: exec worker ok, api=%v, total=%v", api, len(v.workers)))
+
+	// update current version
+	if _, body, err := oh.ApiRequest(api); err != nil {
+		ol.E(ctx, "Shell: request srs version failed, err is", err)
+		return err
+	} else {
+		s := struct {
+			Code int        `json:"code"`
+			Data SrsVersion `json:"data"`
+		}{}
+		if err = json.Unmarshal(body, &s); err != nil {
+			ol.E(ctx, "Shell: request srs version failed, err is", err)
+			return err
+		}
+
+		v.version = &s.Data
+		ol.T(ctx, fmt.Sprintf("Shell: update version to %v, signature=%v", v.version, v.version.Signature))
+	}
 
 	// notify rtmp and http proxy to update the active backend.
 	url := fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?rtmp=%v", v.conf.Rtmplb.Api, worker.rtmp)
@@ -561,7 +614,7 @@ func main() {
 
 	ctx := &kernel.Context{}
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
-	defer ol.T(ctx, "Shell: terminated")
+	defer ol.T(ctx, "Shell: cluster halt.")
 
 	shell := NewShellBoss(conf)
 
@@ -571,20 +624,123 @@ func main() {
 	}
 	defer shell.Close()
 
+	var apiListener net.Listener
+	addrs := strings.Split(conf.Api, "://")
+	apiNetwork, apiAddr := addrs[0], addrs[1]
+	if apiListener, err = net.Listen(apiNetwork, apiAddr); err != nil {
+		ol.E(ctx, "http listen failed, err is", err)
+		return
+	}
+	defer apiListener.Close()
+
+	oh.Server = signature
+
+	closing := make(chan bool, 1)
+	wait := &sync.WaitGroup{}
+
 	// process singals
 	go func() {
+		wait.Add(1)
+		defer wait.Done()
+
+		defer func() {
+			select {
+			case closing <- true:
+			default:
+			}
+		}()
+
+		defer ol.T(ctx, "Shell: signal ok.")
+
 		c := make(chan os.Signal)
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGUSR2)
 		for s := range c {
+			// for night-club upgrade.
+			if s == syscall.SIGUSR2 {
+				// when upgrade failed, we serve as current workers.
+				if err = shell.Upgrade(); err != nil {
+					ol.W(ctx, "Shell: upgrade failed, err is", err)
+				} else {
+					ol.T(ctx, "Shell: upgrade ok.")
+				}
+				continue
+			}
+
 			ol.W(ctx, "Shell: got signal", s)
-			shell.Close()
 			return
 		}
 
 	}()
 
+	// control messages
+	go func() {
+		wait.Add(1)
+		defer wait.Done()
+
+		defer func() {
+			select {
+			case closing <- true:
+			default:
+			}
+		}()
+
+		defer ol.E(ctx, "http handler ok")
+
+		handler := http.NewServeMux()
+
+		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
+		handler.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
+			oh.WriteVersion(w, r, kernel.Version())
+		})
+
+		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/summary", apiAddr))
+		handler.HandleFunc("/api/v1/summary", func(w http.ResponseWriter, r *http.Request) {
+			oh.WriteVersion(w, r, kernel.Version())
+		})
+
+		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/upgrade", apiAddr))
+		handler.HandleFunc("/api/v1/upgrade", func(w http.ResponseWriter, r *http.Request) {
+			ctx := &kernel.Context{}
+			if err = shell.Upgrade(); err != nil {
+				msg := fmt.Sprintf("upgrade failed, err is %v", err)
+				oh.WriteCplxError(ctx, w, r, ApiUpgradeError, msg)
+				return
+			}
+
+			ol.T(ctx, "Shell: upgrade ok.")
+			oh.WriteData(ctx, w, r, nil)
+		})
+
+		server := &http.Server{Addr: apiAddr, Handler: handler}
+		if err = server.Serve(apiListener); err != nil {
+			ol.E(ctx, "http serve failed, err is", err)
+			return
+		}
+	}()
+
 	// cycle shell util quit.
-	shell.Cycle()
+	go func() {
+		wait.Add(1)
+		defer wait.Done()
+
+		defer func() {
+			select {
+			case closing <- true:
+			default:
+			}
+		}()
+
+		defer ol.T(ctx, "Shell: terminated")
+
+		shell.Cycle()
+	}()
+
+	// wait for quit.
+	<-closing
+	closing <- true
+	shell.Close()
+	apiListener.Close()
+	wait.Wait()
 
 	return
 }
