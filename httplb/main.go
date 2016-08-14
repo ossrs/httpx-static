@@ -309,7 +309,7 @@ func (v *proxy) serveHttp(w http.ResponseWriter, r *http.Request) {
 	ctx := &kernel.Context{}
 
 	if v.activePort <= 0 {
-		oh.Error(ctx, fmt.Errorf("Backend not ready")).ServeHTTP(w, r)
+		oh.WriteError(ctx, w, r, fmt.Errorf("Backend not ready"))
 		return
 	}
 
@@ -519,10 +519,10 @@ func main() {
 		handler.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
 			ctx := &kernel.Context{}
 			if msg, err := proxy.serveChangeBackendApi(ctx, r); err != Success {
-				oh.CplxError(ctx, err, msg).ServeHTTP(w, r)
+				oh.WriteCplxError(ctx, w, r, err, msg)
 				return
 			}
-			oh.Data(ctx, nil).ServeHTTP(w, r)
+			oh.WriteData(ctx, w, r, nil)
 		})
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}

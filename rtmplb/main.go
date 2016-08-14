@@ -397,10 +397,10 @@ func main() {
 		http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
 			ctx := &kernel.Context{}
 			if msg, err := proxy.serveChangeBackendApi(ctx, r); err != Success {
-				oh.CplxError(ctx, err, msg).ServeHTTP(w, r)
+				oh.WriteCplxError(ctx, w, r, err, msg)
 				return
 			}
-			oh.Data(ctx, nil).ServeHTTP(w, r)
+			oh.WriteData(ctx, w, r, nil)
 		})
 
 		server := &http.Server{Addr: apiAddr, Handler: nil}

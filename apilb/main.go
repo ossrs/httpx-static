@@ -380,20 +380,20 @@ func main() {
 		handler.HandleFunc("/api/v1/proxy/srs", func(w http.ResponseWriter, r *http.Request) {
 			ctx := &kernel.Context{}
 			if msg, err := proxy.serveControlSrs(ctx, r); err != Success {
-				oh.CplxError(ctx, err, msg).ServeHTTP(w, r)
+				oh.WriteCplxError(ctx, w, r, err, msg)
 				return
 			}
-			oh.Data(ctx, nil).ServeHTTP(w, r)
+			oh.WriteData(ctx, w, r, nil)
 		})
 
 		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy/big?port=19900", apiAddr))
 		handler.HandleFunc("/api/v1/proxy/big", func(w http.ResponseWriter, r *http.Request) {
 			ctx := &kernel.Context{}
 			if msg, err := proxy.serveControlBig(ctx, r); err != Success {
-				oh.CplxError(ctx, err, msg).ServeHTTP(w, r)
+				oh.WriteCplxError(ctx, w, r, err, msg)
 				return
 			}
-			oh.Data(ctx, nil).ServeHTTP(w, r)
+			oh.WriteData(ctx, w, r, nil)
 		})
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}
