@@ -40,13 +40,27 @@ import (
 
 // Service SRS specified config.
 type SrsServiceConfig struct {
-	BigBinary string `json:"big_binary"`
-	Variables struct {
+	BigBinary    string `json:"big_binary"`
+	BitchBinary  string `json:"bitch_binary"`
+	FfmpegBinary string `json:"ffmpeg_binary"`
+	BocarBinary  string `json:"bocar_binary"`
+	BottBinary   string `json:"bott_binary"`
+	DnsBinary    string `json:"dns_binary"`
+	Variables    struct {
 		RtmpPort      string `json:"rtmp_port"`
 		ApiPort       string `json:"api_port"`
 		HttpPort      string `json:"http_port"`
 		BigPort       string `json:"big_port"`
 		BigBinary     string `json:"big_binary"`
+		BitchPort     string `json:"bitch_port"`
+		BitchBinary   string `json:"bitch_binary"`
+		FfmpegBinary  string `json:"ffmpeg_binary"`
+		DnsPort       string `json:"dns_port"`
+		DnsBinary     string `json:"dns_binary"`
+		BocarPort     string `json:"bocar_port"`
+		BocarBinary   string `json:"bocar_binary"`
+		BottPort      string `json:"bott_port"`
+		BottBinary    string `json:"bott_binary"`
 		WorkDir       string `json:"work_dir"`
 		HttpProxyPort string `json:"http_proxy_port"`
 		BigProxyPort  string `json:"big_proxy_port"`
@@ -55,8 +69,14 @@ type SrsServiceConfig struct {
 
 func (v *SrsServiceConfig) String() string {
 	r := &v.Variables
-	return fmt.Sprintf("srs<binary=%v,rtmp=%v,api=%v,http=%v,big=%v,bigbin=%v,dir=%v,phttp=%v,pbig=%v>",
-		v.BigBinary, r.RtmpPort, r.ApiPort, r.HttpPort, r.BigPort, r.BigBinary, r.WorkDir, r.HttpProxyPort, r.BigProxyPort)
+	common := fmt.Sprintf("binary=%v,rtmp=%v,api=%v,http=%v",
+		v.BigBinary, r.RtmpPort, r.ApiPort, r.HttpPort)
+	oaprocess := fmt.Sprintf("big=%v,bigbin=%v,bitch=%v,bitchbin=%v,bocar=%v,bocarbin=%v,bott=%v,bottbin=%v,dns=%v,dnsbin=%v",
+		r.BigPort, r.BigBinary, r.BitchPort, r.BitchBinary, r.BocarPort, r.BocarBinary, r.BottPort, r.BottBinary,
+		r.DnsPort, r.DnsBinary)
+	others := fmt.Sprintf("ffmpeg=%v,dir=%v,phttp=%v,pbig=%v",
+		r.FfmpegBinary, r.WorkDir, r.HttpProxyPort, r.BigProxyPort)
+	return fmt.Sprintf("srs<%v,%v,%v>", common, oaprocess, others)
 }
 
 func (v *SrsServiceConfig) Check() (err error) {
@@ -78,6 +98,24 @@ func (v *SrsServiceConfig) Check() (err error) {
 		return fmt.Errorf("Empty variable http proxy port")
 	} else if len(v.Variables.BigProxyPort) == 0 {
 		return fmt.Errorf("Empty variable big proxy port")
+	} else if len(v.Variables.BitchPort) == 0 {
+		return fmt.Errorf("Empty variable bitch port")
+	} else if len(v.Variables.BitchBinary) == 0 {
+		return fmt.Errorf("Empty variable bitch binary")
+	} else if len(v.Variables.FfmpegBinary) == 0 {
+		return fmt.Errorf("Empty variable ffmpeg binary")
+	} else if len(v.Variables.BocarPort) == 0 {
+		return fmt.Errorf("Empty variable bocar port")
+	} else if len(v.Variables.BocarBinary) == 0 {
+		return fmt.Errorf("Empty variable bocar binary")
+	} else if len(v.Variables.BottPort) == 0 {
+		return fmt.Errorf("Empty variable bott port")
+	} else if len(v.Variables.BottBinary) == 0 {
+		return fmt.Errorf("Empty variable bott binary")
+	} else if len(v.Variables.DnsPort) == 0 {
+		return fmt.Errorf("Empty variable dns port")
+	} else if len(v.Variables.DnsBinary) == 0 {
+		return fmt.Errorf("Empty variable dns binary")
 	}
 
 	return
@@ -125,10 +163,14 @@ type SrsWorker struct {
 	ports []int
 	pool  *PortPool
 	// the used port.
-	rtmp int
-	http int
-	api  int
-	big  int
+	rtmp  int
+	http  int
+	api   int
+	big   int
+	bitch int
+	bocar int
+	bott  int
+	dns   int
 	// version of worker.
 	version *SrsVersion
 	// the state of process.
@@ -183,31 +225,7 @@ func (v *SrsWorker) Exec() (err error) {
 		}
 	}
 
-	// alloc all ports, althrough maybe not use it.
-	if ports, err := v.pool.Alloc(4); err != nil {
-		ol.E(ctx, "alloc ports failed, err is", err)
-		return err
-	} else {
-		v.ports = append(v.ports, ports...)
-		v.rtmp, v.http, v.api, v.big = ports[0], ports[1], ports[2], ports[3]
-	}
-
-	// build all port.
-	conf := configTemplate
-	conf = strings.Replace(conf, s.Variables.RtmpPort, strconv.Itoa(v.rtmp), -1)
-	conf = strings.Replace(conf, s.Variables.HttpPort, strconv.Itoa(v.http), -1)
-	conf = strings.Replace(conf, s.Variables.ApiPort, strconv.Itoa(v.api), -1)
-	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
-	// for http proxy for hls+
-	conf = strings.Replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
-	// for big proxy port.
-	conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.shell.conf.Apilb.Big), -1)
-
-	// build other variables
-	if len(s.BigBinary) > 0 {
-		conf = strings.Replace(conf, s.Variables.BigBinary, s.BigBinary, -1)
-	}
-
+	// create work dir and link binaries.
 	v.workDir = path.Join(r.WorkDir, fmt.Sprintf("srs/%v", time.Now().Format("2006-01-02-15:04:05.000")))
 	if wd := path.Join(v.workDir, "objs/nginx/html"); true {
 		if err = os.MkdirAll(wd, 0755); err != nil {
@@ -215,27 +233,90 @@ func (v *SrsWorker) Exec() (err error) {
 			return
 		}
 	}
+	conf := configTemplate
 	conf = strings.Replace(conf, s.Variables.WorkDir, v.workDir, -1)
 
 	// symbol link all binaries to work dir.
-	var pwd string
-	if pwd, err = os.Getwd(); err != nil {
-		ol.E(ctx, "getwd failed, err is", err)
+	slink := func(workDir, cwdBin string) (err error) {
+		if len(cwdBin) == 0 || path.IsAbs(cwdBin) {
+			return
+		}
+
+		var pwd string
+		if pwd, err = os.Getwd(); err != nil {
+			ol.E(ctx, "getwd failed, err is", err)
+			return
+		}
+		from, to := path.Join(pwd, cwdBin), path.Join(workDir, cwdBin)
+
+		toDir := path.Dir(to)
+		if err = os.MkdirAll(toDir, 0755); err != nil {
+			ol.E(ctx, "create srs dir", toDir, "failed, err is", err)
+			return
+		}
+
+		if err = os.Symlink(from, to); err != nil {
+			ol.E(ctx, fmt.Sprintf("symlink %v=%v failed, err is %v", from, to, err))
+			return
+		}
 		return
 	}
-	if bin := s.BigBinary; len(bin) > 0 && !path.IsAbs(bin) {
-		from, to := path.Join(pwd, bin), path.Join(v.workDir, bin)
-		if err = os.Symlink(from, to); err != nil {
-			ol.E(ctx, fmt.Sprintf("symlink %v=%v failed, err is %v", from, to, err))
-			return
+	slinks := func(workDir string, bins ...string) (err error) {
+		for _, bin := range bins {
+			if err = slink(workDir, bin); err != nil {
+				return
+			}
 		}
+		return
 	}
-	if bin := r.Binary; !path.IsAbs(bin) {
-		from, to := path.Join(pwd, bin), path.Join(v.workDir, bin)
-		if err = os.Symlink(from, to); err != nil {
-			ol.E(ctx, fmt.Sprintf("symlink %v=%v failed, err is %v", from, to, err))
-			return
-		}
+	bins := []string{r.Binary, s.BigBinary, s.BitchBinary, s.FfmpegBinary, s.BocarBinary, s.BottBinary, s.DnsBinary}
+	if err = slinks(v.workDir, bins...); err != nil {
+		ol.E(ctx, "symlink failed, err is", err)
+		return
+	}
+
+	// alloc all ports, althrough maybe not use it.
+	if ports, err := v.pool.Alloc(8); err != nil {
+		ol.E(ctx, "alloc ports failed, err is", err)
+		return err
+	} else {
+		v.ports = append(v.ports, ports...)
+		v.rtmp, v.http, v.api = ports[0], ports[1], ports[2]
+		v.big, v.bitch, v.bocar, v.bott = ports[3], ports[4], ports[5], ports[6]
+		v.dns = ports[7]
+	}
+
+	// build all port.
+	conf = strings.Replace(conf, s.Variables.RtmpPort, strconv.Itoa(v.rtmp), -1)
+	conf = strings.Replace(conf, s.Variables.HttpPort, strconv.Itoa(v.http), -1)
+	conf = strings.Replace(conf, s.Variables.ApiPort, strconv.Itoa(v.api), -1)
+	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
+	conf = strings.Replace(conf, s.Variables.BitchPort, strconv.Itoa(v.bitch), -1)
+	conf = strings.Replace(conf, s.Variables.BocarPort, strconv.Itoa(v.bocar), -1)
+	conf = strings.Replace(conf, s.Variables.BottPort, strconv.Itoa(v.bott), -1)
+	conf = strings.Replace(conf, s.Variables.DnsPort, strconv.Itoa(v.dns), -1)
+	// for http proxy for hls+
+	conf = strings.Replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
+	// for big proxy port.
+	conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.shell.conf.Apilb.Big), -1)
+	// build other variables
+	if len(s.BigBinary) > 0 {
+		conf = strings.Replace(conf, s.Variables.BigBinary, s.BigBinary, -1)
+	}
+	if len(s.BitchBinary) > 0 {
+		conf = strings.Replace(conf, s.Variables.BitchBinary, s.BitchBinary, -1)
+	}
+	if len(s.FfmpegBinary) > 0 {
+		conf = strings.Replace(conf, s.Variables.FfmpegBinary, s.FfmpegBinary, -1)
+	}
+	if len(s.BocarBinary) > 0 {
+		conf = strings.Replace(conf, s.Variables.BocarBinary, s.BocarBinary, -1)
+	}
+	if len(s.BottBinary) > 0 {
+		conf = strings.Replace(conf, s.Variables.BottBinary, s.BottBinary, -1)
+	}
+	if len(s.DnsBinary) > 0 {
+		conf = strings.Replace(conf, s.Variables.DnsBinary, s.DnsBinary, -1)
 	}
 
 	// write to config file.
@@ -250,8 +331,10 @@ func (v *SrsWorker) Exec() (err error) {
 			return err
 		}
 	}
-	ol.T(ctx, fmt.Sprintf("srs ports(rtmp=%v,http=%v,api=%v,big=%v), cwd=%v, config=%v",
-		v.rtmp, v.http, v.api, v.big, v.workDir, v.config))
+
+	ports := fmt.Sprintf("rtmp=%v,http=%v,api=%v,big=%v,bitch=%v,bocar=%v,bott=%v,dns=%v",
+		v.rtmp, v.http, v.api, v.big, v.bitch, v.bocar, v.bott, v.dns)
+	ol.T(ctx, fmt.Sprintf("srs ports(%v), cwd=%v, config=%v", ports, v.workDir, v.config))
 
 	if v.process, err = v.shell.pool.Start(ctx, r.Binary, "-c", v.config); err != nil {
 		ol.E(ctx, "exec worker failed, err is", err)
