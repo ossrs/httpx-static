@@ -49,13 +49,14 @@ type SrsServiceConfig struct {
 		BigBinary     string `json:"big_binary"`
 		WorkDir       string `json:"work_dir"`
 		HttpProxyPort string `json:"http_proxy_port"`
+		BigProxyPort  string `json:"big_proxy_port"`
 	} `json:"variables"`
 }
 
 func (v *SrsServiceConfig) String() string {
 	r := &v.Variables
-	return fmt.Sprintf("srs<binary=%v,rtmp=%v,api=%v,http=%v,big=%v,bigbin=%v,dir=%v,proxy=%v>",
-		v.BigBinary, r.RtmpPort, r.ApiPort, r.HttpPort, r.BigPort, r.BigBinary, r.WorkDir, r.HttpProxyPort)
+	return fmt.Sprintf("srs<binary=%v,rtmp=%v,api=%v,http=%v,big=%v,bigbin=%v,dir=%v,phttp=%v,pbig=%v>",
+		v.BigBinary, r.RtmpPort, r.ApiPort, r.HttpPort, r.BigPort, r.BigBinary, r.WorkDir, r.HttpProxyPort, r.BigProxyPort)
 }
 
 func (v *SrsServiceConfig) Check() (err error) {
@@ -75,6 +76,8 @@ func (v *SrsServiceConfig) Check() (err error) {
 		return fmt.Errorf("Empty variable work dir")
 	} else if len(v.Variables.HttpProxyPort) == 0 {
 		return fmt.Errorf("Empty variable http proxy port")
+	} else if len(v.Variables.BigProxyPort) == 0 {
+		return fmt.Errorf("Empty variable big proxy port")
 	}
 
 	return
@@ -197,6 +200,8 @@ func (v *SrsWorker) Exec() (err error) {
 	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
 	// for http proxy for hls+
 	conf = strings.Replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
+	// for big proxy port.
+	conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.shell.conf.Apilb.Big), -1)
 
 	// build other variables
 	if len(s.BigBinary) > 0 {

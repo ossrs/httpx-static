@@ -120,6 +120,10 @@ type hlsPlusVirtualConnection struct {
 	xpsid string
 	// for jwplayer, without uuid/xpsid, identify by tcp connection.
 	addrs []string
+	// the pid of backend worker.
+	pid string
+	// the port of backend worker.
+	port int
 	// each connection use one tcp connection for backend.
 	transport  http.RoundTripper
 	lastUpdate time.Time
@@ -135,7 +139,7 @@ func NewHlsPlusVirtualConnection(uuid, xpsid string) *hlsPlusVirtualConnection {
 }
 
 func (v *hlsPlusVirtualConnection) String() string {
-	return fmt.Sprintf("uuid=%v, xpsid=%v, addr=%v", v.uuid, v.xpsid, len(v.addrs))
+	return fmt.Sprintf("uuid=%v, xpsid=%v, addr=%v, pid=%v, port=%v", v.uuid, v.xpsid, len(v.addrs), v.pid, v.port)
 }
 
 // The proxyer for hls+
@@ -169,9 +173,9 @@ func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 	defer v.lock.Unlock()
 
 	// idnetify by uuid, then xpsid, then addr(tcp connection).
-	var uuid, xpsid, addr string
+	var uuid, xpsid, addr, pid string
 	q := r.URL.Query()
-	uuid = q.Get("shp_uuid")
+	uuid, pid = q.Get("shp_uuid"), q.Get("shp_pid")
 	if xpsid = q.Get("shp_xpsid"); len(xpsid) == 0 {
 		xpsid = r.Header.Get("X-Playback-Session-Id")
 	}
@@ -208,15 +212,18 @@ func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 		v.tcpConns[addr] = vconn
 		vconn.addrs = append(vconn.addrs, addr)
 	}
+	if len(pid) > 0 {
+		vconn.pid = pid
+	}
+	if v.proxy.activePort > 0 && vconn.port == 0 {
+		vconn.port = v.proxy.activePort
+	}
 
 	// proxy request.
 	v.rp.Director = func(r *http.Request) {
 		r.URL.Scheme = "http"
 
-		// to prevent the m3u8 request by proxy.
-		//r.Header.Set("X-Hls-Plus", "Proxy")
-
-		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.proxy.activePort)
+		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", vconn.port)
 		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 			r.Header.Set("X-Real-IP", ip)
 		}

@@ -70,7 +70,8 @@
                 "big_port": "${big}",
                 "big_binary": "${big_binary}",
                 "work_dir": "${cwd}",
-                "http_proxy_port": "${http_proxy_port}"
+                "http_proxy_port": "${http_proxy_port}",
+                "big_proxy_port": "${big_proxy_port}"
             }
         }
     },
