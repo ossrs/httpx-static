@@ -281,10 +281,15 @@ func (v *ShellConfig) Loads(c string) (err error) {
 }
 
 const (
+	// when active worker failed, restart it.
+	workerRestartInterval = time.Duration(5) * time.Second
 	// wait for process to start to check api.
 	processExecInterval = time.Duration(200) * time.Millisecond
 	// max retry to check process.
 	processRetryMax = 5
+	// api error.
+	Success         oh.SystemError = 0
+	apiUpgradeError oh.SystemError = 100 + iota
 )
 
 // check the api, retry when failed, error when exceed the max.
@@ -364,21 +369,28 @@ func (v *SrsVersion) String() string {
 
 // The shell to exec all processes.
 type ShellBoss struct {
-	conf         *ShellConfig
-	rtmplb       *exec.Cmd
-	httplb       *exec.Cmd
-	apilb        *exec.Cmd
-	pool         *kernel.ProcessPool
-	ports        *PortPool
-	workers      []*SrsWorker
+	conf    *ShellConfig
+	rtmplb  *exec.Cmd
+	httplb  *exec.Cmd
+	apilb   *exec.Cmd
+	pool    *kernel.ProcessPool
+	ports   *PortPool
+	workers []*SrsWorker
+	// for upgrade lock.
 	activeWorker *SrsWorker
+	upgradeLock  *sync.Mutex
+	// closed.
+	closed    bool
+	closeLock *sync.Mutex
 }
 
 func NewShellBoss(conf *ShellConfig) *ShellBoss {
 	v := &ShellBoss{
-		conf:    conf,
-		pool:    kernel.NewProcessPool(),
-		workers: make([]*SrsWorker, 0),
+		conf:        conf,
+		pool:        kernel.NewProcessPool(),
+		workers:     make([]*SrsWorker, 0),
+		upgradeLock: &sync.Mutex{},
+		closeLock:   &sync.Mutex{},
 	}
 
 	c := &v.conf.Worker.Ports
@@ -387,6 +399,13 @@ func NewShellBoss(conf *ShellConfig) *ShellBoss {
 }
 
 func (v *ShellBoss) Close(ctx ol.Context) (err error) {
+	v.closeLock.Lock()
+	defer v.closeLock.Unlock()
+	if v.closed {
+		return
+	}
+	v.closed = true
+
 	for _, w := range v.workers {
 		w.Close()
 	}
@@ -395,62 +414,32 @@ func (v *ShellBoss) Close(ctx ol.Context) (err error) {
 }
 
 func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
-	ver := &SrsVersion{}
-	if true {
-		var b bytes.Buffer
-		cmd := exec.Command(v.conf.Worker.Binary, "-v")
-		cmd.Stderr = &b
-		if err = cmd.Run(); err != nil {
-			ol.E(ctx, "upgrade get version failed, err is", err)
-			return
-		}
+	v.upgradeLock.Lock()
+	defer v.upgradeLock.Unlock()
 
-		version := strings.TrimSpace(string(b.Bytes()))
-		vers := strings.Split(version, "-")
-		if len(vers) > 1 {
-			extra := vers[1]
-			if ver.Extra, err = strconv.Atoi(extra); err != nil {
-				ol.E(ctx, fmt.Sprintf("upgrade extra failed, version=%v, err is", version, err))
-				return
-			}
-		}
-
-		if vers = strings.Split(vers[0], "."); len(vers) != 3 {
-			ol.E(ctx, fmt.Sprintf("upgrade version invalid, version=%v, err is %v", version, err))
-			return
-		}
-		if ver.Major, err = strconv.Atoi(vers[0]); err != nil {
-			ol.E(ctx, fmt.Sprintf("upgrade major failed, version=%v, err is %v", version, err))
-			return
-		}
-		if ver.Minor, err = strconv.Atoi(vers[1]); err != nil {
-			ol.E(ctx, fmt.Sprintf("upgrade minor failed, version=%v, err is %v", version, err))
-			return
-		}
-		if ver.Revision, err = strconv.Atoi(vers[2]); err != nil {
-			ol.E(ctx, fmt.Sprintf("upgrade revision failed, version=%v, err is %v", version, err))
-			return
-		}
-	}
-
-	if ver.String() == v.activeWorker.version.String() {
-		ol.W(ctx, fmt.Sprintf("upgrade ignore version=%v, signature=%v",
-			ver.String(), v.activeWorker.version.Signature))
+	if v.activeWorker == nil {
+		ol.W(ctx, "update ignore for no active worker")
 		return
 	}
-	ol.T(ctx, fmt.Sprintf("upgrade %v to %v, signature=%v",
-		v.activeWorker.version.String(), ver.String(), v.activeWorker.version.Signature))
+
+	var latest *SrsVersion
+	if latest, err = v.retrieveVersion(ctx); err != nil {
+		return
+	}
+
+	version := v.activeWorker.version
+	if latest.String() == version.String() {
+		ol.W(ctx, fmt.Sprintf("upgrade ignore version=%v, current version=%v",
+			latest.String(), version.String()))
+		return
+	}
+	ol.T(ctx, fmt.Sprintf("upgrade %v to %v, current signature=%v",
+		version.String(), latest.String(), version.Signature))
 
 	// start a new worker.
 	var worker *SrsWorker
 	if worker, err = v.execWorker(ctx); err != nil {
 		ol.E(ctx, "upgrade exec worker failed, err is", err)
-
-		// rollback api when worker failed.
-		if err = v.updateProxyApi(ctx, v.activeWorker); err != nil {
-			ol.E(ctx, "upgrade rollback proxy api failed, err is", err)
-			v.Close(ctx)
-		}
 		return
 	}
 
@@ -459,18 +448,57 @@ func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
 	v.activeWorker = worker
 
 	for _, w := range v.workers {
-		if worker == w {
+		if worker == w || w.state != SrsStateActive {
 			continue
 		}
-		if w.state != SrsStateActive {
-			continue
-		}
+
 		w.state = SrsStateDeprecated
 		r0 := w.process.Process.Signal(syscall.SIGUSR2)
-		ol.T(ctx, fmt.Sprintf("upgrade deprecated %v, r0=%v ok", w, r0))
+		ol.T(ctx, fmt.Sprintf("upgrade notify %v, r0=%v ok", w, r0))
 	}
 
 	ol.T(ctx, fmt.Sprintf("upgrade ok, %v", worker))
+	return
+}
+
+func (v *ShellBoss) retrieveVersion(ctx ol.Context) (ver *SrsVersion, err error) {
+	ver = &SrsVersion{}
+
+	var b bytes.Buffer
+	cmd := exec.Command(v.conf.Worker.Binary, "-v")
+	cmd.Stderr = &b
+	if err = cmd.Run(); err != nil {
+		ol.E(ctx, "upgrade get version failed, err is", err)
+		return
+	}
+
+	version := strings.TrimSpace(string(b.Bytes()))
+	vers := strings.Split(version, "-")
+	if len(vers) > 1 {
+		extra := vers[1]
+		if ver.Extra, err = strconv.Atoi(extra); err != nil {
+			ol.E(ctx, fmt.Sprintf("upgrade extra failed, version=%v, err is", version, err))
+			return
+		}
+	}
+
+	if vers = strings.Split(vers[0], "."); len(vers) != 3 {
+		ol.E(ctx, fmt.Sprintf("upgrade version invalid, version=%v, err is %v", version, err))
+		return
+	}
+	if ver.Major, err = strconv.Atoi(vers[0]); err != nil {
+		ol.E(ctx, fmt.Sprintf("upgrade major failed, version=%v, err is %v", version, err))
+		return
+	}
+	if ver.Minor, err = strconv.Atoi(vers[1]); err != nil {
+		ol.E(ctx, fmt.Sprintf("upgrade minor failed, version=%v, err is %v", version, err))
+		return
+	}
+	if ver.Revision, err = strconv.Atoi(vers[2]); err != nil {
+		ol.E(ctx, fmt.Sprintf("upgrade revision failed, version=%v, err is %v", version, err))
+		return
+	}
+
 	return
 }
 
@@ -561,7 +589,7 @@ func (v *ShellBoss) Cycle(ctx ol.Context) {
 		}
 
 		// ignore events when pool closed
-		if v.pool.Closed() {
+		if v.closed || v.pool.Closed() {
 			ol.E(ctx, "pool terminated")
 			return
 		}
@@ -588,26 +616,42 @@ func (v *ShellBoss) Cycle(ctx ol.Context) {
 		if worker.state != SrsStateActive {
 			ol.T(ctx, fmt.Sprintf("ignore worker terminated, %v", worker))
 			continue
-		} else {
-			ol.W(ctx, fmt.Sprintf("restart worker %v", worker))
 		}
+		ol.W(ctx, fmt.Sprintf("restart worker %v", worker))
 
 		// restart worker when terminated.
-		if worker, err = v.execWorker(ctx); err != nil {
-			ol.E(ctx, "restart worker failed, err is", err)
-			return
+		for !v.closed {
+			if err = v.restartWorker(ctx); err != nil {
+				interval := workerRestartInterval
+				ol.W(ctx, fmt.Sprintf("ignore and retry %v, err is %v", interval, err))
+				time.Sleep(interval)
+			} else {
+				break
+			}
 		}
-		worker.state = SrsStateActive
-		v.activeWorker = worker
-		ol.T(ctx, fmt.Sprintf("fork worker ok, %v", worker))
 	}
 
 	return
 }
 
-const (
-	ApiUpgradeError oh.SystemError = 100 + iota
-)
+func (v *ShellBoss) restartWorker(ctx ol.Context) (err error) {
+	v.upgradeLock.Lock()
+	defer v.upgradeLock.Unlock()
+
+	var worker *SrsWorker
+
+	v.activeWorker = nil
+
+	if worker, err = v.execWorker(ctx); err != nil {
+		ol.E(ctx, "restart worker failed, err is", err)
+		return
+	}
+	worker.state = SrsStateActive
+	v.activeWorker = worker
+	ol.T(ctx, fmt.Sprintf("fork worker ok, %v", worker))
+
+	return
+}
 
 func (v *ShellBoss) execWorker(ctx ol.Context) (worker *SrsWorker, err error) {
 	r := &v.conf.Worker
@@ -625,6 +669,10 @@ func (v *ShellBoss) execWorker(ctx ol.Context) (worker *SrsWorker, err error) {
 		return
 	}
 	ol.T(ctx, "start srs worker ok")
+
+	v.workers = append(v.workers, worker)
+	ol.T(ctx, fmt.Sprintf("exec worker ok, pid=%v, total=%v",
+		worker.process.Process.Pid, len(v.workers)))
 
 	if err = v.checkWorkerApi(ctx, worker); err != nil {
 		ol.E(ctx, "check worker api failed, err is", err)
@@ -648,9 +696,6 @@ func (v *ShellBoss) checkWorkerApi(ctx ol.Context, worker *SrsWorker) (err error
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
-
-	v.workers = append(v.workers, worker)
-	ol.T(ctx, fmt.Sprintf("exec worker ok, api=%v, total=%v", api, len(v.workers)))
 
 	// update current version
 	if _, body, err := oh.ApiRequest(api); err != nil {
@@ -746,42 +791,6 @@ func main() {
 	closing := make(chan bool, 1)
 	wait := &sync.WaitGroup{}
 
-	// process singals
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
-		ctx := &kernel.Context{}
-		ol.T(ctx, "Signal: ready")
-		defer ol.T(ctx, "Signal: signal ok.")
-
-		c := make(chan os.Signal)
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGUSR2)
-		for s := range c {
-			// for night-club upgrade.
-			if s == syscall.SIGUSR2 {
-				// when upgrade failed, we serve as current workers.
-				if err = shell.Upgrade(ctx); err != nil {
-					ol.W(ctx, "Signal: upgrade failed, err is", err)
-				} else {
-					ol.T(ctx, "Signal: upgrade ok.")
-				}
-				continue
-			}
-
-			ol.W(ctx, "Signal: got signal", s)
-			return
-		}
-
-	}()
-
 	// control messages
 	go func() {
 		wait.Add(1)
@@ -815,7 +824,7 @@ func main() {
 			ctx := &kernel.Context{}
 			if err = shell.Upgrade(ctx); err != nil {
 				msg := fmt.Sprintf("upgrade failed, err is %v", err)
-				oh.WriteCplxError(ctx, w, r, ApiUpgradeError, msg)
+				oh.WriteCplxError(ctx, w, r, apiUpgradeError, msg)
 				return
 			}
 
@@ -847,6 +856,36 @@ func main() {
 		defer ol.T(ctx, "Cycle: terminated")
 
 		shell.Cycle(ctx)
+	}()
+
+	// process singals
+	go func() {
+		ctx := &kernel.Context{}
+		ol.T(ctx, "Signal: ready")
+		defer ol.T(ctx, "Signal: signal ok.")
+
+		c := make(chan os.Signal)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGUSR2)
+		for s := range c {
+			// for night-club upgrade.
+			if s == syscall.SIGUSR2 {
+				// when upgrade failed, we serve as current workers.
+				if err = shell.Upgrade(ctx); err != nil {
+					ol.W(ctx, "Signal: upgrade failed, err is", err)
+				} else {
+					ol.T(ctx, "Signal: upgrade ok.")
+				}
+				continue
+			}
+
+			select {
+			case closing <- true:
+			default:
+			}
+			ol.W(ctx, "Signal: got signal", s)
+			return
+		}
+
 	}()
 
 	// wait for quit.

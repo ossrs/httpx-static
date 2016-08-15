@@ -126,6 +126,11 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 			if !v.disposed {
 				ol.E(ctx, "process", pid, "exited, err is", err)
 			}
+
+			// ignore any process exit error.
+			if _, ok := err.(*exec.ExitError); ok {
+				err = nil
+			}
 			return
 		}
 	}()
@@ -184,12 +189,20 @@ func (v *ProcessPool) Close(ctx ol.Context) (err error) {
 
 		// notify all alive processes to quit.
 		for pid, p := range v.processes {
-			if r0 := p.Process.Kill(); r0 != nil {
-				if err == nil {
-					err = r0
-				}
-				ol.E(ctx, fmt.Sprintf("kill process %v failed, r0 is %v, err is %v", pid, r0, err))
+			if p.ProcessState != nil && p.ProcessState.Exited() {
+				continue
 			}
+
+			var r0 error
+			if r0 = p.Process.Kill(); r0 == nil {
+				continue
+			}
+			if err == nil {
+				err = r0
+			}
+
+			format := "kill process %v failed, r0 is %v, err is %v"
+			ol.E(ctx, fmt.Sprintf(format, pid, r0, err))
 		}
 	}()
 
