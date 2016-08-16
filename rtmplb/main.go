@@ -45,7 +45,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -172,39 +171,22 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 		client.RemoteAddr(), backend.RemoteAddr(), v.conf.Rtmp.UseRtmpProxy))
 
 	// proxy c to conn
-	var disposed bool
-	closing := make(chan bool, 1)
-	wait := &sync.WaitGroup{}
 	var nr, nw int64
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
+	wg := kernel.NewWorkerGroup()
+	defer func() {
+		wg.Close()
+		ol.T(ctx, fmt.Sprintf("proxy client ok, read=%v, write=%v", nr, nw))
+	}()
 
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
 		if nw, err = io.Copy(client, backend); err != nil {
-			if !disposed {
+			if !wg.Closed() {
 				ol.E(ctx, fmt.Sprintf("proxy rtmp<=backend failed, nn=%v, err is %v", nw, err))
 			}
 			return
 		}
-	}()
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	}, nil)
+	wg.ForkGoroutine(func() {
 		// write proxy header.
 		// @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
 		if v.conf.Rtmp.UseRtmpProxy {
@@ -227,19 +209,14 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 		}
 
 		if nr, err = io.Copy(backend, client); err != nil {
-			if !disposed {
+			if !wg.Closed() {
 				ol.E(ctx, fmt.Sprintf("proxy rtmp=>backend failed, nn=%v, err is %v", nr, err))
 			}
 			return
 		}
-	}()
+	}, nil)
 
-	disposed = true
-	<-closing
-	closing <- true
-	wait.Wait()
-	ol.T(ctx, fmt.Sprintf("proxy client ok, read=%v, write=%v", nr, nw))
-
+	wg.Wait()
 	return
 }
 

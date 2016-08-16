@@ -70,7 +70,7 @@ func (v *WorkerGroup) Close() error {
 func (v *WorkerGroup) QuitForChan(closing chan bool) {
 	go func() {
 		for _ = range closing {
-			v.Quit()
+			v.quit()
 		}
 	}()
 }
@@ -82,7 +82,7 @@ func (v *WorkerGroup) QuitForSignals(ctx ol.Context, signals ...os.Signal) {
 		signal.Notify(ss, signals...)
 		for s := range ss {
 			ol.W(ctx, "quit for signal", s)
-			v.Quit()
+			v.quit()
 		}
 	}()
 }
@@ -98,7 +98,7 @@ func (v *WorkerGroup) ForkGoroutine(pfn func(), cleanup func()) {
 	go func() {
 		v.wait.Add(1)
 		defer v.wait.Done()
-		defer v.Quit()
+		defer v.quit()
 
 		pfn()
 	}()
@@ -106,7 +106,7 @@ func (v *WorkerGroup) ForkGoroutine(pfn func(), cleanup func()) {
 
 // notify worker group to quit.
 // @remark user must use Close to wait for all workers cleanup and quit.
-func (v *WorkerGroup) Quit() {
+func (v *WorkerGroup) quit() {
 	v.closed = true
 
 	select {

@@ -40,6 +40,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/url"
 	"os"
 	"path"
 	"strconv"
@@ -113,6 +114,7 @@ func createHttpTransport() http.RoundTripper {
 
 // The virtual connection for hls+
 type hlsPlusVirtualConnection struct {
+	lastUpdate time.Time
 	// for standard player, identify by uuid.
 	uuid string
 	// for safari or srs player, identify by xpsid if no uuid.
@@ -124,17 +126,41 @@ type hlsPlusVirtualConnection struct {
 	// the port of backend worker.
 	port int
 	// each connection use one tcp connection for backend.
-	transport  http.RoundTripper
-	lastUpdate time.Time
+	transport http.RoundTripper
+	// each connection use one proxy
+	rp   *httputil.ReverseProxy
+	lock *sync.Mutex
 }
 
-func NewHlsPlusVirtualConnection(uuid, xpsid string) *hlsPlusVirtualConnection {
+func NewHlsPlusVirtualConnection(uuid, xpsid string, port int) *hlsPlusVirtualConnection {
 	v := &hlsPlusVirtualConnection{
 		uuid: uuid, xpsid: xpsid,
 		lastUpdate: time.Now(),
 		transport:  createHttpTransport(),
+		rp:         &httputil.ReverseProxy{},
+		lock:       &sync.Mutex{},
+		port:       port,
 	}
+	v.rp.Transport = v.transport
 	return v
+}
+
+func (v *hlsPlusVirtualConnection) serve(ctx ol.Context, w http.ResponseWriter, r *http.Request) {
+	// reuse the transport of the conn.
+	v.rp.Transport = v.transport
+
+	// proxy to the previous stream.
+	v.rp.Director = func(r *http.Request) {
+		r.URL.Scheme = "http"
+
+		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.port)
+		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			r.Header.Set("X-Real-IP", ip)
+		}
+		ol.T(ctx, fmt.Sprintf("proxy hls+ %v to %v", v, r.URL.String()))
+	}
+
+	v.rp.ServeHTTP(w, r)
 }
 
 func (v *hlsPlusVirtualConnection) String() string {
@@ -144,8 +170,8 @@ func (v *hlsPlusVirtualConnection) String() string {
 // The proxyer for hls+
 type hlsPlusProxy struct {
 	proxy *proxy
-	rp    *httputil.ReverseProxy
-	lock  *sync.Mutex
+	// sync conns
+	lock *sync.Mutex
 	// hls+: virtual connections, key is uuid
 	virtualConns map[string]*hlsPlusVirtualConnection
 	// hls+: application id for safari or srs player, key is xpsid
@@ -161,28 +187,22 @@ func NewHlsPlusProxy(proxy *proxy) *hlsPlusProxy {
 		virtualConns: make(map[string]*hlsPlusVirtualConnection),
 		tcpConns:     make(map[string]*hlsPlusVirtualConnection),
 		appConns:     make(map[string]*hlsPlusVirtualConnection),
-		rp:           &httputil.ReverseProxy{Director: nil},
 	}
 }
 
-func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
-	ctx := &kernel.Context{}
-
+func (v *hlsPlusProxy) identify(ctx ol.Context, q url.Values, h http.Header, addr string) (vconn *hlsPlusVirtualConnection) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
 	// idnetify by uuid, then xpsid, then addr(tcp connection).
-	var uuid, xpsid, addr, pid string
-	q := r.URL.Query()
+	var uuid, xpsid, pid string
 	uuid, pid = q.Get("shp_uuid"), q.Get("shp_pid")
 	if xpsid = q.Get("shp_xpsid"); len(xpsid) == 0 {
-		xpsid = r.Header.Get("X-Playback-Session-Id")
+		xpsid = h.Get("X-Playback-Session-Id")
 	}
-	addr = r.RemoteAddr
 
 	// identify virtual connection
 	var ok bool
-	var vconn *hlsPlusVirtualConnection
 	if len(uuid) > 0 && !ok {
 		vconn, ok = v.virtualConns[uuid]
 	}
@@ -193,7 +213,8 @@ func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 		vconn, ok = v.tcpConns[addr]
 	}
 	if vconn == nil {
-		vconn = NewHlsPlusVirtualConnection(uuid, xpsid)
+		vconn = NewHlsPlusVirtualConnection(uuid, xpsid, v.proxy.activePort)
+		ol.T(ctx, "create vconn", vconn)
 	}
 	vconn.lastUpdate = time.Now()
 	//ol.T(ctx, "identify", vconn)
@@ -218,19 +239,14 @@ func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 		vconn.port = v.proxy.activePort
 	}
 
-	// proxy request.
-	v.rp.Director = func(r *http.Request) {
-		r.URL.Scheme = "http"
+	return
+}
 
-		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", vconn.port)
-		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			r.Header.Set("X-Real-IP", ip)
-		}
-		ol.T(ctx, fmt.Sprintf("proxy hls+ %v to %v", vconn, r.URL.String()))
-	}
-	v.rp.Transport = vconn.transport
+func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
+	ctx := &kernel.Context{}
 
-	v.rp.ServeHTTP(w, r)
+	vconn := v.identify(ctx, r.URL.Query(), r.Header, r.RemoteAddr)
+	vconn.serve(ctx, w, r)
 }
 
 const (
@@ -268,17 +284,15 @@ func (v *hlsPlusProxy) cleanup(ctx ol.Context) {
 
 // The proxy object, serve http stream and hls+.
 type proxy struct {
-	conf            *HttpLbConfig
-	ports           []int
-	activePort      int
-	httpStreamProxy *httputil.ReverseProxy
-	hlsPlus         *hlsPlusProxy
+	conf       *HttpLbConfig
+	ports      []int
+	activePort int
+	hlsPlus    *hlsPlusProxy
 }
 
 func NewProxy(conf *HttpLbConfig) *proxy {
 	v := &proxy{
-		conf:            conf,
-		httpStreamProxy: &httputil.ReverseProxy{Director: nil},
+		conf: conf,
 	}
 	v.hlsPlus = NewHlsPlusProxy(v)
 	return v
@@ -295,7 +309,13 @@ func (v *proxy) cleanup(ctx ol.Context) {
 func (v *proxy) serveHttpStream(w http.ResponseWriter, r *http.Request) {
 	ctx := &kernel.Context{}
 
-	v.httpStreamProxy.Director = func(r *http.Request) {
+	rp := &httputil.ReverseProxy{}
+
+	// each http stream use isolate transport.
+	rp.Transport = createHttpTransport()
+
+	// proxy to the latest backend.
+	rp.Director = func(r *http.Request) {
 		r.URL.Scheme = "http"
 
 		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.activePort)
@@ -305,10 +325,7 @@ func (v *proxy) serveHttpStream(w http.ResponseWriter, r *http.Request) {
 		ol.W(ctx, fmt.Sprintf("proxy http %v to %v", r.RemoteAddr, r.URL.String()))
 	}
 
-	// each http stream use isolate transport.
-	v.httpStreamProxy.Transport = createHttpTransport()
-
-	v.httpStreamProxy.ServeHTTP(w, r)
+	rp.ServeHTTP(w, r)
 }
 
 func (v *proxy) serveHttp(w http.ResponseWriter, r *http.Request) {
