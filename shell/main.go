@@ -74,6 +74,34 @@ func checkApi(api string, max int, retry time.Duration) (err error) {
 	return
 }
 
+// retrieve the object from version "major.minor.revision-extra"
+func RetrieveVersion(version string) (ver *SrsVersion, err error) {
+	ver = &SrsVersion{}
+
+	vers := strings.Split(version, "-")
+	if len(vers) > 1 {
+		extra := vers[1]
+		if ver.Extra, err = strconv.Atoi(extra); err != nil {
+			return
+		}
+	}
+
+	if vers = strings.Split(vers[0], "."); len(vers) != 3 {
+		return nil, fmt.Errorf("version invalid syntax")
+	}
+	if ver.Major, err = strconv.Atoi(vers[0]); err != nil {
+		return
+	}
+	if ver.Minor, err = strconv.Atoi(vers[1]); err != nil {
+		return
+	}
+	if ver.Revision, err = strconv.Atoi(vers[2]); err != nil {
+		return
+	}
+
+	return
+}
+
 // The version of srs.
 type SrsVersion struct {
 	Major     int    `json:"major"`
@@ -146,8 +174,20 @@ func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
 	}
 
 	var latest *SrsVersion
-	if latest, err = v.retrieveVersion(ctx); err != nil {
-		return
+	if true {
+		var b bytes.Buffer
+		cmd := exec.Command(v.conf.Worker.Binary, "-v")
+		cmd.Stderr = &b
+		if err = cmd.Run(); err != nil {
+			ol.E(ctx, "upgrade get version failed, err is", err)
+			return
+		}
+
+		version := strings.TrimSpace(string(b.Bytes()))
+		if latest, err = RetrieveVersion(version); err != nil {
+			ol.E(ctx, fmt.Sprintf("retrieve version failed, version=%v, err is %v", version, err))
+			return
+		}
 	}
 
 	version := v.activeWorker.version
@@ -181,47 +221,6 @@ func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
 	}
 
 	ol.T(ctx, fmt.Sprintf("upgrade ok, %v", worker))
-	return
-}
-
-func (v *ShellBoss) retrieveVersion(ctx ol.Context) (ver *SrsVersion, err error) {
-	ver = &SrsVersion{}
-
-	var b bytes.Buffer
-	cmd := exec.Command(v.conf.Worker.Binary, "-v")
-	cmd.Stderr = &b
-	if err = cmd.Run(); err != nil {
-		ol.E(ctx, "upgrade get version failed, err is", err)
-		return
-	}
-
-	version := strings.TrimSpace(string(b.Bytes()))
-	vers := strings.Split(version, "-")
-	if len(vers) > 1 {
-		extra := vers[1]
-		if ver.Extra, err = strconv.Atoi(extra); err != nil {
-			ol.E(ctx, fmt.Sprintf("upgrade extra failed, version=%v, err is", version, err))
-			return
-		}
-	}
-
-	if vers = strings.Split(vers[0], "."); len(vers) != 3 {
-		ol.E(ctx, fmt.Sprintf("upgrade version invalid, version=%v, err is %v", version, err))
-		return
-	}
-	if ver.Major, err = strconv.Atoi(vers[0]); err != nil {
-		ol.E(ctx, fmt.Sprintf("upgrade major failed, version=%v, err is %v", version, err))
-		return
-	}
-	if ver.Minor, err = strconv.Atoi(vers[1]); err != nil {
-		ol.E(ctx, fmt.Sprintf("upgrade minor failed, version=%v, err is %v", version, err))
-		return
-	}
-	if ver.Revision, err = strconv.Atoi(vers[2]); err != nil {
-		ol.E(ctx, fmt.Sprintf("upgrade revision failed, version=%v, err is %v", version, err))
-		return
-	}
-
 	return
 }
 
