@@ -29,6 +29,7 @@ package kernel_test
 
 import (
 	oa "github.com/ossrs/go-oryx-lib/asprocess"
+	ol "github.com/ossrs/go-oryx-lib/logger"
 	"github.com/ossrs/go-oryx/kernel"
 	"net"
 	"os/exec"
@@ -63,6 +64,7 @@ func ExampleWorkerGroup() {
 				return
 			} else {
 				// serve conn
+
 				defer conn.Close()
 			}
 		}
@@ -105,4 +107,35 @@ func ExampleProcessPool() {
 	if cmd == c {
 		// cmd must be c.
 	}
+}
+
+func ExampleTcpListeners() {
+	// create listener by addresses
+	ls, err := kernel.NewTcpListeners([]string{"tcp://:1935", "tcp://:1985", "tcp://:8080"})
+	if err != nil {
+		return
+	}
+	defer ls.Close()
+
+	// listen all addresses
+	if err = ls.ListenTCP(); err != nil {
+		return
+	}
+
+	// accept conn from any listeners
+	for {
+		conn, err := ls.AcceptTCP()
+		if err != nil {
+			return
+		}
+
+		// serve conn
+
+		defer conn.Close()
+	}
+}
+
+func ExampleContext() {
+	ctx := &kernel.Context{}
+	ol.T(ctx, "create context ok")
 }
