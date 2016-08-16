@@ -141,7 +141,7 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 // Wait for a dead process.
 // @return error PoolDisposed when pool disposed.
 func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
-	// should never lock, for it's wait gotoutine.
+	// should never lock, for it's wait goroutine.
 	if err = func() error {
 		// when disposed, should never use it again.
 		v.disposeLock.Lock()

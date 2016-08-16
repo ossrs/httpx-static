@@ -150,7 +150,7 @@ func (v *ShellConfig) Loads(c string) (err error) {
 
 		// Parse srs provider again.
 		if v.Worker.Provider.IsSrs() {
-			v.Worker.Service = &SrsServiceConfig{}
+			v.Worker.Service = NewSrsServiceConfig()
 			if err = f(c); err != nil {
 				return
 			}

@@ -67,6 +67,10 @@ type SrsServiceConfig struct {
 	} `json:"variables"`
 }
 
+func NewSrsServiceConfig() *SrsServiceConfig {
+	return &SrsServiceConfig{}
+}
+
 func (v *SrsServiceConfig) String() string {
 	r := &v.Variables
 	common := fmt.Sprintf("binary=%v,rtmp=%v,api=%v,http=%v",

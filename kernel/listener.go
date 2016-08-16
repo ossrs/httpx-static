@@ -188,7 +188,7 @@ func (v *TcpListeners) doAcceptFrom(ctx ol.Context, l *net.TCPListener) (err err
 
 // @remark error ListenerDisposed when listener is disposed.
 func (v *TcpListeners) AcceptTCP() (c *net.TCPConn, err error) {
-	// should never lock, for it's wait gotoutine.
+	// should never lock, for it's wait goroutine.
 	if err = func() error {
 		// user should close a disposed listener.
 		v.disposeLock.Lock()

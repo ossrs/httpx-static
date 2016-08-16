@@ -43,7 +43,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
@@ -336,22 +335,15 @@ func main() {
 	}
 	defer apiListener.Close()
 
-	closing := make(chan bool, 1)
-	wait := &sync.WaitGroup{}
 	proxy := NewProxy(conf)
 
+	wg := kernel.NewWorkerGroup()
+	wg.QuitForChan(asq)
+	wg.QuitForSignals(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
 	// rtmp connections
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
+		ol.E(ctx, "rtmp accepter ready")
 		defer ol.E(ctx, "rtmp accepter ok")
 
 		defer func() {
@@ -370,20 +362,11 @@ func main() {
 			//ol.T(ctx, "got rtmp client", c.RemoteAddr())
 			go proxy.serveRtmp(c)
 		}
-	}()
+	})
 
 	// control messages
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
+		ol.E(ctx, "http handler ready")
 		defer ol.E(ctx, "http handler ok")
 
 		oh.Server = signature
@@ -405,30 +388,18 @@ func main() {
 
 		server := &http.Server{Addr: apiAddr, Handler: nil}
 		if err = server.Serve(apiListener); err != nil {
-			ol.E(ctx, "http serve failed, err is", err)
+			if !wg.Closed() {
+				ol.E(ctx, "http serve failed, err is", err)
+			}
 			return
 		}
-	}()
-
-	// listen singal.
-	go func() {
-		ss := make(chan os.Signal)
-		signal.Notify(ss, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-		for s := range ss {
-			ol.E(ctx, "quit for signal", s)
-			closing <- true
-		}
-	}()
+	})
 
 	// cleanup when got closing event.
-	select {
-	case <-closing:
-		closing <- true
-	case <-asq:
-	}
-	listener.Close()
-	apiListener.Close()
-	wait.Wait()
+	wg.Wait(func() {
+		listener.Close()
+		apiListener.Close()
+	})
 
 	ol.T(ctx, "serve ok")
 	return
