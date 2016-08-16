@@ -190,7 +190,7 @@ func NewHlsPlusProxy(proxy *proxy) *hlsPlusProxy {
 	}
 }
 
-func (v *hlsPlusProxy) identify(ctx ol.Context, q url.Values, h http.Header, addr string) (vconn *hlsPlusVirtualConnection) {
+func (v *hlsPlusProxy) identify(ctx ol.Context, q url.Values, h http.Header, addr string, activePort int) (vconn *hlsPlusVirtualConnection, err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
@@ -199,6 +199,9 @@ func (v *hlsPlusProxy) identify(ctx ol.Context, q url.Values, h http.Header, add
 	uuid, pid = q.Get("shp_uuid"), q.Get("shp_pid")
 	if xpsid = q.Get("shp_xpsid"); len(xpsid) == 0 {
 		xpsid = h.Get("X-Playback-Session-Id")
+	}
+	if len(addr) == 0 {
+		return nil, fmt.Errorf("empty addr, failed to identify")
 	}
 
 	// identify virtual connection
@@ -213,7 +216,7 @@ func (v *hlsPlusProxy) identify(ctx ol.Context, q url.Values, h http.Header, add
 		vconn, ok = v.tcpConns[addr]
 	}
 	if vconn == nil {
-		vconn = NewHlsPlusVirtualConnection(uuid, xpsid, v.proxy.activePort)
+		vconn = NewHlsPlusVirtualConnection(uuid, xpsid, activePort)
 		ol.T(ctx, "create vconn", vconn)
 	}
 	vconn.lastUpdate = time.Now()
@@ -235,8 +238,9 @@ func (v *hlsPlusProxy) identify(ctx ol.Context, q url.Values, h http.Header, add
 	if len(pid) > 0 {
 		vconn.pid = pid
 	}
-	if v.proxy.activePort > 0 && vconn.port == 0 {
-		vconn.port = v.proxy.activePort
+	if activePort > 0 && vconn.port == 0 {
+		vconn.port = activePort
+		ol.T(ctx, "update vconn port", vconn)
 	}
 
 	return
@@ -245,7 +249,12 @@ func (v *hlsPlusProxy) identify(ctx ol.Context, q url.Values, h http.Header, add
 func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 	ctx := &kernel.Context{}
 
-	vconn := v.identify(ctx, r.URL.Query(), r.Header, r.RemoteAddr)
+	vconn, err := v.identify(ctx, r.URL.Query(), r.Header, r.RemoteAddr, v.proxy.activePort)
+	if err != nil {
+		oh.WriteError(ctx, w, r, err)
+		return
+	}
+
 	vconn.serve(ctx, w, r)
 }
 
