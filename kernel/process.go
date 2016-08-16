@@ -48,7 +48,6 @@ var PoolDisposed = fmt.Errorf("pool is disposed")
 // The pool for process, when user create pool, user can exec processes,
 // wait for terminated process and close all.
 type ProcessPool struct {
-	ctx ol.Context
 	// Alive processes.
 	processes map[int]*exec.Cmd
 	// Dead processes, get by Wait().
@@ -62,6 +61,8 @@ type ProcessPool struct {
 	// When closing, user should never care about processes,
 	// because all of them will be killed.
 	closing chan bool
+	// the last context to start command.
+	ctx ol.Context
 }
 
 func NewProcessPool() *ProcessPool {
@@ -84,6 +85,8 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 	if v.disposed {
 		return nil, PoolDisposed
 	}
+
+	v.ctx = ctx
 
 	// create command and start process.
 	var process *exec.Cmd = exec.Command(name, arg...)
@@ -168,7 +171,9 @@ func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
 
 // interface io.Closer
 // @return error PoolDisposed when pool disposed.
-func (v *ProcessPool) Close(ctx ol.Context) (err error) {
+func (v *ProcessPool) Close() (err error) {
+	ctx := v.ctx
+
 	// notify we are closing, process should drop any info and quit.
 	select {
 	case v.closing <- true:

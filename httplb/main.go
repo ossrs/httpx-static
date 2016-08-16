@@ -41,7 +41,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
-	"os/signal"
 	"path"
 	"strconv"
 	"strings"
@@ -459,11 +458,8 @@ func main() {
 	}
 	defer apiListener.Close()
 
-	oh.Server = signature
-
-	closing := make(chan bool, 1)
-	wait := &sync.WaitGroup{}
 	proxy := NewProxy(conf)
+	oh.Server = signature
 
 	// cleanup the proxy.
 	go func() {
@@ -473,18 +469,16 @@ func main() {
 		}
 	}()
 
+	wg := kernel.NewWorkerGroup()
+	defer ol.T(ctx, "serve ok")
+	defer wg.Close()
+
+	wg.QuitForChan(asq)
+	wg.QuitForSignals(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
 	// http proxy.
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
+		ol.E(ctx, "http proxy ready")
 		defer ol.E(ctx, "http proxy ok")
 
 		handler := http.NewServeMux()
@@ -496,23 +490,18 @@ func main() {
 
 		server := &http.Server{Addr: httpNetwork, Handler: handler}
 		if err = server.Serve(httpListener); err != nil {
-			ol.E(ctx, "http serve failed, err is", err)
+			if !wg.Closed() {
+				ol.E(ctx, "http serve failed, err is", err)
+			}
 			return
 		}
-	}()
+	}, func() {
+		httpListener.Close()
+	})
 
 	// control messages
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
+		ol.E(ctx, "http handler ready")
 		defer ol.E(ctx, "http handler ok")
 
 		handler := http.NewServeMux()
@@ -534,31 +523,16 @@ func main() {
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}
 		if err = server.Serve(apiListener); err != nil {
-			ol.E(ctx, "http serve failed, err is", err)
+			if !wg.Closed() {
+				ol.E(ctx, "http serve failed, err is", err)
+			}
 			return
 		}
-	}()
+	}, func() {
+		apiListener.Close()
+	})
 
-	// listen singal.
-	go func() {
-		ss := make(chan os.Signal)
-		signal.Notify(ss, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-		for s := range ss {
-			ol.E(ctx, "quit for signal", s)
-			closing <- true
-		}
-	}()
-
-	// cleanup when got closing event.
-	select {
-	case <-closing:
-		closing <- true
-	case <-asq:
-	}
-	httpListener.Close()
-	apiListener.Close()
-	wait.Wait()
-
-	ol.T(ctx, "serve ok")
+	// wait util quit event.
+	wg.Wait()
 	return
 }

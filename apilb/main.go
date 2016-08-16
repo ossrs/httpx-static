@@ -41,10 +41,8 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 )
 
@@ -285,88 +283,69 @@ func main() {
 	}
 	defer apiListener.Close()
 
-	closing := make(chan bool, 1)
-	wait := &sync.WaitGroup{}
 	proxy := NewProxy(conf)
-
 	oh.Server = signature
 
+	wg := kernel.NewWorkerGroup()
+	defer ol.T(ctx, "serve ok")
+	defer wg.Close()
+
+	wg.QuitForChan(asq)
+	wg.QuitForSignals(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+
 	// srs api proxy.
-	go func() {
-		if !conf.Srs.Enabled {
-			return
-		}
+	if conf.Srs.Enabled {
+		wg.ForkGoroutine(func() {
+			ol.E(ctx, "srs api porxy ready")
+			defer ol.E(ctx, "srs api proxy ok")
 
-		wait.Add(1)
-		defer wait.Done()
+			handler := http.NewServeMux()
 
-		defer func() {
-			select {
-			case closing <- true:
-			default:
+			ol.T(ctx, fmt.Sprintf("handle http://%v/", srsAddr))
+			handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				proxy.serveSrsApi(w, r)
+			})
+
+			server := &http.Server{Addr: srsNetwork, Handler: handler}
+			if err = server.Serve(srsListener); err != nil {
+				if !wg.Closed() {
+					ol.E(ctx, "srs api serve failed, err is", err)
+				}
+				return
 			}
-		}()
-
-		defer ol.E(ctx, "srs api proxy ok")
-
-		handler := http.NewServeMux()
-
-		ol.T(ctx, fmt.Sprintf("handle http://%v/", srsAddr))
-		handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			proxy.serveSrsApi(w, r)
+		}, func() {
+			srsListener.Close()
 		})
-
-		server := &http.Server{Addr: srsNetwork, Handler: handler}
-		if err = server.Serve(srsListener); err != nil {
-			ol.E(ctx, "srs api serve failed, err is", err)
-			return
-		}
-	}()
+	}
 
 	// big api proxy
-	go func() {
-		if !conf.Big.Enabled {
-			return
-		}
+	if conf.Big.Enabled {
+		wg.ForkGoroutine(func() {
+			ol.E(ctx, "big api handler ready")
+			defer ol.E(ctx, "big api handler ok")
 
-		wait.Add(1)
-		defer wait.Done()
+			handler := http.NewServeMux()
 
-		defer func() {
-			select {
-			case closing <- true:
-			default:
+			ol.T(ctx, fmt.Sprintf("handle http://%v/", bigAddr))
+			handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+				proxy.serveBigApi(w, r)
+			})
+
+			server := &http.Server{Addr: bigAddr, Handler: handler}
+			if err = server.Serve(bigListener); err != nil {
+				if !wg.Closed() {
+					ol.E(ctx, "big api serve failed, err is", err)
+				}
+				return
 			}
-		}()
-
-		defer ol.E(ctx, "big api handler ok")
-
-		handler := http.NewServeMux()
-
-		ol.T(ctx, fmt.Sprintf("handle http://%v/", bigAddr))
-		handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			proxy.serveBigApi(w, r)
+		}, func() {
+			bigListener.Close()
 		})
-
-		server := &http.Server{Addr: bigAddr, Handler: handler}
-		if err = server.Serve(bigListener); err != nil {
-			ol.E(ctx, "big api serve failed, err is", err)
-			return
-		}
-	}()
+	}
 
 	// control messages
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
+		ol.E(ctx, "api handler ready")
 		defer ol.E(ctx, "api handler ok")
 
 		handler := http.NewServeMux()
@@ -398,32 +377,15 @@ func main() {
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}
 		if err = server.Serve(apiListener); err != nil {
-			ol.E(ctx, "api serve failed, err is", err)
+			if !wg.Closed() {
+				ol.E(ctx, "api serve failed, err is", err)
+			}
 			return
 		}
-	}()
+	}, func() {
+		apiListener.Close()
+	})
 
-	// listen singal.
-	go func() {
-		ss := make(chan os.Signal)
-		signal.Notify(ss, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
-		for s := range ss {
-			ol.E(ctx, "quit for signal", s)
-			closing <- true
-		}
-	}()
-
-	// cleanup when got closing event.
-	select {
-	case <-closing:
-		closing <- true
-	case <-asq:
-	}
-	srsListener.Close()
-	bigListener.Close()
-	apiListener.Close()
-	wait.Wait()
-
-	ol.T(ctx, "serve ok")
+	wg.Wait()
 	return
 }

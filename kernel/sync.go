@@ -36,9 +36,10 @@ import (
 
 // a group of worker, each is a goroutine.
 type WorkerGroup struct {
-	closing chan bool
-	wait    *sync.WaitGroup
-	closed  bool
+	closing  chan bool
+	wait     *sync.WaitGroup
+	closed   bool
+	cleanups []func()
 }
 
 func NewWorkerGroup() *WorkerGroup {
@@ -48,11 +49,28 @@ func NewWorkerGroup() *WorkerGroup {
 	}
 }
 
+// interface io.Closer
+// notify and wait for all workers to quit.
+func (v *WorkerGroup) Close() error {
+	select {
+	case v.closing <- true:
+	default:
+	}
+
+	for _, cleanup := range v.cleanups {
+		cleanup()
+	}
+
+	v.wait.Wait()
+
+	return nil
+}
+
 // when got singal from this chan, quit.
 func (v *WorkerGroup) QuitForChan(closing chan bool) {
 	go func() {
 		for _ = range closing {
-			v.Close()
+			v.Quit()
 		}
 	}()
 }
@@ -64,24 +82,31 @@ func (v *WorkerGroup) QuitForSignals(ctx ol.Context, signals ...os.Signal) {
 		signal.Notify(ss, signals...)
 		for s := range ss {
 			ol.W(ctx, "quit for signal", s)
-			v.Close()
+			v.Quit()
 		}
 	}()
 }
 
 // start new goroutine to run pfn.
-func (v *WorkerGroup) ForkGoroutine(pfn func()) {
+// @remark the worker group will quit when each pfn done.
+// @remark ignore nil cleanup.
+func (v *WorkerGroup) ForkGoroutine(pfn func(), cleanup func()) {
+	if cleanup != nil {
+		v.cleanups = append(v.cleanups, cleanup)
+	}
+
 	go func() {
 		v.wait.Add(1)
 		defer v.wait.Done()
-		defer v.Close()
+		defer v.Quit()
 
 		pfn()
 	}()
 }
 
-// notify the group of worker to quit.
-func (v *WorkerGroup) Close() error {
+// notify worker group to quit.
+// @remark user must use Close to wait for all workers cleanup and quit.
+func (v *WorkerGroup) Quit() {
 	v.closed = true
 
 	select {
@@ -89,20 +114,16 @@ func (v *WorkerGroup) Close() error {
 	default:
 	}
 
-	return nil
+	return
+}
+
+// wait util got quit signal.
+func (v *WorkerGroup) Wait() {
+	<-v.closing
+	v.closing <- true
 }
 
 // whether worker group closed.
 func (v *WorkerGroup) Closed() bool {
 	return v.closed
-}
-
-// wait for closing signal, do cleanup and wait for all worker to quit.
-func (v *WorkerGroup) Wait(cleanup func()) {
-	<-v.closing
-	v.closing <- true
-
-	cleanup()
-
-	v.wait.Wait()
 }

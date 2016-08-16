@@ -336,8 +336,12 @@ func main() {
 	defer apiListener.Close()
 
 	proxy := NewProxy(conf)
+	oh.Server = signature
 
 	wg := kernel.NewWorkerGroup()
+	defer ol.T(ctx, "serve ok")
+	defer wg.Close()
+
 	wg.QuitForChan(asq)
 	wg.QuitForSignals(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
@@ -362,14 +366,14 @@ func main() {
 			//ol.T(ctx, "got rtmp client", c.RemoteAddr())
 			go proxy.serveRtmp(c)
 		}
+	}, func() {
+		listener.Close()
 	})
 
 	// control messages
 	wg.ForkGoroutine(func() {
 		ol.E(ctx, "http handler ready")
 		defer ol.E(ctx, "http handler ok")
-
-		oh.Server = signature
 
 		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
 		http.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
@@ -393,14 +397,11 @@ func main() {
 			}
 			return
 		}
-	})
-
-	// cleanup when got closing event.
-	wg.Wait(func() {
-		listener.Close()
+	}, func() {
 		apiListener.Close()
 	})
 
-	ol.T(ctx, "serve ok")
+	// wait util quit.
+	wg.Wait()
 	return
 }

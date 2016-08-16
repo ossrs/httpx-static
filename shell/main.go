@@ -149,7 +149,7 @@ func NewShellBoss(conf *ShellConfig) *ShellBoss {
 	return v
 }
 
-func (v *ShellBoss) Close(ctx ol.Context) (err error) {
+func (v *ShellBoss) Close() (err error) {
 	v.closeLock.Lock()
 	defer v.closeLock.Unlock()
 	if v.closed {
@@ -161,7 +161,7 @@ func (v *ShellBoss) Close(ctx ol.Context) (err error) {
 		w.Close()
 	}
 
-	return v.pool.Close(ctx)
+	return v.pool.Close()
 }
 
 func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
@@ -319,7 +319,7 @@ func (v *ShellBoss) Cycle(ctx ol.Context) {
 		// when kernel object exited, close pool
 		if process == v.rtmplb || process == v.httplb || process == v.apilb {
 			ol.E(ctx, "kernel process", process.Process.Pid, "quit, shell quit.")
-			v.pool.Close(ctx)
+			v.pool.Close()
 			return
 		}
 
@@ -489,7 +489,6 @@ func main() {
 
 	ctx := &kernel.Context{}
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
-	defer ol.T(ctx, "Shell: cluster halt.")
 
 	shell := NewShellBoss(conf)
 
@@ -497,7 +496,7 @@ func main() {
 		ol.E(ctx, "Shell exec buddies failed, err is", err)
 		return
 	}
-	defer shell.Close(ctx)
+	defer shell.Close()
 
 	var apiListener net.Listener
 	addrs := strings.Split(conf.Api, "://")
@@ -509,22 +508,14 @@ func main() {
 	defer apiListener.Close()
 
 	oh.Server = signature
+	wg := kernel.NewWorkerGroup()
+	defer ol.T(ctx, "serve ok.")
+	defer wg.Close()
 
-	closing := make(chan bool, 1)
-	wait := &sync.WaitGroup{}
+	wg.QuitForSignals(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
 	// control messages
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
 		ctx := &kernel.Context{}
 		ol.T(ctx, "Api: ready")
 		defer ol.E(ctx, "Api: http handler ok")
@@ -556,29 +547,25 @@ func main() {
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}
 		if err = server.Serve(apiListener); err != nil {
-			ol.E(ctx, "Api: http serve failed, err is", err)
+			if !wg.Closed() {
+				ol.E(ctx, "Api: http serve failed, err is", err)
+			}
 			return
 		}
-	}()
+	}, func() {
+		apiListener.Close()
+	})
 
 	// cycle shell util quit.
-	go func() {
-		wait.Add(1)
-		defer wait.Done()
-
-		defer func() {
-			select {
-			case closing <- true:
-			default:
-			}
-		}()
-
+	wg.ForkGoroutine(func() {
 		ctx := &kernel.Context{}
 		ol.T(ctx, "Cycle: ready")
 		defer ol.T(ctx, "Cycle: terminated")
 
 		shell.Cycle(ctx)
-	}()
+	}, func() {
+		shell.Close()
+	})
 
 	// process singals
 	go func() {
@@ -587,35 +574,19 @@ func main() {
 		defer ol.T(ctx, "Signal: signal ok.")
 
 		c := make(chan os.Signal)
-		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL, syscall.SIGUSR2)
-		for s := range c {
-			// for night-club upgrade.
-			if s == syscall.SIGUSR2 {
-				// when upgrade failed, we serve as current workers.
-				if err = shell.Upgrade(ctx); err != nil {
-					ol.W(ctx, "Signal: upgrade failed, err is", err)
-				} else {
-					ol.T(ctx, "Signal: upgrade ok.")
-				}
-				continue
+		signal.Notify(c, syscall.SIGUSR2)
+		for _ = range c {
+			// when upgrade failed, we serve as current workers.
+			if err = shell.Upgrade(ctx); err != nil {
+				ol.W(ctx, "Signal: upgrade failed, err is", err)
+			} else {
+				ol.T(ctx, "Signal: upgrade ok.")
 			}
-
-			select {
-			case closing <- true:
-			default:
-			}
-			ol.W(ctx, "Signal: got signal", s)
-			return
 		}
 
 	}()
 
 	// wait for quit.
-	<-closing
-	closing <- true
-	shell.Close(ctx)
-	apiListener.Close()
-	wait.Wait()
-
+	wg.Wait()
 	return
 }
