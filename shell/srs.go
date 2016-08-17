@@ -154,12 +154,12 @@ func (v SrsState) String() string {
 
 // The srs stream worker.
 type SrsWorker struct {
-	shell   *ShellBoss
-	process *exec.Cmd
-	pid     int
-	conf    *SrsServiceConfig
-	ctx     ol.Context
-	lock    *sync.Mutex
+	shell *ShellBoss
+	cmd   *exec.Cmd
+	pid   int
+	conf  *SrsServiceConfig
+	ctx   ol.Context
+	lock  *sync.Mutex
 	// the work dir for this process, a sub folder under config.
 	workDir string
 	// the config for this process, under workDir.
@@ -192,7 +192,7 @@ func NewSrsWorker(ctx ol.Context, shell *ShellBoss, conf *SrsServiceConfig, port
 }
 
 func (v *SrsWorker) String() string {
-	return fmt.Sprintf("srs worker, pid=%v, state=%v, version=%v", v.process.Process.Pid, v.state, v.version)
+	return fmt.Sprintf("srs worker, pid=%v, state=%v, version=%v", v.pid, v.state, v.version)
 }
 
 func (v *SrsWorker) Close() error {
@@ -204,6 +204,14 @@ func (v *SrsWorker) Close() error {
 		v.pool.Free(p)
 	}
 	v.ports = nil
+
+	// eventhrouth the process is managed by process pool,
+	// we can signal the process to quit when close the worker
+	// when process stil alive.
+	if v.cmd != nil && v.cmd.ProcessState == nil {
+		v.cmd.Process.Kill()
+	}
+	v.cmd = nil
 
 	// TODO: FIXME: cleanup workdir.
 
@@ -349,20 +357,20 @@ func (v *SrsWorker) doExec() (err error) {
 	ol.T(ctx, fmt.Sprintf("srs ports(%v), cwd=%v, config=%v", ports, v.workDir, v.config))
 
 	// test the config with srs.
-	if b,err := exec.Command(r.Binary, "-t", "-c", v.config).CombinedOutput(); err != nil {
+	if b, err := exec.Command(r.Binary, "-t", "-c", v.config).CombinedOutput(); err != nil {
 		ol.E(ctx, fmt.Sprintf("test config failed, err is %v, raw log is:\n%v", err, string(b)))
 		return err
 	}
 
 	// start srs process.
-	if v.process, err = v.shell.pool.Start(ctx, r.Binary, "-c", v.config); err != nil {
+	var cmd *exec.Cmd
+	if cmd, err = v.shell.pool.Start(ctx, r.Binary, "-c", v.config); err != nil {
 		ol.E(ctx, "exec worker failed, err is", err)
 		return
 	}
-
-	p := v.process
-	v.pid = v.process.Process.Pid
-	ol.T(ctx, fmt.Sprintf("exec worker ok, args=%v, pid=%v", p.Args, v.pid))
+	v.cmd = cmd
+	v.pid = cmd.Process.Pid
+	ol.T(ctx, fmt.Sprintf("exec worker ok, args=%v, pid=%v", cmd.Args, v.pid))
 
 	return
 }

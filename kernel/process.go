@@ -48,8 +48,8 @@ var PoolDisposed = fmt.Errorf("pool is disposed")
 // The pool for process, when user create pool, user can exec processes,
 // wait for terminated process and close all.
 type ProcessPool struct {
-	// Alive processes.
-	processes map[int]*exec.Cmd
+	// Started processes, the cmd.Process never be nil.
+	cmds map[int]*exec.Cmd
 	// Dead processes, get by Wait().
 	exitedProcesses chan *ProcessDeadBody
 	processLock     *sync.Mutex
@@ -70,7 +70,7 @@ func NewProcessPool() *ProcessPool {
 		wait:            &sync.WaitGroup{},
 		exitedProcesses: make(chan *ProcessDeadBody),
 		processLock:     &sync.Mutex{},
-		processes:       make(map[int]*exec.Cmd),
+		cmds:            make(map[int]*exec.Cmd),
 		disposeLock:     &sync.Mutex{},
 		closing:         make(chan bool, 1),
 	}
@@ -89,19 +89,19 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 	v.ctx = ctx
 
 	// create command and start process.
-	var process *exec.Cmd = exec.Command(name, arg...)
+	var cmd *exec.Cmd = exec.Command(name, arg...)
 
-	if err = process.Start(); err != nil {
+	if err = cmd.Start(); err != nil {
 		ol.E(ctx, "start", name, arg, "failed, err is", err)
 		return
 	}
-	pid := process.Process.Pid
+	pid := cmd.Process.Pid
 
 	func() {
 		v.processLock.Lock()
 		defer v.processLock.Unlock()
 		v.wait.Add(1)
-		v.processes[pid] = process
+		v.cmds[pid] = cmd
 	}()
 
 	// use goroutine to wait for process to quit.
@@ -111,12 +111,12 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 		defer func() {
 			v.processLock.Lock()
 			defer v.processLock.Unlock()
-			delete(v.processes, pid)
+			delete(v.cmds, pid)
 			v.wait.Done()
 		}()
 
 		defer func() {
-			pdb := &ProcessDeadBody{Process: process, WaitError: err}
+			pdb := &ProcessDeadBody{Process: cmd, WaitError: err}
 			select {
 			case v.exitedProcesses <- pdb:
 			case <-v.closing:
@@ -125,24 +125,21 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 			}
 		}()
 
-		if err = process.Wait(); err != nil {
+		// err means process exit failed or other error.
+		if err = cmd.Wait(); err != nil {
 			if !v.disposed {
 				ol.E(ctx, "process", pid, "exited, err is", err)
-			}
-
-			// ignore any process exit error.
-			if _, ok := err.(*exec.ExitError); ok {
-				err = nil
 			}
 			return
 		}
 	}()
 
-	return process, nil
+	return cmd, nil
 }
 
 // Wait for a dead process.
 // @return error PoolDisposed when pool disposed.
+// @remark the error may indicates the process not terminate success, user must handle it.
 func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
 	// should never lock, for it's wait goroutine.
 	if err = func() error {
@@ -193,8 +190,9 @@ func (v *ProcessPool) Close() (err error) {
 		defer v.processLock.Unlock()
 
 		// notify all alive processes to quit.
-		for pid, p := range v.processes {
-			if p.ProcessState != nil && p.ProcessState.Exited() {
+		for pid, p := range v.cmds {
+			// when state exists, the process terminated.
+			if p.ProcessState != nil {
 				continue
 			}
 

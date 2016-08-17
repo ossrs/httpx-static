@@ -55,21 +55,28 @@ const (
 	// wait for process to start to check api.
 	processExecInterval = time.Duration(200) * time.Millisecond
 	// max retry to check process.
-	processRetryMax = 5
+	processRetryMax = 15
 	// api error.
 	Success         oh.SystemError = 0
 	apiUpgradeError oh.SystemError = 100 + iota
 )
 
 // check the api, retry when failed, error when exceed the max.
-func checkApi(api string, max int, retry time.Duration) (err error) {
+func checkApi(cmd *exec.Cmd, api string, max int, retry time.Duration) (err error) {
 	for i := 0; i < max; i++ {
-		if _, _, err = oh.ApiRequest(api); err != nil {
-			time.Sleep(retry)
-			continue
+		// when api ok, success.
+		if _, _, err = oh.ApiRequest(api); err == nil {
+			return
 		}
 
-		return
+		// when got state, the process terminated.
+		if cmd.ProcessState != nil {
+			return
+		}
+
+		// retry later.
+		time.Sleep(retry)
+		continue
 	}
 	return
 }
@@ -217,7 +224,7 @@ func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
 		}
 
 		w.state = SrsStateDeprecated
-		r0 := w.process.Process.Signal(syscall.SIGUSR2)
+		r0 := w.cmd.Process.Signal(syscall.SIGUSR2)
 		ol.T(ctx, fmt.Sprintf("upgrade notify %v, r0=%v ok", w, r0))
 	}
 
@@ -266,19 +273,19 @@ func (v *ShellBoss) ExecBuddies(ctx ol.Context) (err error) {
 
 	// sleep for a while and check the api.
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Rtmplb.Api)
-	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
+	if err = checkApi(v.rtmplb, api, processRetryMax, processExecInterval); err != nil {
 		ol.E(ctx, fmt.Sprintf("rtmplb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
 	api = fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Httplb.Api)
-	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
+	if err = checkApi(v.httplb, api, processRetryMax, processExecInterval); err != nil {
 		ol.E(ctx, fmt.Sprintf("httplb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
 	}
 	api = fmt.Sprintf("http://127.0.0.1:%v/api/v1/version", v.conf.Apilb.Api)
-	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
+	if err = checkApi(v.apilb, api, processRetryMax, processExecInterval); err != nil {
 		ol.E(ctx, fmt.Sprintf("apilb failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
@@ -304,12 +311,17 @@ func (v *ShellBoss) ExecBuddies(ctx ol.Context) (err error) {
 func (v *ShellBoss) Cycle(ctx ol.Context) {
 	for {
 		var err error
-		var process *exec.Cmd
-		if process, err = v.pool.Wait(); err != nil {
-			if err != kernel.PoolDisposed {
-				ol.W(ctx, "wait process failed, err is", err)
+		var cmd *exec.Cmd
+		if cmd, err = v.pool.Wait(); err != nil {
+			// ignore the exit error, which indicates the process terminated not success.
+			if _, ok := err.(*exec.ExitError); !ok {
+				if err != kernel.PoolDisposed {
+					ol.W(ctx, "wait process failed, err is", err)
+				}
+				return
+			} else {
+				ol.W(ctx, "process", cmd.Process.Pid, "terminated,", err)
 			}
-			return
 		}
 
 		// ignore events when pool closed
@@ -319,8 +331,8 @@ func (v *ShellBoss) Cycle(ctx ol.Context) {
 		}
 
 		// when kernel object exited, close pool
-		if process == v.rtmplb || process == v.httplb || process == v.apilb {
-			ol.E(ctx, fmt.Sprintf("kernel process=%v quit, shell quit.", process.Process.Pid))
+		if cmd == v.rtmplb || cmd == v.httplb || cmd == v.apilb {
+			ol.E(ctx, fmt.Sprintf("kernel process=%v quit, shell quit.", cmd.Process.Pid))
 			v.pool.Close()
 			return
 		}
@@ -328,7 +340,7 @@ func (v *ShellBoss) Cycle(ctx ol.Context) {
 		// remove workers
 		var worker *SrsWorker
 		for i, w := range v.workers {
-			if w.process == process {
+			if w.cmd == cmd {
 				worker = w
 				worker.Close()
 				v.workers = append(v.workers[:i], v.workers[i+1:]...)
@@ -422,7 +434,7 @@ func (v *ShellBoss) execWorker(ctx ol.Context) (worker *SrsWorker, err error) {
 
 func (v *ShellBoss) checkWorkerApi(ctx ol.Context, worker *SrsWorker) (err error) {
 	api := fmt.Sprintf("http://127.0.0.1:%v/api/v1/versions", worker.api)
-	if err = checkApi(api, processRetryMax, processExecInterval); err != nil {
+	if err = checkApi(worker.cmd, api, processRetryMax, processExecInterval); err != nil {
 		ol.E(ctx, fmt.Sprintf("srs failed, api=%v, max=%v, interval=%v, err is %v",
 			api, processRetryMax, processExecInterval, err))
 		return
