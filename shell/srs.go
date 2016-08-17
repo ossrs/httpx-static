@@ -348,6 +348,13 @@ func (v *SrsWorker) doExec() (err error) {
 		v.rtmp, v.http, v.api, v.big, v.bitch, v.bocar, v.bott, v.dns)
 	ol.T(ctx, fmt.Sprintf("srs ports(%v), cwd=%v, config=%v", ports, v.workDir, v.config))
 
+	// test the config with srs.
+	if b,err := exec.Command(r.Binary, "-t", "-c", v.config).CombinedOutput(); err != nil {
+		ol.E(ctx, fmt.Sprintf("test config failed, err is %v, raw log is:\n%v", err, string(b)))
+		return err
+	}
+
+	// start srs process.
 	if v.process, err = v.shell.pool.Start(ctx, r.Binary, "-c", v.config); err != nil {
 		ol.E(ctx, "exec worker failed, err is", err)
 		return
