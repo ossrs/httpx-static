@@ -318,7 +318,7 @@ func (v *ShellBoss) Cycle(ctx ol.Context) {
 
 		// when kernel object exited, close pool
 		if process == v.rtmplb || process == v.httplb || process == v.apilb {
-			ol.E(ctx, "kernel process", process.Process.Pid, "quit, shell quit.")
+			ol.E(ctx, fmt.Sprintf("kernel process=%v quit, shell quit.", process.Process.Pid))
 			v.pool.Close()
 			return
 		}
@@ -392,9 +392,11 @@ func (v *ShellBoss) execWorker(ctx ol.Context) (worker *SrsWorker, err error) {
 	}
 	ol.T(ctx, "start srs worker ok")
 
+	// when worker exec ok, the process must exists,
+	// we append the worker to queue to cleanup worker when
+	// process terminated.
 	v.workers = append(v.workers, worker)
-	ol.T(ctx, fmt.Sprintf("exec worker ok, pid=%v, total=%v",
-		worker.process.Process.Pid, len(v.workers)))
+	ol.T(ctx, fmt.Sprintf("exec worker ok, pid=%v, total=%v", worker.pid, len(v.workers)))
 
 	if err = v.checkWorkerApi(ctx, worker); err != nil {
 		ol.E(ctx, "check worker api failed, err is", err)

@@ -156,6 +156,7 @@ func (v SrsState) String() string {
 type SrsWorker struct {
 	shell   *ShellBoss
 	process *exec.Cmd
+	pid     int
 	conf    *SrsServiceConfig
 	ctx     ol.Context
 	lock    *sync.Mutex
@@ -210,6 +211,13 @@ func (v *SrsWorker) Close() error {
 }
 
 func (v *SrsWorker) Exec() (err error) {
+	if err = v.doExec(); err != nil {
+		v.Close()
+	}
+	return
+}
+
+func (v *SrsWorker) doExec() (err error) {
 	ctx := v.ctx
 	r := v.shell.conf.Worker
 	s := v.shell.conf.SrsConfig()
@@ -346,7 +354,8 @@ func (v *SrsWorker) Exec() (err error) {
 	}
 
 	p := v.process
-	ol.T(ctx, fmt.Sprintf("exec worker ok, args=%v, pid=%v", p.Args, p.Process.Pid))
+	v.pid = v.process.Process.Pid
+	ol.T(ctx, fmt.Sprintf("exec worker ok, args=%v, pid=%v", p.Args, v.pid))
 
 	return
 }
