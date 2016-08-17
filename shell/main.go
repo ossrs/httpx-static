@@ -200,6 +200,7 @@ func (v *ShellBoss) Upgrade(ctx ol.Context) (err error) {
 		version.String(), latest.String(), version.Signature))
 
 	// start a new worker.
+	// @remark when worker failed, we ignore to close it, for the Cycle() will do this.
 	var worker *SrsWorker
 	if worker, err = v.execWorker(ctx); err != nil {
 		ol.E(ctx, "upgrade exec worker failed, err is", err)
@@ -285,6 +286,7 @@ func (v *ShellBoss) ExecBuddies(ctx ol.Context) (err error) {
 	ol.T(ctx, "kernel process ok.")
 
 	// fork workers.
+	// @reamrk when worker failed, quit.
 	var worker *SrsWorker
 	if worker, err = v.execWorker(ctx); err != nil {
 		ol.E(ctx, "exec worker failed, err is", err)
@@ -365,6 +367,11 @@ func (v *ShellBoss) restartWorker(ctx ol.Context) (err error) {
 	v.activeWorker = nil
 
 	if worker, err = v.execWorker(ctx); err != nil {
+		// when failed, we must cleanup the worker,
+		// because we will retry when failed, and the Cycle()
+		// is not reap process when worker is ok.
+		worker.Close()
+
 		ol.E(ctx, "restart worker failed, err is", err)
 		return
 	}
