@@ -43,8 +43,6 @@ type SrsServiceConfig struct {
 	BigBinary    string `json:"big_binary"`
 	BitchBinary  string `json:"bitch_binary"`
 	FfmpegBinary string `json:"ffmpeg_binary"`
-	BocarBinary  string `json:"bocar_binary"`
-	BottBinary   string `json:"bott_binary"`
 	DnsBinary    string `json:"dns_binary"`
 	Variables    struct {
 		RtmpPort      string `json:"rtmp_port"`
@@ -57,10 +55,6 @@ type SrsServiceConfig struct {
 		FfmpegBinary  string `json:"ffmpeg_binary"`
 		DnsPort       string `json:"dns_port"`
 		DnsBinary     string `json:"dns_binary"`
-		BocarPort     string `json:"bocar_port"`
-		BocarBinary   string `json:"bocar_binary"`
-		BottPort      string `json:"bott_port"`
-		BottBinary    string `json:"bott_binary"`
 		WorkDir       string `json:"work_dir"`
 		HttpProxyPort string `json:"http_proxy_port"`
 		BigProxyPort  string `json:"big_proxy_port"`
@@ -75,9 +69,8 @@ func (v *SrsServiceConfig) String() string {
 	r := &v.Variables
 	common := fmt.Sprintf("binary=%v,rtmp=%v,api=%v,http=%v",
 		v.BigBinary, r.RtmpPort, r.ApiPort, r.HttpPort)
-	oaprocess := fmt.Sprintf("big=%v,bigbin=%v,bitch=%v,bitchbin=%v,bocar=%v,bocarbin=%v,bott=%v,bottbin=%v,dns=%v,dnsbin=%v",
-		r.BigPort, r.BigBinary, r.BitchPort, r.BitchBinary, r.BocarPort, r.BocarBinary, r.BottPort, r.BottBinary,
-		r.DnsPort, r.DnsBinary)
+	oaprocess := fmt.Sprintf("big=%v,bigbin=%v,bitch=%v,bitchbin=%v,dns=%v,dnsbin=%v",
+		r.BigPort, r.BigBinary, r.BitchPort, r.BitchBinary, r.DnsPort, r.DnsBinary)
 	others := fmt.Sprintf("ffmpeg=%v,dir=%v,phttp=%v,pbig=%v",
 		r.FfmpegBinary, r.WorkDir, r.HttpProxyPort, r.BigProxyPort)
 	return fmt.Sprintf("srs<%v,%v,%v>", common, oaprocess, others)
@@ -108,14 +101,6 @@ func (v *SrsServiceConfig) Check() (err error) {
 		return fmt.Errorf("Empty variable bitch binary")
 	} else if len(v.Variables.FfmpegBinary) == 0 {
 		return fmt.Errorf("Empty variable ffmpeg binary")
-	} else if len(v.Variables.BocarPort) == 0 {
-		return fmt.Errorf("Empty variable bocar port")
-	} else if len(v.Variables.BocarBinary) == 0 {
-		return fmt.Errorf("Empty variable bocar binary")
-	} else if len(v.Variables.BottPort) == 0 {
-		return fmt.Errorf("Empty variable bott port")
-	} else if len(v.Variables.BottBinary) == 0 {
-		return fmt.Errorf("Empty variable bott binary")
 	} else if len(v.Variables.DnsPort) == 0 {
 		return fmt.Errorf("Empty variable dns port")
 	} else if len(v.Variables.DnsBinary) == 0 {
@@ -173,8 +158,6 @@ type SrsWorker struct {
 	api   int
 	big   int
 	bitch int
-	bocar int
-	bott  int
 	dns   int
 	// version of worker.
 	version *SrsVersion
@@ -289,7 +272,7 @@ func (v *SrsWorker) doExec() (err error) {
 		}
 		return
 	}
-	bins := []string{r.Binary, s.BigBinary, s.BitchBinary, s.FfmpegBinary, s.BocarBinary, s.BottBinary, s.DnsBinary}
+	bins := []string{r.Binary, s.BigBinary, s.BitchBinary, s.FfmpegBinary, s.DnsBinary}
 	if err = slinks(v.workDir, bins...); err != nil {
 		ol.E(ctx, "symlink failed, err is", err)
 		return
@@ -302,8 +285,7 @@ func (v *SrsWorker) doExec() (err error) {
 	} else {
 		v.ports = append(v.ports, ports...)
 		v.rtmp, v.http, v.api = ports[0], ports[1], ports[2]
-		v.big, v.bitch, v.bocar, v.bott = ports[3], ports[4], ports[5], ports[6]
-		v.dns = ports[7]
+		v.big, v.bitch, v.dns = ports[3], ports[4], ports[5]
 	}
 
 	// build all port.
@@ -312,8 +294,6 @@ func (v *SrsWorker) doExec() (err error) {
 	conf = strings.Replace(conf, s.Variables.ApiPort, strconv.Itoa(v.api), -1)
 	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
 	conf = strings.Replace(conf, s.Variables.BitchPort, strconv.Itoa(v.bitch), -1)
-	conf = strings.Replace(conf, s.Variables.BocarPort, strconv.Itoa(v.bocar), -1)
-	conf = strings.Replace(conf, s.Variables.BottPort, strconv.Itoa(v.bott), -1)
 	conf = strings.Replace(conf, s.Variables.DnsPort, strconv.Itoa(v.dns), -1)
 	// for http proxy for hls+
 	conf = strings.Replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
@@ -328,12 +308,6 @@ func (v *SrsWorker) doExec() (err error) {
 	}
 	if len(s.FfmpegBinary) > 0 {
 		conf = strings.Replace(conf, s.Variables.FfmpegBinary, s.FfmpegBinary, -1)
-	}
-	if len(s.BocarBinary) > 0 {
-		conf = strings.Replace(conf, s.Variables.BocarBinary, s.BocarBinary, -1)
-	}
-	if len(s.BottBinary) > 0 {
-		conf = strings.Replace(conf, s.Variables.BottBinary, s.BottBinary, -1)
 	}
 	if len(s.DnsBinary) > 0 {
 		conf = strings.Replace(conf, s.Variables.DnsBinary, s.DnsBinary, -1)
@@ -352,8 +326,8 @@ func (v *SrsWorker) doExec() (err error) {
 		}
 	}
 
-	ports := fmt.Sprintf("rtmp=%v,http=%v,api=%v,big=%v,bitch=%v,bocar=%v,bott=%v,dns=%v",
-		v.rtmp, v.http, v.api, v.big, v.bitch, v.bocar, v.bott, v.dns)
+	ports := fmt.Sprintf("rtmp=%v,http=%v,api=%v,big=%v,bitch=%v,dns=%v",
+		v.rtmp, v.http, v.api, v.big, v.bitch, v.dns)
 	ol.T(ctx, fmt.Sprintf("srs ports(%v), cwd=%v, config=%v", ports, v.workDir, v.config))
 
 	// test the config with srs.

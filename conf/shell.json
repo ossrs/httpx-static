@@ -66,10 +66,6 @@
             "bitch_binary": "./objs/bitch.py",
             // The binary of ffmpeg for bms, ignore when empty.
             "ffmpeg_binary": "./objs/ffmpeg",
-            // The binary of bocar for bms, ignore when empty.
-            "bocar_binary": "./objs/bocar.py",
-            // The binary of bott for bms, ignore when empty.
-            "bott_binary": "./objs/bott.py",
             // The binary of dns for bms, ignore when empty.
             "dns_binary": "./objs/bravo_dns",
             // The variables to replace the config template to build config file.
@@ -84,10 +80,6 @@
                 "ffmpeg_binary": "${ffmpeg_binary}",
                 "dns_port": "${dns_port}",
                 "dns_binary": "${dns_binary}",
-                "bocar_port": "${bocar_port}",
-                "bocar_binary": "${bocar_binary}",
-                "bott_port": "${bott_port}",
-                "bott_binary": "${bott_binary}",
                 "work_dir": "${cwd}",
                 "http_proxy_port": "${http_proxy_port}",
                 "big_proxy_port": "${big_proxy_port}"
