@@ -34,18 +34,18 @@ func TestHlsPlusProxy(t *testing.T) {
 	q, h := url.Values{}, http.Header{}
 
 	proxy := NewHlsPlusProxy(nil)
-	vconn, _, err := proxy.identify(q, h, "", 0)
+	vconn, err := proxy.identify(q, h, "", 0)
 	if err == nil {
 		t.Errorf("should failed.")
 	}
 	q.Set("shp_xpsid", "0381u1odj28371jso1823j3o1")
 	h.Set("X-Playback-Session-Id", "0381u1odj28371jso1823j3o1")
-	if vconn, _, err = proxy.identify(q, h, "", 0); err == nil {
+	if vconn, err = proxy.identify(q, h, "", 0); err == nil {
 		t.Errorf("should failed.")
 	}
 
 	q, h = url.Values{}, http.Header{}
-	if vconn, _, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
+	if vconn, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
 		t.Error("failed, err is", err)
 	} else if len(vconn.addrs) != 1 {
 		t.Errorf("invalid addrs=%v", len(vconn.addrs))
@@ -53,7 +53,7 @@ func TestHlsPlusProxy(t *testing.T) {
 
 	proxy = NewHlsPlusProxy(nil)
 	q.Set("shp_xpsid", "0381u1odj28371jso1823j3o1")
-	if vconn, _, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
+	if vconn, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
 		t.Error("failed, err is", err)
 	} else if len(vconn.addrs) != 1 {
 		t.Errorf("invalid addrs=%v", len(vconn.addrs))
@@ -63,7 +63,7 @@ func TestHlsPlusProxy(t *testing.T) {
 
 	proxy = NewHlsPlusProxy(nil)
 	h.Set("X-Playback-Session-Id", "0381u1odj28371jso1823j3o1")
-	if vconn, _, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
+	if vconn, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
 		t.Error("failed, err is", err)
 	} else if len(vconn.addrs) != 1 {
 		t.Errorf("invalid addrs=%v", len(vconn.addrs))
@@ -73,14 +73,14 @@ func TestHlsPlusProxy(t *testing.T) {
 
 	proxy = NewHlsPlusProxy(nil)
 	q.Set("shp_uuid", "0381u1odj28371jso1823j3o1")
-	if vconn, _, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
+	if vconn, err = proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
 		t.Error("failed, err is", err)
 	} else if len(vconn.addrs) != 1 {
 		t.Errorf("invalid addrs=%v", len(vconn.addrs))
 	} else if vconn.uuid != "0381u1odj28371jso1823j3o1" {
 		t.Errorf("invalid uuid=%v", vconn.uuid)
 	}
-	if c, _, err := proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
+	if c, err := proxy.identify(q, h, "127.0.0.1:1234", 0); err != nil {
 		t.Error("failed, err is", err)
 	} else if c != vconn {
 		t.Error("invalid conn")

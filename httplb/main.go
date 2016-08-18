@@ -114,6 +114,8 @@ func createHttpTransport() http.RoundTripper {
 
 // The virtual connection for hls+
 type hlsPlusVirtualConnection struct {
+	ctx        ol.Context
+	doPrint    bool
 	lastUpdate time.Time
 	// for standard player, identify by uuid.
 	uuid string
@@ -140,12 +142,15 @@ func NewHlsPlusVirtualConnection(uuid, xpsid string, port int) *hlsPlusVirtualCo
 		rp:         &httputil.ReverseProxy{},
 		lock:       &sync.Mutex{},
 		port:       port,
+		ctx:        &kernel.Context{},
 	}
 	v.rp.Transport = v.transport
 	return v
 }
 
-func (v *hlsPlusVirtualConnection) serve(ctx ol.Context, w http.ResponseWriter, r *http.Request, fresh bool) {
+func (v *hlsPlusVirtualConnection) serve(w http.ResponseWriter, r *http.Request) {
+	ctx := v.ctx
+
 	// reuse the transport of the conn.
 	v.rp.Transport = v.transport
 
@@ -158,8 +163,9 @@ func (v *hlsPlusVirtualConnection) serve(ctx ol.Context, w http.ResponseWriter, 
 			r.Header.Set("X-Real-IP", ip)
 		}
 
-		if fresh {
+		if v.doPrint {
 			ol.T(ctx, fmt.Sprintf("proxy hls+ %v to %v", v, r.URL.String()))
+			v.doPrint = false
 		}
 	}
 
@@ -193,7 +199,7 @@ func NewHlsPlusProxy(proxy *proxy) *hlsPlusProxy {
 	}
 }
 
-func (v *hlsPlusProxy) identify(q url.Values, h http.Header, addr string, activePort int) (vconn *hlsPlusVirtualConnection, fresh bool, err error) {
+func (v *hlsPlusProxy) identify(q url.Values, h http.Header, addr string, activePort int) (vconn *hlsPlusVirtualConnection, err error) {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
@@ -204,7 +210,7 @@ func (v *hlsPlusProxy) identify(q url.Values, h http.Header, addr string, active
 		xpsid = h.Get("X-Playback-Session-Id")
 	}
 	if len(addr) == 0 {
-		return nil, false, fmt.Errorf("empty addr, failed to identify")
+		return nil, fmt.Errorf("empty addr, failed to identify")
 	}
 
 	// identify virtual connection
@@ -220,10 +226,15 @@ func (v *hlsPlusProxy) identify(q url.Values, h http.Header, addr string, active
 	}
 	if vconn == nil {
 		vconn = NewHlsPlusVirtualConnection(uuid, xpsid, activePort)
-		fresh = true
+		vconn.doPrint = true
 	}
 	vconn.lastUpdate = time.Now()
 	//ol.T(ctx, "identify", vconn)
+
+	// when identify changed, do print.
+	if uuid != vconn.uuid || xpsid != vconn.xpsid {
+		vconn.doPrint = true
+	}
 
 	// update the cache
 	if len(uuid) > 0 {
@@ -251,13 +262,13 @@ func (v *hlsPlusProxy) identify(q url.Values, h http.Header, addr string, active
 func (v *hlsPlusProxy) serve(w http.ResponseWriter, r *http.Request) {
 	ctx := &kernel.Context{}
 
-	vconn, fresh, err := v.identify(r.URL.Query(), r.Header, r.RemoteAddr, v.proxy.activePort)
+	vconn, err := v.identify(r.URL.Query(), r.Header, r.RemoteAddr, v.proxy.activePort)
 	if err != nil {
 		oh.WriteError(ctx, w, r, err)
 		return
 	}
 
-	vconn.serve(ctx, w, r, fresh)
+	vconn.serve(w, r)
 }
 
 const (
