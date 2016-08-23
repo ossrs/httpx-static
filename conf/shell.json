@@ -12,9 +12,9 @@
         "binary": "../rtmplb/rtmplb",
         // The config file for rtmplb.
         "config": "../conf/rtmplb.json",
-        // The control api port, pass to rtmplb.
+        // The control api port, override config of rtmplb.
         "api": 2037,
-        // The serve port, pass to rtmplb.
+        // The serve port, override config of rtmplb.
         "rtmp": 1935
     },
     "httplb": {
@@ -24,9 +24,9 @@
         "binary": "../httplb/httplb",
         // The config file for httplb.
         "config": "../conf/httplb.json",
-        // The control api port, pass to httplb.
+        // The control api port, override config of httplb.
         "api": 2038,
-        // The serve port, pass to httplb.
+        // The serve port, override config of httplb.
         "http": 8080
     },
     "apilb": {
@@ -36,11 +36,11 @@
         "binary": "../apilb/apilb",
         // The config file for apilb.
         "config": "../conf/apilb.json",
-        // The control api port, pass to apilb.
+        // The control api port, override config of apilb.
         "api": 2039,
-        // The srs api port, pass to apilb.
+        // The srs api port, override config of apilb.
         "srs": 1985,
-        // The big api port, pass to apilb.
+        // The big api port, override config of apilb.
         "big": 1990
     },
     "worker": {
