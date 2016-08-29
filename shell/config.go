@@ -62,12 +62,12 @@ type ShellConfig struct {
 		Http    int    `json:"http"`
 	} `json:"httplb"`
 	Apilb struct {
-		Enabled bool   `json:"enabled"`
-		Binary  string `json:"binary"`
-		Config  string `json:"config"`
-		Api     int    `json:"api"`
-		Srs     int    `json:"srs"`
-		Big     int    `json:"big"`
+	       Enabled bool   `json:"enabled"`
+	       Binary  string `json:"binary"`
+	       Config  string `json:"config"`
+	       Api     int    `json:"api"`
+		ProxyTo string `json:"proxy_to"`
+	       Backend int    `json:"backend"`
 	} `json:"apilb"`
 	Worker struct {
 		Enabled  bool            `json:"enabled"`
@@ -95,8 +95,8 @@ func (v *ShellConfig) String() string {
 			r.Enabled, r.Binary, r.Config, r.Api, r.Http)
 	}
 	if r := &v.Apilb; true {
-		apilb = fmt.Sprintf("apilb(%v,binary=%v,config=%v,api=%v,srs=%v,big=%v)",
-			r.Enabled, r.Binary, r.Config, r.Api, r.Srs, r.Big)
+		apilb = fmt.Sprintf("apilb(%v,binary=%v,config=%v,api=%v,to=%v,backend=%v)",
+			r.Enabled, r.Binary, r.Config, r.Api, r.ProxyTo, r.Backend)
 	}
 	if r := &v.Worker; true {
 		worker = fmt.Sprintf("worker(%v,provider=%v,binary=%v,config=%v,dir=%v,ports=[%v,%v],service=%v)",
@@ -118,6 +118,10 @@ func (v *ShellConfig) SrsConfig() *SrsServiceConfig {
 	} else {
 		return r
 	}
+}
+
+func (v *ShellConfig) ApiProxyToBig() bool {
+	return v.Apilb.ProxyTo == "big"
 }
 
 func (v *ShellConfig) Loads(c string) (err error) {
@@ -212,11 +216,11 @@ func (v *ShellConfig) Loads(c string) (err error) {
 		if r.Api == 0 {
 			return fmt.Errorf("Empty apilb api")
 		}
-		if r.Srs == 0 {
-			return fmt.Errorf("Empty srs api")
+		if len(r.ProxyTo) == 0 {
+			return fmt.Errorf("Empty proxy to")
 		}
-		if r.Big == 0 {
-			return fmt.Errorf("Empty big api")
+		if r.Backend == 0 {
+			return fmt.Errorf("Empty srs api")
 		}
 	}
 

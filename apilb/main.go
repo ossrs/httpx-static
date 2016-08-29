@@ -23,7 +23,7 @@ SOFTWARE.
 */
 
 /*
- This the main entrance of apilb, load-balance for srs/big api.
+ This the main entrance of apilb, load-balance for backend api.
 */
 package main
 
@@ -51,20 +51,16 @@ var signature = fmt.Sprintf("APILB/%v", kernel.Version())
 // The config object for apilb module.
 type ApiLbConfig struct {
 	kernel.Config
-	Api string `json:"api"`
-	Srs struct {
+	Api     string `json:"api"`
+	Backend struct {
 		Enabled bool   `json:"enabled"`
 		Api     string `json:"api"`
-	} `json:"srs"`
-	Big struct {
-		Enabled bool   `json:"enabled"`
-		Api     string `json:"api"`
-	} `json:"big"`
+	} `json:"backend"`
 }
 
 func (v *ApiLbConfig) String() string {
-	return fmt.Sprintf("%v, api=%v, srs(%v,api=%v), big(%v,api=%v)",
-		&v.Config, v.Api, v.Srs.Enabled, v.Srs.Api, v.Big.Enabled, v.Big.Api)
+	return fmt.Sprintf("%v, api=%v, backend(%v,api=%v)",
+		&v.Config, v.Api, v.Backend.Enabled, v.Backend.Api)
 }
 
 func (v *ApiLbConfig) Loads(c string) (err error) {
@@ -90,12 +86,8 @@ func (v *ApiLbConfig) Loads(c string) (err error) {
 		return fmt.Errorf("Empty api")
 	}
 
-	if v.Srs.Enabled && len(v.Srs.Api) == 0 {
-		return fmt.Errorf("Empty srs api")
-	}
-
-	if v.Big.Enabled && len(v.Big.Api) == 0 {
-		return fmt.Errorf("Empty big api")
+	if v.Backend.Enabled && len(v.Backend.Api) == 0 {
+		return fmt.Errorf("Empty backend api")
 	}
 
 	return
@@ -103,18 +95,15 @@ func (v *ApiLbConfig) Loads(c string) (err error) {
 
 const (
 	Success     oh.SystemError = 0
-	ApiSrsError oh.SystemError = 100 + iota
-	ApiBigError
+	ApiBackendError oh.SystemError = 100 + iota
 )
 
 // The http proxy for backend api.
 type proxy struct {
-	conf     *ApiLbConfig
-	srsPorts []int
-	srsPort  int
-	bigPorts []int
-	bigPort  int
-	rp       *httputil.ReverseProxy
+	conf         *ApiLbConfig
+	backendPorts []int
+	backendPort  int
+	rp           *httputil.ReverseProxy
 }
 
 func NewProxy(conf *ApiLbConfig) *proxy {
@@ -123,15 +112,15 @@ func NewProxy(conf *ApiLbConfig) *proxy {
 	return v
 }
 
-func (v *proxy) serveControlSrs(ctx ol.Context, r *http.Request) (string, oh.SystemError) {
+func (v *proxy) serveControl(ctx ol.Context, r *http.Request) (string, oh.SystemError) {
 	var err error
 	var port int
 
 	q := r.URL.Query()
 	if value := q.Get("port"); len(value) == 0 {
-		return "miss port", ApiSrsError
+		return "miss port", ApiBackendError
 	} else if port, err = strconv.Atoi(value); err != nil {
-		return fmt.Sprintf("port is not int, err is %v", err), ApiSrsError
+		return fmt.Sprintf("port is not int, err is %v", err), ApiBackendError
 	}
 
 	hasProxyed := func(port int, ports []int) bool {
@@ -143,71 +132,26 @@ func (v *proxy) serveControlSrs(ctx ol.Context, r *http.Request) (string, oh.Sys
 		return false
 	}
 
-	ol.T(ctx, fmt.Sprintf("proxy srs to %v, previous=%v, ports=%v", port, v.srsPort, v.srsPorts))
-	if !hasProxyed(port, v.srsPorts) {
-		v.srsPorts = append(v.srsPorts, port)
+	ol.T(ctx, fmt.Sprintf("proxy backend to %v, previous=%v, ports=%v", port, v.backendPort, v.backendPorts))
+	if !hasProxyed(port, v.backendPorts) {
+		v.backendPorts = append(v.backendPorts, port)
 	}
-	v.srsPort = port
+	v.backendPort = port
 
 	return "", Success
 }
 
-func (v *proxy) serveControlBig(ctx ol.Context, r *http.Request) (string, oh.SystemError) {
-	var err error
-	var port int
-
-	q := r.URL.Query()
-	if value := q.Get("port"); len(value) == 0 {
-		return "miss port", ApiSrsError
-	} else if port, err = strconv.Atoi(value); err != nil {
-		return fmt.Sprintf("port is not int, err is %v", err), ApiSrsError
-	}
-
-	hasProxyed := func(port int, ports []int) bool {
-		for _, p := range ports {
-			if p == port {
-				return true
-			}
-		}
-		return false
-	}
-
-	ol.T(ctx, fmt.Sprintf("proxy big to %v, previous=%v, ports=%v", port, v.bigPort, v.bigPorts))
-	if !hasProxyed(port, v.bigPorts) {
-		v.bigPorts = append(v.bigPorts, port)
-	}
-	v.bigPort = port
-
-	return "", Success
-}
-
-func (v *proxy) serveSrsApi(w http.ResponseWriter, r *http.Request) {
+func (v *proxy) serveBackendApi(w http.ResponseWriter, r *http.Request) {
 	ctx := &kernel.Context{}
 
 	v.rp.Director = func(r *http.Request) {
 		r.URL.Scheme = "http"
 
-		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.srsPort)
+		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.backendPort)
 		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 			r.Header.Set("X-Real-IP", ip)
 		}
-		ol.W(ctx, fmt.Sprintf("proxy srs %v to %v", r.RemoteAddr, r.URL.String()))
-	}
-
-	v.rp.ServeHTTP(w, r)
-}
-
-func (v *proxy) serveBigApi(w http.ResponseWriter, r *http.Request) {
-	ctx := &kernel.Context{}
-
-	v.rp.Director = func(r *http.Request) {
-		r.URL.Scheme = "http"
-
-		r.URL.Host = fmt.Sprintf("127.0.0.1:%v", v.bigPort)
-		if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			r.Header.Set("X-Real-IP", ip)
-		}
-		ol.W(ctx, fmt.Sprintf("proxy big %v to %v", r.RemoteAddr, r.URL.String()))
+		ol.W(ctx, fmt.Sprintf("proxy backend %v to %v", r.RemoteAddr, r.URL.String()))
 	}
 
 	v.rp.ServeHTTP(w, r)
@@ -217,10 +161,9 @@ func main() {
 	var err error
 
 	// for shell.
-	var api, srs, big string
+	var api, backend string
 	flag.StringVar(&api, "api", "", "The api tcp://host:port, optional.")
-	flag.StringVar(&srs, "srs", "", "The srs api tcp://host:port, optional.")
-	flag.StringVar(&big, "big", "", "The big api tcp://host:port, optional.")
+	flag.StringVar(&backend, "backend", "", "The backend api tcp://host:port, optional.")
 
 	confFile := oo.ParseArgv("../conf/apilb.json", kernel.Version(), signature)
 	fmt.Println("APILB is the load-balance for http api, config is", confFile)
@@ -233,11 +176,8 @@ func main() {
 	defer conf.Close()
 
 	// override by shell.
-	if len(srs) > 0 {
-		conf.Srs.Enabled, conf.Srs.Api = true, srs
-	}
-	if len(big) > 0 {
-		conf.Big.Enabled, conf.Big.Api = true, big
+	if len(backend) > 0 {
+		conf.Backend.Enabled, conf.Backend.Api = true, backend
 	}
 	if len(api) > 0 {
 		conf.Api = api
@@ -250,28 +190,16 @@ func main() {
 	asq := make(chan bool, 1)
 	oa.WatchNoExit(ctx, oa.Interval, asq)
 
-	var srsListener net.Listener
-	var srsNetwork, srsAddr string
-	if conf.Srs.Enabled {
-		addrs := strings.Split(conf.Srs.Api, "://")
-		srsNetwork, srsAddr = addrs[0], addrs[1]
-		if srsListener, err = net.Listen(srsNetwork, srsAddr); err != nil {
-			ol.E(ctx, "srs api listen failed, err is", err)
+	var backendListener net.Listener
+	var backendNetwork, backendAddr string
+	if conf.Backend.Enabled {
+		addrs := strings.Split(conf.Backend.Api, "://")
+		backendNetwork, backendAddr = addrs[0], addrs[1]
+		if backendListener, err = net.Listen(backendNetwork, backendAddr); err != nil {
+			ol.E(ctx, "backend api listen failed, err is", err)
 			return
 		}
-		defer srsListener.Close()
-	}
-
-	var bigListener net.Listener
-	var bigNetwork, bigAddr string
-	if conf.Big.Enabled {
-		addrs := strings.Split(conf.Big.Api, "://")
-		bigNetwork, bigAddr = addrs[0], addrs[1]
-		if bigListener, err = net.Listen(bigNetwork, bigAddr); err != nil {
-			ol.E(ctx, "big api listen failed, err is", err)
-			return
-		}
-		defer bigListener.Close()
+		defer backendListener.Close()
 	}
 
 	var apiListener net.Listener
@@ -293,53 +221,28 @@ func main() {
 	wg.QuitForChan(asq)
 	wg.QuitForSignals(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
-	// srs api proxy.
-	if conf.Srs.Enabled {
+	// backend api proxy.
+	if conf.Backend.Enabled {
 		wg.ForkGoroutine(func() {
-			ol.E(ctx, "srs api porxy ready")
-			defer ol.E(ctx, "srs api proxy ok")
+			ol.E(ctx, "backend api porxy ready")
+			defer ol.E(ctx, "backend api proxy ok")
 
 			handler := http.NewServeMux()
 
-			ol.T(ctx, fmt.Sprintf("handle http://%v/", srsAddr))
+			ol.T(ctx, fmt.Sprintf("handle http://%v/", backendAddr))
 			handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				proxy.serveSrsApi(w, r)
+				proxy.serveBackendApi(w, r)
 			})
 
-			server := &http.Server{Addr: srsNetwork, Handler: handler}
-			if err = server.Serve(srsListener); err != nil {
+			server := &http.Server{Addr: backendNetwork, Handler: handler}
+			if err = server.Serve(backendListener); err != nil {
 				if !wg.Closed() {
-					ol.E(ctx, "srs api serve failed, err is", err)
+					ol.E(ctx, "backend api serve failed, err is", err)
 				}
 				return
 			}
 		}, func() {
-			srsListener.Close()
-		})
-	}
-
-	// big api proxy
-	if conf.Big.Enabled {
-		wg.ForkGoroutine(func() {
-			ol.E(ctx, "big api handler ready")
-			defer ol.E(ctx, "big api handler ok")
-
-			handler := http.NewServeMux()
-
-			ol.T(ctx, fmt.Sprintf("handle http://%v/", bigAddr))
-			handler.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-				proxy.serveBigApi(w, r)
-			})
-
-			server := &http.Server{Addr: bigAddr, Handler: handler}
-			if err = server.Serve(bigListener); err != nil {
-				if !wg.Closed() {
-					ol.E(ctx, "big api serve failed, err is", err)
-				}
-				return
-			}
-		}, func() {
-			bigListener.Close()
+			backendListener.Close()
 		})
 	}
 
@@ -355,20 +258,10 @@ func main() {
 			oh.WriteVersion(w, r, kernel.Version())
 		})
 
-		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy/srs?port=19850", apiAddr))
-		handler.HandleFunc("/api/v1/proxy/srs", func(w http.ResponseWriter, r *http.Request) {
+		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?port=19850", apiAddr))
+		handler.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
 			ctx := &kernel.Context{}
-			if msg, err := proxy.serveControlSrs(ctx, r); err != Success {
-				oh.WriteCplxError(ctx, w, r, err, msg)
-				return
-			}
-			oh.WriteData(ctx, w, r, nil)
-		})
-
-		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy/big?port=19900", apiAddr))
-		handler.HandleFunc("/api/v1/proxy/big", func(w http.ResponseWriter, r *http.Request) {
-			ctx := &kernel.Context{}
-			if msg, err := proxy.serveControlBig(ctx, r); err != Success {
+			if msg, err := proxy.serveControl(ctx, r); err != Success {
 				oh.WriteCplxError(ctx, w, r, err, msg)
 				return
 			}

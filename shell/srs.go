@@ -298,7 +298,11 @@ func (v *SrsWorker) doExec() (err error) {
 	// for http proxy for hls+
 	conf = strings.Replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
 	// for big proxy port.
-	conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.shell.conf.Apilb.Big), -1)
+	if v.shell.conf.ApiProxyToBig() {
+		conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.shell.conf.Apilb.Backend), -1)
+	} else {
+		conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.big), -1)
+	}
 	// build other variables
 	if len(s.BigBinary) > 0 {
 		conf = strings.Replace(conf, s.Variables.BigBinary, s.BigBinary, -1)

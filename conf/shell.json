@@ -38,10 +38,10 @@
         "config": "../conf/apilb.json",
         // The control api port, override config of apilb.
         "api": 2039,
-        // The srs api port, override config of apilb.
-        "srs": 1985,
-        // The big api port, override config of apilb.
-        "big": 1990
+        // The apilb proxy to api/big.
+        "proxy_to": "api",
+        // The backend api port, override config of apilb.
+        "backend": 1985
     },
     "worker": {
         // Whether enable the stream worker.

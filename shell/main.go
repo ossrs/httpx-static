@@ -261,7 +261,7 @@ func (v *ShellBoss) ExecBuddies(ctx ol.Context) (err error) {
 	if r := &v.conf.Apilb; r.Enabled {
 		args := []string{"-c", r.Config,
 			"-api", fmt.Sprintf("tcp://127.0.0.1:%v", r.Api),
-			"-srs", fmt.Sprintf("tcp://:%v", r.Srs), "-big", fmt.Sprintf("tcp://:%v", r.Big),
+			"-backend", fmt.Sprintf("tcp://:%v", r.Backend),
 		}
 		if v.apilb, err = v.pool.Start(ctx, r.Binary, args...); err != nil {
 			ol.E(ctx, "exec apilb failed, err is", err)
@@ -478,14 +478,11 @@ func (v *ShellBoss) updateProxyApi(ctx ol.Context, worker *SrsWorker) (err error
 	}
 	ol.T(ctx, "notify http proxy ok, url is", url)
 
-	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy/srs?port=%v", v.conf.Apilb.Api, worker.api)
-	if _, _, err := oh.ApiRequest(url); err != nil {
-		ol.E(ctx, "notify api proxy failed, err is", err)
-		return err
+	backend := worker.api
+	if v.conf.ApiProxyToBig() {
+		backend = worker.big
 	}
-	ol.T(ctx, "notify api proxy ok, url is", url)
-
-	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy/big?port=%v", v.conf.Apilb.Api, worker.big)
+	url = fmt.Sprintf("http://127.0.0.1:%v/api/v1/proxy?port=%v", v.conf.Apilb.Api, backend)
 	if _, _, err := oh.ApiRequest(url); err != nil {
 		ol.E(ctx, "notify api proxy failed, err is", err)
 		return err

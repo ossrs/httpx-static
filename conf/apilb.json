@@ -5,21 +5,13 @@
         // The log file path, only for tank file.
         "file": "./apilb.log"
     },
-    "srs": {
-        // Whether enable the srs api.
+    "backend": {
+        // Whether enable the backend api.
         "enabled": true,
-        // The listen tcp4 or tcp6 addrs for srs backend,
-        // to proxy to srs server api.
-        // for example, tcp://:1985, tcp://0.0.0.0:1985, tcp4://:1985, tcp6://:1985
+        // The listen tcp4 or tcp6 addrs for backend,
+        // for example, to proxy to srs server api.
+        //      tcp://:1985, tcp://0.0.0.0:1985, tcp4://:1985, tcp6://:1985
         "api": "tcp://:1985"
-    },
-    "big": {
-        // Whether enable the big api.
-        "enabled": true,
-        // The listen tcp4 or tcp6 addrs for big backend,
-        // to proxy to big-data server api.
-        // for example, tcp://:1990, tcp://0.0.0.0:1990, tcp4://:1990, tcp6://:1990
-        "api": "tcp://:1990"
     },
     // The control api listen tcp4 or tcp6 addrs, for example,
     // tcp://127.0.0.1:2039, tcp4://127.0.0.1:2039
