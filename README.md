@@ -1,5 +1,7 @@
 # go-oryx
 
+[![CircleCI](https://circleci.com/gh/ossrs/go-oryx/tree/develop.svg?style=svg)](https://circleci.com/gh/ossrs/go-oryx/tree/develop)
+
 Oryx is next generation media streaming server, extract service to processes 
 which communicates over http with each other, to get more flexible, low latency,
 programmable and high maintainable server.
