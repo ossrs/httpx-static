@@ -36,15 +36,17 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"path"
 )
 
 func main() {
 	var httpPort, httpsPort int
-	var httpsDomains,html string
+	var httpsDomains,html,cacheFile string
 	flag.IntVar(&httpPort, "http", 80, "http listen at. 0 to disable http.")
 	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve. ")
 	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
 	flag.StringVar(&html, "root", "./html", "the www web root.")
+	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "the cache for https")
 	flag.Parse()
 
 	if httpsPort != 0 && httpsPort != 443 {
@@ -54,6 +56,10 @@ func main() {
 	if httpPort == 0 && httpsPort == 0 {
 		fmt.Println("http or https are disabled")
 		os.Exit(-1)
+	}
+
+	if !path.IsAbs(cacheFile) && path.IsAbs(os.Args[0]) {
+		cacheFile = path.Join(path.Dir(os.Args[0]), cacheFile)
 	}
 
 	fh := http.FileServer(http.Dir(html))
@@ -68,7 +74,7 @@ func main() {
 		if httpsDomains == "" {
 			s = "all domains"
 		}
-		protos = append(protos, fmt.Sprintf("https(:%v, %v)", httpsPort, s))
+		protos = append(protos, fmt.Sprintf("https(:%v, %v, %v)", httpsPort, s, cacheFile))
 	}
 	fmt.Println(fmt.Sprintf("%v html root at %v", strings.Join(protos, ", "), string(html)))
 
@@ -100,7 +106,7 @@ func main() {
 
 		var err error
 		var m https.Manager
-		if m, err = https.NewLetsencryptManager("", domains, "letsencrypt.cache"); err != nil {
+		if m, err = https.NewLetsencryptManager("", domains, cacheFile); err != nil {
 			panic(err)
 		}
 
