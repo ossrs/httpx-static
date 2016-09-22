@@ -45,8 +45,8 @@ func main() {
 	flag.IntVar(&httpPort, "http", 80, "http listen at. 0 to disable http.")
 	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve. ")
 	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
-	flag.StringVar(&html, "root", "./html", "the www web root.")
-	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "the cache for https")
+	flag.StringVar(&html, "root", "./html", "the www web root. support relative dir to argv[0].")
+	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "the cache for https. support relative dir to argv[0].")
 	flag.Parse()
 
 	if httpsPort != 0 && httpsPort != 443 {
@@ -60,6 +60,9 @@ func main() {
 
 	if !path.IsAbs(cacheFile) && path.IsAbs(os.Args[0]) {
 		cacheFile = path.Join(path.Dir(os.Args[0]), cacheFile)
+	}
+	if !path.IsAbs(html) && path.IsAbs(os.Args[0]) {
+		html = path.Join(path.Dir(os.Args[0]), html)
 	}
 
 	fh := http.FileServer(http.Dir(html))
