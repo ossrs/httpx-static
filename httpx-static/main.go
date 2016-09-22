@@ -40,10 +40,11 @@ import (
 
 func main() {
 	var httpPort, httpsPort int
-	var httpsDomains string
+	var httpsDomains,html string
 	flag.IntVar(&httpPort, "http", 80, "http listen at. 0 to disable http.")
 	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve. ")
 	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
+	flag.StringVar(&html, "root", "./html", "the www web root.")
 	flag.Parse()
 
 	if httpsPort != 0 && httpsPort != 443 {
@@ -55,8 +56,7 @@ func main() {
 		os.Exit(-1)
 	}
 
-	html := http.Dir("./html")
-	fh := http.FileServer(html)
+	fh := http.FileServer(http.Dir(html))
 	http.Handle("/", fh)
 
 	var protos []string
