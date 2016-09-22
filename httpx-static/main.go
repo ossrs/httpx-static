@@ -40,8 +40,10 @@ import (
 
 func main() {
 	var httpPort, httpsPort int
+	var httpsDomains string
 	flag.IntVar(&httpPort, "http", 80, "http listen at. 0 to disable http.")
-	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve.")
+	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve. ")
+	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
 	flag.Parse()
 
 	if httpsPort != 0 && httpsPort != 443 {
@@ -62,7 +64,11 @@ func main() {
 		protos = append(protos, fmt.Sprintf("http(:%v)", httpPort))
 	}
 	if httpsPort != 0 {
-		protos = append(protos, fmt.Sprintf("https(:%v)", httpsPort))
+		s := httpsDomains
+		if httpsDomains == "" {
+			s = "all domains"
+		}
+		protos = append(protos, fmt.Sprintf("https(:%v, %v)", httpsPort, s))
 	}
 	fmt.Println(fmt.Sprintf("%v html root at %v", strings.Join(protos, ", "), string(html)))
 
@@ -87,9 +93,14 @@ func main() {
 			return
 		}
 
+		var domains []string
+		if httpsDomains != "" {
+			domains = strings.Split(httpsDomains, ",")
+		}
+
 		var err error
 		var m https.Manager
-		if m, err = https.NewLetsencryptManager("", nil, "letsencrypt.cache"); err != nil {
+		if m, err = https.NewLetsencryptManager("", domains, "letsencrypt.cache"); err != nil {
 			panic(err)
 		}
 
