@@ -20,11 +20,12 @@ The architecture of oryx is a group of isolate processes:
 1. `rtmplb` rtmp frontend of oryx, proxy to backend streaming workers.
 1. `httplb` http flv/hls+ frontend of oryx, proxy to backend streaming workers.
 1. `apilb` http api frontend of oryx, proxy to backend api.
+1. `httpx-static` http and https static file server.
 1. `srs` the streaming worker, other stream worker is also ok.
 
 ```
                          +----------+
-                    +----+  API LB  |
+                    +----+  API LB  +
                     |    +----------+
                     |
                     |    +----------+
