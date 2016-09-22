@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 )
 
 func main() {
@@ -56,13 +57,6 @@ func main() {
 	fh := http.FileServer(html)
 	http.Handle("/", fh)
 
-	var err error
-	var m https.Manager
-	if m, err = https.NewLetsencryptManager("", nil, "letsencrypt.cache"); err != nil {
-		fmt.Println("https failed, err is", err)
-		return
-	}
-
 	var protos []string
 	if httpPort != 0 {
 		protos = append(protos, fmt.Sprintf("http(:%v)", httpPort))
@@ -72,20 +66,44 @@ func main() {
 	}
 	fmt.Println(fmt.Sprintf("%v html root at %v", strings.Join(protos, ", "), string(html)))
 
+	wg := sync.WaitGroup{}
 	go func() {
-		if err := http.ListenAndServe(":http", nil); err != nil {
+		defer wg.Done()
+
+		if httpPort == 0 {
+			return
+		}
+
+		if err := http.ListenAndServe(fmt.Sprintf(":%v", httpPort), nil); err != nil {
+			panic(err)
+		}
+	}()
+	wg.Add(1)
+
+	go func() {
+		defer wg.Done()
+
+		if httpsPort == 0 {
+			return
+		}
+
+		var err error
+		var m https.Manager
+		if m, err = https.NewLetsencryptManager("", nil, "letsencrypt.cache"); err != nil {
+			panic(err)
+		}
+
+		svr := &http.Server{
+			Addr: fmt.Sprintf(":%v", httpsPort),
+			TLSConfig: &tls.Config{
+				GetCertificate: m.GetCertificate,
+			},
+		}
+
+		if err := svr.ListenAndServeTLS("", ""); err != nil {
 			panic(err)
 		}
 	}()
 
-	svr := &http.Server{
-		Addr: ":https",
-		TLSConfig: &tls.Config{
-			GetCertificate: m.GetCertificate,
-		},
-	}
-
-	if err := svr.ListenAndServeTLS("", ""); err != nil {
-		panic(err)
-	}
+	wg.Wait()
 }
