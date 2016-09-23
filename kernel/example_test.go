@@ -35,6 +35,7 @@ import (
 	"os/exec"
 	"syscall"
 	"time"
+	"io"
 )
 
 func ExampleWorkerGroup() {
@@ -58,7 +59,7 @@ func ExampleWorkerGroup() {
 	wg.ForkGoroutine(func() {
 		for {
 			if conn, err := listener.Accept(); err != nil {
-				if !wg.Closed() {
+				if err != io.EOF {
 					// log error.
 				}
 				return
@@ -73,12 +74,15 @@ func ExampleWorkerGroup() {
 	})
 
 	// start goroutine without cleanup.
+	var closed bool
 	wg.ForkGoroutine(func() {
-		for !wg.Closed() {
+		for !closed {
 			// do something util quit.
 			time.Sleep(time.Duration(1) * time.Second)
 		}
-	}, nil)
+	}, func() {
+		closed = true
+	})
 
 	// wait for quit.
 	wg.Wait()

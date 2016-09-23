@@ -180,9 +180,7 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 
 	wg.ForkGoroutine(func() {
 		if nw, err = io.Copy(client, backend); err != nil {
-			if !wg.Closed() {
-				ol.E(ctx, fmt.Sprintf("proxy rtmp<=backend failed, nn=%v, err is %v", nw, err))
-			}
+			ol.E(ctx, fmt.Sprintf("proxy rtmp<=backend failed, nn=%v, err is %v", nw, err))
 			return
 		}
 	}, nil)
@@ -209,9 +207,7 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 		}
 
 		if nr, err = io.Copy(backend, client); err != nil {
-			if !wg.Closed() {
-				ol.E(ctx, fmt.Sprintf("proxy rtmp=>backend failed, nn=%v, err is %v", nr, err))
-			}
+			ol.E(ctx, fmt.Sprintf("proxy rtmp=>backend failed, nn=%v, err is %v", nr, err))
 			return
 		}
 	}, nil)
@@ -369,9 +365,7 @@ func main() {
 
 		server := &http.Server{Addr: apiAddr, Handler: nil}
 		if err = server.Serve(apiListener); err != nil {
-			if !wg.Closed() {
-				ol.E(ctx, "http serve failed, err is", err)
-			}
+			ol.E(ctx, "http serve failed, err is", err)
 			return
 		}
 	}, func() {

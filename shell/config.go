@@ -62,12 +62,12 @@ type ShellConfig struct {
 		Http    int    `json:"http"`
 	} `json:"httplb"`
 	Apilb struct {
-	       Enabled bool   `json:"enabled"`
-	       Binary  string `json:"binary"`
-	       Config  string `json:"config"`
-	       Api     int    `json:"api"`
+		Enabled bool   `json:"enabled"`
+		Binary  string `json:"binary"`
+		Config  string `json:"config"`
+		Api     int    `json:"api"`
 		ProxyTo string `json:"proxy_to"`
-	       Backend int    `json:"backend"`
+		Backend int    `json:"backend"`
 	} `json:"apilb"`
 	Worker struct {
 		Enabled  bool            `json:"enabled"`

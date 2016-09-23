@@ -35,6 +35,7 @@ import (
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
 	"github.com/ossrs/go-oryx/kernel"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -134,12 +135,10 @@ type ShellBoss struct {
 	pool    *kernel.ProcessPool
 	ports   *PortPool
 	workers []*SrsWorker
+	closed  bool
 	// for upgrade lock.
 	activeWorker *SrsWorker
 	upgradeLock  *sync.Mutex
-	// closed.
-	closed    bool
-	closeLock *sync.Mutex
 }
 
 func NewShellBoss(conf *ShellConfig) *ShellBoss {
@@ -148,7 +147,6 @@ func NewShellBoss(conf *ShellConfig) *ShellBoss {
 		pool:        kernel.NewProcessPool(),
 		workers:     make([]*SrsWorker, 0),
 		upgradeLock: &sync.Mutex{},
-		closeLock:   &sync.Mutex{},
 	}
 
 	c := &v.conf.Worker.Ports
@@ -157,8 +155,6 @@ func NewShellBoss(conf *ShellConfig) *ShellBoss {
 }
 
 func (v *ShellBoss) Close() (err error) {
-	v.closeLock.Lock()
-	defer v.closeLock.Unlock()
 	if v.closed {
 		return
 	}
@@ -313,21 +309,19 @@ func (v *ShellBoss) Cycle(ctx ol.Context) {
 		var err error
 		var cmd *exec.Cmd
 		if cmd, err = v.pool.Wait(); err != nil {
+			// ignore events when pool closed
+			if err == io.EOF {
+				ol.E(ctx, "pool terminated")
+				return
+			}
+
 			// ignore the exit error, which indicates the process terminated not success.
 			if _, ok := err.(*exec.ExitError); !ok {
-				if err != kernel.PoolDisposed {
-					ol.W(ctx, "wait process failed, err is", err)
-				}
+				ol.W(ctx, "wait process failed, err is", err)
 				return
 			} else {
 				ol.W(ctx, "process", cmd.Process.Pid, "terminated,", err)
 			}
-		}
-
-		// ignore events when pool closed
-		if v.closed || v.pool.Closed() {
-			ol.E(ctx, "pool terminated")
-			return
 		}
 
 		// when kernel object exited, close pool
@@ -565,9 +559,7 @@ func main() {
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}
 		if err = server.Serve(apiListener); err != nil {
-			if !wg.Closed() {
-				ol.E(ctx, "Api: http serve failed, err is", err)
-			}
+			ol.E(ctx, "Api: http serve failed, err is", err)
 			return
 		}
 	}, func() {

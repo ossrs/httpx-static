@@ -32,18 +32,16 @@ import (
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	"os/exec"
 	"sync"
+	"io"
 )
 
 // The dead body of process.
-type ProcessDeadBody struct {
+type TerminatedProcess struct {
 	// The process command object.
 	Process *exec.Cmd
 	// The error got by wait.
 	WaitError error
 }
-
-// When pool disposed.
-var PoolDisposed = fmt.Errorf("pool is disposed")
 
 // The pool for process, when user create pool, user can exec processes,
 // wait for terminated process and close all.
@@ -51,13 +49,10 @@ type ProcessPool struct {
 	// Started processes, the cmd.Process never be nil.
 	cmds map[int]*exec.Cmd
 	// Dead processes, get by Wait().
-	exitedProcesses chan *ProcessDeadBody
+	exitedProcesses chan *TerminatedProcess
 	processLock     *sync.Mutex
 	// Wait for all processes to quit.
 	wait *sync.WaitGroup
-	// Whether pool is closed.
-	disposed    bool
-	disposeLock *sync.Mutex
 	// When closing, user should never care about processes,
 	// because all of them will be killed.
 	closing chan bool
@@ -68,24 +63,15 @@ type ProcessPool struct {
 func NewProcessPool() *ProcessPool {
 	return &ProcessPool{
 		wait:            &sync.WaitGroup{},
-		exitedProcesses: make(chan *ProcessDeadBody),
+		exitedProcesses: make(chan *TerminatedProcess),
 		processLock:     &sync.Mutex{},
 		cmds:            make(map[int]*exec.Cmd),
-		disposeLock:     &sync.Mutex{},
 		closing:         make(chan bool, 1),
 	}
 }
 
 // Start new process, user can start many processes.
-// @return error PoolDisposed when pool disposed.
 func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec.Cmd, err error) {
-	// when disposed, should never use it again.
-	v.disposeLock.Lock()
-	defer v.disposeLock.Unlock()
-	if v.disposed {
-		return nil, PoolDisposed
-	}
-
 	v.ctx = ctx
 
 	// create command and start process.
@@ -116,7 +102,10 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 		}()
 
 		defer func() {
-			pdb := &ProcessDeadBody{Process: cmd, WaitError: err}
+			if err == io.EOF {
+				return
+			}
+			pdb := &TerminatedProcess{Process: cmd, WaitError: err}
 			select {
 			case v.exitedProcesses <- pdb:
 			case <-v.closing:
@@ -127,7 +116,11 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 
 		// err means process exit failed or other error.
 		if err = cmd.Wait(); err != nil {
-			if !v.disposed {
+			select {
+			case c := <- v.closing:
+				v.closing <- c
+				err = io.EOF
+			default:
 				ol.E(ctx, "process", pid, "exited, err is", err)
 			}
 			return
@@ -138,36 +131,23 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 }
 
 // Wait for a dead process.
-// @return error PoolDisposed when pool disposed.
+// @return error io.EOF when pool closed.
 // @remark the error may indicates the process not terminate success, user must handle it.
 func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
-	// should never lock, for it's wait goroutine.
-	if err = func() error {
-		// when disposed, should never use it again.
-		v.disposeLock.Lock()
-		defer v.disposeLock.Unlock()
-		if v.disposed {
-			return PoolDisposed
-		}
-		return nil
-	}(); err != nil {
-		return
-	}
-
 	select {
 	case process, ok := <-v.exitedProcesses:
 		if !ok {
-			return nil, PoolDisposed
+			return nil, io.EOF
 		}
 		return process.Process, process.WaitError
 	case c := <-v.closing:
 		v.closing <- c
-		return nil, PoolDisposed
+		return nil, io.EOF
 	}
 }
 
-// interface io.Closer
-// @return error PoolDisposed when pool disposed.
+// io.Closer
+// User should reuse the closed process pool.
 func (v *ProcessPool) Close() (err error) {
 	ctx := v.ctx
 
@@ -177,25 +157,12 @@ func (v *ProcessPool) Close() (err error) {
 	default:
 	}
 
-	// when disposed, should never dispose again.
-	v.disposeLock.Lock()
-	defer v.disposeLock.Unlock()
-	if v.disposed {
-		return PoolDisposed
-	}
-	v.disposed = true
-
 	func() {
 		v.processLock.Lock()
 		defer v.processLock.Unlock()
 
 		// notify all alive processes to quit.
 		for pid, p := range v.cmds {
-			// when state exists, the process terminated.
-			if p.ProcessState != nil {
-				continue
-			}
-
 			var r0 error
 			if r0 = p.Process.Kill(); r0 == nil {
 				continue
@@ -218,11 +185,4 @@ func (v *ProcessPool) Close() (err error) {
 
 	ol.T(ctx, "process pool closed")
 	return
-}
-
-// whether current pool closed.
-func (v *ProcessPool) Closed() bool {
-	v.disposeLock.Lock()
-	defer v.disposeLock.Unlock()
-	return v.disposed
 }

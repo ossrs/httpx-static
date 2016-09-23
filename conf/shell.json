@@ -52,7 +52,7 @@
         // The binary of stream worker.
         "binary": "./objs/srs",
         // The config file template for srs.
-        "config": "../conf/bms.conf",
+        "config": "../conf/srs.conf",
         // The work dir for stream worker.
         // @remark shell will build config file to work dir.
         "work_dir": "./objs/workers",
@@ -61,28 +61,28 @@
         // Service specified config
         "service": {
             // The binary of big for bms, ignore when empty.
-            "big_binary": "./objs/big_api",
+            //"big_binary": "./objs/big_api",
             // The binary of bitch for bms, ignore when empty.
-            "bitch_binary": "./objs/bitch.py",
+            //"bitch_binary": "./objs/bitch.py",
             // The binary of ffmpeg for bms, ignore when empty.
-            "ffmpeg_binary": "./objs/ffmpeg",
+            //"ffmpeg_binary": "./objs/ffmpeg",
             // The binary of dns for bms, ignore when empty.
-            "dns_binary": "./objs/bravo_dns",
+            //"dns_binary": "./objs/bravo_dns",
             // The variables to replace the config template to build config file.
             "variables": {
                 "rtmp_port": "${rtmp}",
                 "api_port": "${api}",
                 "http_port": "${http}",
-                "big_port": "${big}",
-                "big_binary": "${big_binary}",
-                "bitch_port": "${bitch_port}",
-                "bitch_binary": "${bitch_binary}",
-                "ffmpeg_binary": "${ffmpeg_binary}",
-                "dns_port": "${dns_port}",
-                "dns_binary": "${dns_binary}",
-                "work_dir": "${cwd}",
-                "http_proxy_port": "${http_proxy_port}",
-                "big_proxy_port": "${big_proxy_port}"
+                //"big_port": "${big}",
+                //"big_binary": "${big_binary}",
+                //"bitch_port": "${bitch_port}",
+                //"bitch_binary": "${bitch_binary}",
+                //"ffmpeg_binary": "${ffmpeg_binary}",
+                //"dns_port": "${dns_port}",
+                //"dns_binary": "${dns_binary}",
+                //"http_proxy_port": "${http_proxy_port}",
+                //"big_proxy_port": "${big_proxy_port}",
+                "work_dir": "${cwd}"
             }
         }
     },

@@ -77,34 +77,14 @@ func (v *SrsServiceConfig) String() string {
 }
 
 func (v *SrsServiceConfig) Check() (err error) {
-	if len(v.BigBinary) == 0 {
-		return fmt.Errorf("Empty big binary")
-	} else if len(v.Variables.BigBinary) == 0 {
-		return fmt.Errorf("Empty variable big binary")
-	} else if len(v.Variables.ApiPort) == 0 {
+	if len(v.Variables.ApiPort) == 0 {
 		return fmt.Errorf("Empty variable api port")
-	} else if len(v.Variables.BigPort) == 0 {
-		return fmt.Errorf("Empty variable big port")
 	} else if len(v.Variables.HttpPort) == 0 {
 		return fmt.Errorf("Empty variable http port")
 	} else if len(v.Variables.RtmpPort) == 0 {
 		return fmt.Errorf("Empty variable rtmp port")
 	} else if len(v.Variables.WorkDir) == 0 {
 		return fmt.Errorf("Empty variable work dir")
-	} else if len(v.Variables.HttpProxyPort) == 0 {
-		return fmt.Errorf("Empty variable http proxy port")
-	} else if len(v.Variables.BigProxyPort) == 0 {
-		return fmt.Errorf("Empty variable big proxy port")
-	} else if len(v.Variables.BitchPort) == 0 {
-		return fmt.Errorf("Empty variable bitch port")
-	} else if len(v.Variables.BitchBinary) == 0 {
-		return fmt.Errorf("Empty variable bitch binary")
-	} else if len(v.Variables.FfmpegBinary) == 0 {
-		return fmt.Errorf("Empty variable ffmpeg binary")
-	} else if len(v.Variables.DnsPort) == 0 {
-		return fmt.Errorf("Empty variable dns port")
-	} else if len(v.Variables.DnsBinary) == 0 {
-		return fmt.Errorf("Empty variable dns binary")
 	}
 
 	return
@@ -236,8 +216,15 @@ func (v *SrsWorker) doExec() (err error) {
 			return
 		}
 	}
+
+	replace := func(s, old, new string, n int) string {
+		if s == "" || old == "" {
+			return s
+		}
+		return strings.Replace(s, old, new, n)
+	}
 	conf := configTemplate
-	conf = strings.Replace(conf, s.Variables.WorkDir, v.workDir, -1)
+	conf = replace(conf, s.Variables.WorkDir, v.workDir, -1)
 
 	// symbol link all binaries to work dir.
 	slink := func(workDir, cwdBin string) (err error) {
@@ -289,32 +276,32 @@ func (v *SrsWorker) doExec() (err error) {
 	}
 
 	// build all port.
-	conf = strings.Replace(conf, s.Variables.RtmpPort, strconv.Itoa(v.rtmp), -1)
-	conf = strings.Replace(conf, s.Variables.HttpPort, strconv.Itoa(v.http), -1)
-	conf = strings.Replace(conf, s.Variables.ApiPort, strconv.Itoa(v.api), -1)
-	conf = strings.Replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
-	conf = strings.Replace(conf, s.Variables.BitchPort, strconv.Itoa(v.bitch), -1)
-	conf = strings.Replace(conf, s.Variables.DnsPort, strconv.Itoa(v.dns), -1)
+	conf = replace(conf, s.Variables.RtmpPort, strconv.Itoa(v.rtmp), -1)
+	conf = replace(conf, s.Variables.HttpPort, strconv.Itoa(v.http), -1)
+	conf = replace(conf, s.Variables.ApiPort, strconv.Itoa(v.api), -1)
+	conf = replace(conf, s.Variables.BigPort, strconv.Itoa(v.big), -1)
+	conf = replace(conf, s.Variables.BitchPort, strconv.Itoa(v.bitch), -1)
+	conf = replace(conf, s.Variables.DnsPort, strconv.Itoa(v.dns), -1)
 	// for http proxy for hls+
-	conf = strings.Replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
+	conf = replace(conf, s.Variables.HttpProxyPort, strconv.Itoa(v.shell.conf.Httplb.Http), -1)
 	// for big proxy port.
 	if v.shell.conf.ApiProxyToBig() {
-		conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.shell.conf.Apilb.Backend), -1)
+		conf = replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.shell.conf.Apilb.Backend), -1)
 	} else {
-		conf = strings.Replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.big), -1)
+		conf = replace(conf, s.Variables.BigProxyPort, strconv.Itoa(v.big), -1)
 	}
 	// build other variables
 	if len(s.BigBinary) > 0 {
-		conf = strings.Replace(conf, s.Variables.BigBinary, s.BigBinary, -1)
+		conf = replace(conf, s.Variables.BigBinary, s.BigBinary, -1)
 	}
 	if len(s.BitchBinary) > 0 {
-		conf = strings.Replace(conf, s.Variables.BitchBinary, s.BitchBinary, -1)
+		conf = replace(conf, s.Variables.BitchBinary, s.BitchBinary, -1)
 	}
 	if len(s.FfmpegBinary) > 0 {
-		conf = strings.Replace(conf, s.Variables.FfmpegBinary, s.FfmpegBinary, -1)
+		conf = replace(conf, s.Variables.FfmpegBinary, s.FfmpegBinary, -1)
 	}
 	if len(s.DnsBinary) > 0 {
-		conf = strings.Replace(conf, s.Variables.DnsBinary, s.DnsBinary, -1)
+		conf = replace(conf, s.Variables.DnsBinary, s.DnsBinary, -1)
 	}
 
 	// write to config file.

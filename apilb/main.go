@@ -236,9 +236,7 @@ func main() {
 
 			server := &http.Server{Addr: backendNetwork, Handler: handler}
 			if err = server.Serve(backendListener); err != nil {
-				if !wg.Closed() {
-					ol.E(ctx, "backend api serve failed, err is", err)
-				}
+				ol.E(ctx, "backend api serve failed, err is", err)
 				return
 			}
 		}, func() {
@@ -270,9 +268,7 @@ func main() {
 
 		server := &http.Server{Addr: apiAddr, Handler: handler}
 		if err = server.Serve(apiListener); err != nil {
-			if !wg.Closed() {
-				ol.E(ctx, "api serve failed, err is", err)
-			}
+			ol.E(ctx, "api serve failed, err is", err)
 			return
 		}
 	}, func() {
