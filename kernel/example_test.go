@@ -129,8 +129,7 @@ func ExampleTcpListeners() {
 			return
 		}
 
-		// serve conn
-
+		// serve and close conn
 		defer conn.Close()
 	}
 }

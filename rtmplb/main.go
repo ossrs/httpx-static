@@ -334,7 +334,7 @@ func main() {
 		for {
 			var c *net.TCPConn
 			if c, err = listener.AcceptTCP(); err != nil {
-				if err != kernel.ListenerDisposed {
+				if err != io.EOF {
 					ol.E(ctx, "accept failed, err is", err)
 				}
 				break
