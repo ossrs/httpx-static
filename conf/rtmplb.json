@@ -1,7 +1,7 @@
 {
     "logger": {
         // The tank for logger, console or file.
-        "tank": "console",
+        "tank": "file",
         // The log file path, only for tank file.
         "file": "./rtmplb.log"
     },
@@ -11,7 +11,7 @@
         "listen": "tcp://:1935",
         // Whether use rtmp proxy protocol to connect to backend.
         // @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
-        "proxy": true
+        "proxy": false
     },
     // The control api listen tcp4 or tcp6 addrs, for example,
     // tcp://127.0.0.1:2037, tcp4://127.0.0.1:2037

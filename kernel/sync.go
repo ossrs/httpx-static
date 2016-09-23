@@ -39,6 +39,7 @@ type WorkerGroup struct {
 	closing  chan bool
 	wait     *sync.WaitGroup
 	cleanups []func()
+	closed bool
 }
 
 func NewWorkerGroup() *WorkerGroup {
@@ -51,6 +52,11 @@ func NewWorkerGroup() *WorkerGroup {
 // interface io.Closer
 // notify and wait for all workers to quit.
 func (v *WorkerGroup) Close() error {
+	if v.closed {
+		return nil
+	}
+	v.closed = true
+
 	select {
 	case v.closing <- true:
 	default:

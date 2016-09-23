@@ -48,6 +48,7 @@ type TcpListeners struct {
 	wait *sync.WaitGroup
 	// Used to notify all goroutines to quit.
 	closing chan bool
+	closed bool
 }
 
 // Listen at addrs format as netowrk://laddr, for example,
@@ -193,6 +194,11 @@ func (v *TcpListeners) AcceptTCP() (c *net.TCPConn, err error) {
 // io.Closer
 // User should never reuse the closed instance.
 func (v *TcpListeners) Close() (err error) {
+	if v.closed {
+		return
+	}
+	v.closed = true
+
 	// unblock all listener and user goroutines
 	select {
 	case v.closing <- true:

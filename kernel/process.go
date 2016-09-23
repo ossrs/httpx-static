@@ -58,6 +58,7 @@ type ProcessPool struct {
 	closing chan bool
 	// the last context to start command.
 	ctx ol.Context
+	closed bool
 }
 
 func NewProcessPool() *ProcessPool {
@@ -149,6 +150,11 @@ func (v *ProcessPool) Wait() (p *exec.Cmd, err error) {
 // io.Closer
 // User should reuse the closed process pool.
 func (v *ProcessPool) Close() (err error) {
+	if v.closed {
+		return
+	}
+	v.closed = true
+
 	ctx := v.ctx
 
 	// notify we are closing, process should drop any info and quit.

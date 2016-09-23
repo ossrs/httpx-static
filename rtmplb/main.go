@@ -183,7 +183,9 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			ol.E(ctx, fmt.Sprintf("proxy rtmp<=backend failed, nn=%v, err is %v", nw, err))
 			return
 		}
-	}, nil)
+	}, func(){
+		client.Close()
+	})
 	wg.ForkGoroutine(func() {
 		// write proxy header.
 		// @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
@@ -210,7 +212,9 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			ol.E(ctx, fmt.Sprintf("proxy rtmp=>backend failed, nn=%v, err is %v", nr, err))
 			return
 		}
-	}, nil)
+	}, func(){
+		client.Close()
+	})
 
 	wg.Wait()
 	return
