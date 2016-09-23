@@ -34,19 +34,24 @@ import (
 	"github.com/ossrs/go-oryx-lib/https"
 	"net/http"
 	"os"
+	"path"
 	"strings"
 	"sync"
-	"path"
 )
 
 func main() {
 	var httpPort, httpsPort int
-	var httpsDomains,html,cacheFile string
+	var httpsDomains, html, cacheFile string
+	var useLetsEncrypt bool
+	var ssCert, ssKey string
 	flag.IntVar(&httpPort, "http", 80, "http listen at. 0 to disable http.")
 	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve. ")
 	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
 	flag.StringVar(&html, "root", "./html", "the www web root. support relative dir to argv[0].")
 	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "the cache for https. support relative dir to argv[0].")
+	flag.BoolVar(&useLetsEncrypt, "lets", true, "whether use letsencrypt CA. self sign if not.")
+	flag.StringVar(&ssKey, "ssk", "server.key", "self-sign key, user can build it: openssl genrsa -out server.key 2048")
+	flag.StringVar(&ssCert, "ssc", "server.crt", "self-sign cert, user can build it: openssl req -new -x509 -key server.key -out server.crt -days 365")
 	flag.Parse()
 
 	if httpsPort != 0 && httpsPort != 443 {
@@ -78,6 +83,12 @@ func main() {
 			s = "all domains"
 		}
 		protos = append(protos, fmt.Sprintf("https(:%v, %v, %v)", httpsPort, s, cacheFile))
+
+		if useLetsEncrypt {
+			protos = append(protos, "letsencrypt")
+		} else {
+			protos = append(protos, fmt.Sprintf("self-sign(%v, %v)", ssKey, ssCert))
+		}
 	}
 	fmt.Println(fmt.Sprintf("%v html root at %v", strings.Join(protos, ", "), string(html)))
 
@@ -102,15 +113,22 @@ func main() {
 			return
 		}
 
-		var domains []string
-		if httpsDomains != "" {
-			domains = strings.Split(httpsDomains, ",")
-		}
-
 		var err error
 		var m https.Manager
-		if m, err = https.NewLetsencryptManager("", domains, cacheFile); err != nil {
-			panic(err)
+
+		if useLetsEncrypt {
+			var domains []string
+			if httpsDomains != "" {
+				domains = strings.Split(httpsDomains, ",")
+			}
+
+			if m, err = https.NewLetsencryptManager("", domains, cacheFile); err != nil {
+				panic(err)
+			}
+		} else {
+			if m, err = https.NewSelfSignManager(ssCert, ssKey); err != nil {
+				panic(err)
+			}
 		}
 
 		svr := &http.Server{
