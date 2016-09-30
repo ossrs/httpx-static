@@ -27,49 +27,107 @@ SOFTWARE.
 */
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"net"
+	"strconv"
+)
 
-// The port pool manage available ports.
+// PortPool The port pool manage available ports.
 type PortPool struct {
-	shell *ShellBoss
-	// alloc new port from ports, fill ports from left,
-	// release to ports when free port.
+	// Alloc new port from ports. Alloc new port from the head of the list.
+	// Release to ports when free port.
+	// If check failed,  put the port to the tail of the list
 	ports []int
-	left  []int
+	// The ports in use. fill used when alloc
+	used []int
 }
 
-// alloc port in [start,stop]
+// NewPortPool alloc port in [start,stop]
 func NewPortPool(start, stop int) *PortPool {
 	v := &PortPool{}
+	v.ports = make([]int, stop-start+1)
 	for i := start; i <= stop; i++ {
-		if len(v.ports) < 64 {
-			v.ports = append(v.ports, i)
-		} else {
-			v.left = append(v.left, i)
-		}
+		v.ports[i-start] = i
 	}
 	return v
 }
 
-func (v *PortPool) Alloc(nbPort int) (ports []int, err error) {
+// allocOnePort alloc a port from the port pool
+func (v *PortPool) allocOnePort() (int, error) {
+	if len(v.ports) <= 0 {
+		return 0, fmt.Errorf("empty port pool")
+	}
+
+	for i, p := range v.ports {
+		if checkPort(p) {
+			// delete i-index element
+			v.ports = append(v.ports[:i], v.ports[i+1:]...)
+			v.used = append(v.used, p)
+			return p, nil
+		}
+	}
+
+	return 0, fmt.Errorf("No available port")
+}
+
+// Alloc alloc nbPort ports from the port pool
+func (v *PortPool) Alloc(nbPort int) ([]int, error) {
 	if nbPort <= 0 {
 		return nil, fmt.Errorf("invalid ports %v", nbPort)
 	}
-	if len(v.ports)+len(v.left) < nbPort {
-		return nil, fmt.Errorf("no %v port available, left %v", nbPort, len(v.ports)+len(v.left))
-	}
 
 	if len(v.ports) < nbPort {
-		cp := nbPort - len(v.ports)
-		v.ports = append(v.ports, v.left[0:cp]...)
-		v.left = v.left[cp:]
+		return nil, fmt.Errorf("no %v port available, left %v", nbPort, len(v.ports))
 	}
 
-	ports = v.ports[0:nbPort]
-	v.ports = v.ports[nbPort:]
-	return
+	ports := []int{}
+	for i := 0; i < nbPort; i++ {
+		p, err := v.allocOnePort()
+		if err != nil {
+			return nil, err
+		} else {
+			ports = append(ports, p)
+		}
+	}
+	return ports, nil
 }
 
+// Free free port from the port pool
 func (v *PortPool) Free(port int) {
-	v.ports = append(v.ports, port)
+	// Free used ports to the head of the ports list for better port reused.
+	v.ports = append([]int{port}, v.ports...)
+	for i, p := range v.used {
+		if port == p {
+			// delete i-index element
+			v.used = append(v.used[:i], v.used[i+1:]...)
+			return
+		}
+	}
+}
+
+// GetPortsInUse get a list of port in use
+func (v *PortPool) GetPortsInUse() []int {
+	return v.used
+}
+
+// checkPort check if a port is available
+func checkPort(port int) bool {
+	// Concatenate a colon and the port
+	host := ":" + strconv.Itoa(port)
+
+	// Try to create a server with the port
+	listener, err := net.Listen("tcp", host)
+
+	// if it fails then the port is likely taken
+	if err != nil {
+		return false
+	}
+
+	// close the server
+	listener.Close()
+
+	// we successfully used and closed the port
+	// so it's now available to be used again
+	return true
 }
