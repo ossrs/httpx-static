@@ -1,6 +1,6 @@
 # go-oryx
 
-[![CircleCI](https://circleci.com/gh/ossrs/go-oryx/tree/develop.svg?style=svg)](https://circleci.com/gh/ossrs/go-oryx/tree/develop)
+[![CircleCI](https://circleci.com/gh/ossrs/go-oryx/tree/develop.svg?style=svg&circle-token=3fd99d545de00283d726fe2fd274599046d0986e)](https://circleci.com/gh/ossrs/go-oryx/tree/develop)
 [![Gitter](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ossrs/go-oryx?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 
 Oryx is next generation media streaming server, extract service to processes 
