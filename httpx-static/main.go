@@ -39,6 +39,8 @@ import (
 	"sync"
 )
 
+const server = "Oryx/0.0.1"
+
 func main() {
 	var httpPort, httpsPort int
 	var httpsDomains, html, cacheFile string
@@ -71,7 +73,18 @@ func main() {
 	}
 
 	fh := http.FileServer(http.Dir(html))
-	http.Handle("/", fh)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Server", server)
+
+		if o := r.Header.Get("Origin"); len(o) > 0 {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, HEAD, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Expose-Headers", "Server,range,Content-Length,Content-Range")
+			w.Header().Set("Access-Control-Allow-Headers", "origin,range,accept-encoding,referer,Cache-Control,X-Proxy-Authorization,X-Requested-With,Content-Type")
+		}
+
+		fh.ServeHTTP(w, r)
+	})
 
 	var protos []string
 	if httpPort != 0 {
@@ -103,6 +116,7 @@ func main() {
 		if err := http.ListenAndServe(fmt.Sprintf(":%v", httpPort), nil); err != nil {
 			panic(err)
 		}
+		fmt.Println("http server ok.")
 	}()
 	wg.Add(1)
 
@@ -141,7 +155,9 @@ func main() {
 		if err := svr.ListenAndServeTLS("", ""); err != nil {
 			panic(err)
 		}
+		fmt.Println("https server ok.")
 	}()
+	wg.Add(1)
 
 	wg.Wait()
 }
