@@ -37,15 +37,20 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"net/url"
+	"net/http/httputil"
+	"net"
 )
 
 const server = "Oryx/0.0.1"
 
 func main() {
+	var err error
 	var httpPort, httpsPort int
 	var httpsDomains, html, cacheFile string
 	var useLetsEncrypt bool
 	var ssCert, ssKey string
+	var oproxy string
 	flag.IntVar(&httpPort, "http", 80, "http listen at. 0 to disable http.")
 	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve. ")
 	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
@@ -54,6 +59,7 @@ func main() {
 	flag.BoolVar(&useLetsEncrypt, "lets", true, "whether use letsencrypt CA. self sign if not.")
 	flag.StringVar(&ssKey, "ssk", "server.key", "self-sign key, user can build it: openssl genrsa -out server.key 2048")
 	flag.StringVar(&ssCert, "ssc", "server.crt", "self-sign cert, user can build it: openssl req -new -x509 -key server.key -out server.crt -days 365")
+	flag.StringVar(&oproxy, "proxy", "", "proxy to backend api, for example, -proxy http://127.0.0.1:8888/api/webrtc")
 	flag.Parse()
 
 	if httpsPort != 0 && httpsPort != 443 {
@@ -63,6 +69,26 @@ func main() {
 	if httpPort == 0 && httpsPort == 0 {
 		fmt.Println("http or https are disabled")
 		os.Exit(-1)
+	}
+
+	var proxyUrl *url.URL
+	var proxy *httputil.ReverseProxy
+	if oproxy != "" {
+		if proxyUrl,err = url.Parse(oproxy); err != nil {
+			fmt.Println("proxy is not legal url, proxy is", oproxy)
+			os.Exit(-1)
+		}
+
+		proxy = &httputil.ReverseProxy{
+			Director: func(r *http.Request) {
+				r.URL.Scheme = proxyUrl.Scheme
+				r.URL.Host = proxyUrl.Host
+				if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+					r.Header.Set("X-Real-IP", ip)
+				}
+				//fmt.Println(fmt.Sprintf("proxy http %v to %v", r.RemoteAddr, r.URL.String()))
+			},
+		}
 	}
 
 	if !path.IsAbs(cacheFile) && path.IsAbs(os.Args[0]) {
@@ -81,6 +107,16 @@ func main() {
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, HEAD, PUT, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Expose-Headers", "Server,range,Content-Length,Content-Range")
 			w.Header().Set("Access-Control-Allow-Headers", "origin,range,accept-encoding,referer,Cache-Control,X-Proxy-Authorization,X-Requested-With,Content-Type")
+		}
+
+		if proxyUrl != nil && strings.HasPrefix(r.URL.Path, proxyUrl.Path) {
+			// For matched OPTIONS, directly return without response.
+			if r.Method == "OPTIONS" {
+				return
+			}
+
+			proxy.ServeHTTP(w, r)
+			return
 		}
 
 		fh.ServeHTTP(w, r)
@@ -127,7 +163,6 @@ func main() {
 			return
 		}
 
-		var err error
 		var m https.Manager
 
 		if useLetsEncrypt {
