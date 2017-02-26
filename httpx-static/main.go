@@ -59,7 +59,7 @@ func main() {
 	flag.BoolVar(&useLetsEncrypt, "lets", true, "whether use letsencrypt CA. self sign if not.")
 	flag.StringVar(&ssKey, "ssk", "server.key", "self-sign key, user can build it: openssl genrsa -out server.key 2048")
 	flag.StringVar(&ssCert, "ssc", "server.crt", "self-sign cert, user can build it: openssl req -new -x509 -key server.key -out server.crt -days 365")
-	flag.StringVar(&oproxy, "proxy", "", "proxy to backend api, for example, -proxy http://127.0.0.1:8888/api/webrtc")
+	flag.StringVar(&oproxy, "proxy", "", "proxy the matched path to backend, for example, -proxy http://127.0.0.1:8888/api/webrtc")
 	flag.Parse()
 
 	if httpsPort != 0 && httpsPort != 443 {

@@ -25,3 +25,12 @@ _testmain.go
 
 go-oryx
 .idea
+apilb/apilb
+httplb/httplb
+rtmplb/rtmplb
+shell/apilb.log
+shell/httplb.log
+shell/objs/
+shell/rtmplb.log
+shell/shell
+
