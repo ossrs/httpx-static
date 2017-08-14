@@ -42,23 +42,25 @@ import (
 	"net"
 )
 
-const server = "Oryx/0.0.1"
+const server = "Oryx/0.0.2"
 
 func main() {
+	fmt.Println(server, "HTTP/HTTPS static server with API proxy.")
+
 	var err error
 	var httpPort, httpsPort int
 	var httpsDomains, html, cacheFile string
 	var useLetsEncrypt bool
 	var ssCert, ssKey string
 	var oproxy string
-	flag.IntVar(&httpPort, "http", 80, "http listen at. 0 to disable http.")
-	flag.IntVar(&httpsPort, "https", 443, "https listen at. 0 to disable https. 443 to serve. ")
+	flag.IntVar(&httpPort, "http", 0, "http listen at. 0 to disable http.")
+	flag.IntVar(&httpsPort, "https", 0, "https listen at. 0 to disable https. 443 to serve. ")
 	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
 	flag.StringVar(&html, "root", "./html", "the www web root. support relative dir to argv[0].")
 	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "the cache for https. support relative dir to argv[0].")
-	flag.BoolVar(&useLetsEncrypt, "lets", true, "whether use letsencrypt CA. self sign if not.")
-	flag.StringVar(&ssKey, "ssk", "server.key", "self-sign key, user can build it: openssl genrsa -out server.key 2048")
-	flag.StringVar(&ssCert, "ssc", "server.crt", "self-sign cert, user can build it: openssl req -new -x509 -key server.key -out server.crt -days 365")
+	flag.BoolVar(&useLetsEncrypt, "lets", false, "whether use letsencrypt CA. self sign if not.")
+	flag.StringVar(&ssKey, "ssk", "server.key", "https self-sign key by(before server.cert): openssl genrsa -out server.key 2048")
+	flag.StringVar(&ssCert, "ssc", "server.crt", "https self-sign cert by: openssl req -new -x509 -key server.key -out server.crt -days 365")
 	flag.StringVar(&oproxy, "proxy", "", "proxy the matched path to backend, for example, -proxy http://127.0.0.1:8888/api/webrtc")
 	flag.Parse()
 
@@ -67,7 +69,7 @@ func main() {
 		os.Exit(-1)
 	}
 	if httpPort == 0 && httpsPort == 0 {
-		fmt.Println("http or https are disabled")
+		flag.PrintDefaults()
 		os.Exit(-1)
 	}
 
@@ -98,7 +100,7 @@ func main() {
 		html = path.Join(path.Dir(os.Args[0]), html)
 	}
 
-	fh := http.FileServer(http.Dir(html))
+	fs := http.FileServer(http.Dir(html))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Server", server)
 
@@ -119,7 +121,7 @@ func main() {
 			return
 		}
 
-		fh.ServeHTTP(w, r)
+		fs.ServeHTTP(w, r)
 	})
 
 	var protos []string
@@ -146,6 +148,7 @@ func main() {
 		defer wg.Done()
 
 		if httpPort == 0 {
+			fmt.Println("http server disabled")
 			return
 		}
 
@@ -160,6 +163,7 @@ func main() {
 		defer wg.Done()
 
 		if httpsPort == 0 {
+			fmt.Println("https server disabled")
 			return
 		}
 
