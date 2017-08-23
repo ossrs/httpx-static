@@ -32,14 +32,14 @@ import (
 	"flag"
 	"fmt"
 	"github.com/ossrs/go-oryx-lib/https"
+	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path"
 	"strings"
 	"sync"
-	"net/url"
-	"net/http/httputil"
-	"net"
 )
 
 const server = "Oryx/0.0.2"
@@ -76,7 +76,7 @@ func main() {
 	var proxyUrl *url.URL
 	var proxy *httputil.ReverseProxy
 	if oproxy != "" {
-		if proxyUrl,err = url.Parse(oproxy); err != nil {
+		if proxyUrl, err = url.Parse(oproxy); err != nil {
 			fmt.Println("proxy is not legal url, proxy is", oproxy)
 			os.Exit(-1)
 		}
@@ -133,7 +133,12 @@ func main() {
 		if httpsDomains == "" {
 			s = "all domains"
 		}
-		protos = append(protos, fmt.Sprintf("https(:%v, %v, %v)", httpsPort, s, cacheFile))
+
+		if useLetsEncrypt {
+			protos = append(protos, fmt.Sprintf("https(:%v, %v, %v)", httpsPort, s, cacheFile))
+		} else {
+			protos = append(protos, fmt.Sprintf("https(:%v)", httpsPort))
+		}
 
 		if useLetsEncrypt {
 			protos = append(protos, "letsencrypt")
