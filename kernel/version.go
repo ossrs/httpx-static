@@ -32,7 +32,7 @@ import "fmt"
 const (
 	Major    = 0
 	Minor    = 0
-	Revision = 1
+	Revision = 2
 )
 
 // The version format in Major.Minor.Revision
