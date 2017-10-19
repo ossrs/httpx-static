@@ -111,16 +111,24 @@ func main() {
 			w.Header().Set("Access-Control-Allow-Headers", "origin,range,accept-encoding,referer,Cache-Control,X-Proxy-Authorization,X-Requested-With,Content-Type")
 		}
 
-		var matched bool
-		if strings.HasSuffix(r.URL.Path, "/") {
-			matched = strings.HasPrefix(r.URL.Path, proxyUrl.Path)
-		} else {
-			matched = (r.URL.Path == proxyUrl.Path)
-			if !matched {
-				matched = strings.HasSuffix(r.URL.Path, proxyUrl.Path+"/")
-			}
+		if proxyUrl == nil {
+			fs.ServeHTTP(w, r)
+			return
 		}
-		if proxyUrl != nil && matched {
+
+		srcPath,proxyPath := r.URL.Path,proxyUrl.Path
+		if !strings.HasSuffix(srcPath, "/") {
+			// /api to /api/
+			// /api.js to /api.js/
+			// /api/100 to /api/100/
+			srcPath += "/"
+		}
+		if !strings.HasSuffix(proxyPath, "/") {
+			// /api/ to /api/
+			// to avoid match /api.js/
+			proxyPath += "/"
+		}
+		if strings.HasSuffix(srcPath, proxyPath) {
 			// For matched OPTIONS, directly return without response.
 			if r.Method == "OPTIONS" {
 				return
