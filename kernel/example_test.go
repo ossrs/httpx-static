@@ -31,11 +31,11 @@ import (
 	oa "github.com/ossrs/go-oryx-lib/asprocess"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	"github.com/ossrs/go-oryx/kernel"
+	"io"
 	"net"
 	"os/exec"
 	"syscall"
 	"time"
-	"io"
 )
 
 func ExampleWorkerGroup() {

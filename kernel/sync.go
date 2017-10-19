@@ -39,7 +39,7 @@ type WorkerGroup struct {
 	closing  chan bool
 	wait     *sync.WaitGroup
 	cleanups []func()
-	closed bool
+	closed   bool
 }
 
 func NewWorkerGroup() *WorkerGroup {

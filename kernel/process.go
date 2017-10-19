@@ -30,9 +30,9 @@ package kernel
 import (
 	"fmt"
 	ol "github.com/ossrs/go-oryx-lib/logger"
+	"io"
 	"os/exec"
 	"sync"
-	"io"
 )
 
 // The dead body of process.
@@ -57,7 +57,7 @@ type ProcessPool struct {
 	// because all of them will be killed.
 	closing chan bool
 	// the last context to start command.
-	ctx ol.Context
+	ctx    ol.Context
 	closed bool
 }
 
@@ -118,7 +118,7 @@ func (v *ProcessPool) Start(ctx ol.Context, name string, arg ...string) (c *exec
 		// err means process exit failed or other error.
 		if err = cmd.Wait(); err != nil {
 			select {
-			case c := <- v.closing:
+			case c := <-v.closing:
 				v.closing <- c
 				err = io.EOF
 			default:

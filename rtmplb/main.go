@@ -183,7 +183,7 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			ol.E(ctx, fmt.Sprintf("proxy rtmp<=backend failed, nn=%v, err is %v", nw, err))
 			return
 		}
-	}, func(){
+	}, func() {
 		client.Close()
 	})
 	wg.ForkGoroutine(func() {
@@ -212,7 +212,7 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			ol.E(ctx, fmt.Sprintf("proxy rtmp=>backend failed, nn=%v, err is %v", nr, err))
 			return
 		}
-	}, func(){
+	}, func() {
 		client.Close()
 	})
 

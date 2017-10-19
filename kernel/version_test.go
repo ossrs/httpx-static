@@ -1,8 +1,8 @@
 package kernel
 
 import (
-	"testing"
 	"strings"
+	"testing"
 )
 
 func TestVersion(t *testing.T) {

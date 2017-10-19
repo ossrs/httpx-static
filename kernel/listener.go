@@ -30,10 +30,10 @@ package kernel
 import (
 	"fmt"
 	ol "github.com/ossrs/go-oryx-lib/logger"
+	"io"
 	"net"
 	"strings"
 	"sync"
-	"io"
 )
 
 // The tcp listeners which support reload.
@@ -48,7 +48,7 @@ type TcpListeners struct {
 	wait *sync.WaitGroup
 	// Used to notify all goroutines to quit.
 	closing chan bool
-	closed bool
+	closed  bool
 }
 
 // Listen at addrs format as netowrk://laddr, for example,
@@ -68,11 +68,11 @@ func NewTcpListeners(addrs []string) (v *TcpListeners, err error) {
 	}
 
 	v = &TcpListeners{
-		addrs:       addrs,
-		conns:       make(chan *net.TCPConn),
-		errors:      make(chan error),
-		wait:        &sync.WaitGroup{},
-		closing:     make(chan bool, 1),
+		addrs:   addrs,
+		conns:   make(chan *net.TCPConn),
+		errors:  make(chan error),
+		wait:    &sync.WaitGroup{},
+		closing: make(chan bool, 1),
 	}
 
 	return
@@ -150,7 +150,7 @@ func (v *TcpListeners) doAcceptFrom(ctx ol.Context, l *net.TCPListener) (err err
 	if conn, err = l.AcceptTCP(); err != nil {
 		// when disposed, ignore any error for it's user closed listener.
 		select {
-		case c := <- v.closing:
+		case c := <-v.closing:
 			err = io.EOF
 			v.closing <- c
 		default:
