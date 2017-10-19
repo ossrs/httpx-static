@@ -64,7 +64,7 @@ func main() {
 	flag.StringVar(&oproxy, "proxy", "", "proxy the matched path to backend, for example, -proxy http://127.0.0.1:8888/api/webrtc")
 	flag.Parse()
 
-	if httpsPort != 0 && httpsPort != 443 {
+	if useLetsEncrypt && (httpsPort != 0 && httpsPort != 443) {
 		fmt.Println("https must be 0(disabled) or 443(enabled)")
 		os.Exit(-1)
 	}
