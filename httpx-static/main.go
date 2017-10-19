@@ -116,6 +116,9 @@ func main() {
 			matched = strings.HasPrefix(r.URL.Path, proxyUrl.Path)
 		} else {
 			matched = (r.URL.Path == proxyUrl.Path)
+			if !matched {
+				matched = strings.HasSuffix(r.URL.Path, proxyUrl.Path+"/")
+			}
 		}
 		if proxyUrl != nil && matched {
 			// For matched OPTIONS, directly return without response.
