@@ -125,7 +125,8 @@ func main() {
 		}
 		if !strings.HasSuffix(proxyPath, "/") {
 			// /api/ to /api/
-			// to avoid match /api.js/
+			// to match /api/ or /api/100
+			// and not match /api.js/
 			proxyPath += "/"
 		}
 		if strings.HasPrefix(srcPath, proxyPath) {
