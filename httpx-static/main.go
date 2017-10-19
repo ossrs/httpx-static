@@ -128,7 +128,7 @@ func main() {
 			// to avoid match /api.js/
 			proxyPath += "/"
 		}
-		if strings.HasSuffix(srcPath, proxyPath) {
+		if strings.HasPrefix(srcPath, proxyPath) {
 			// For matched OPTIONS, directly return without response.
 			if r.Method == "OPTIONS" {
 				return
