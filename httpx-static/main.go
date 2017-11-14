@@ -73,7 +73,7 @@ func run(ctx context.Context) error {
 	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "the cache for https. support relative dir to argv[0].")
 	flag.BoolVar(&useLetsEncrypt, "lets", false, "whether use letsencrypt CA. self sign if not.")
 	flag.StringVar(&ssKey, "ssk", "server.key", "https self-sign key by(before server.cert): openssl genrsa -out server.key 2048")
-	flag.StringVar(&ssCert, "ssc", "server.crt", "https self-sign cert by: openssl req -new -x509 -key server.key -out server.crt -days 365")
+	flag.StringVar(&ssCert, "ssc", "server.crt", `https self-sign cert by: openssl req -new -x509 -key server.key -out server.crt -days 365 -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=me.org"`)
 	flag.Var(&oproxies, "proxy", "one or more proxy the matched path to backend, for example, -proxy http://127.0.0.1:8888/api/webrtc")
 	flag.Parse()
 
