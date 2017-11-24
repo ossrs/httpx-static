@@ -111,7 +111,7 @@ func run(ctx context.Context) error {
 				} else if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 					r.Header.Set("X-Real-IP", ip)
 				}
-				//ol.Tf("proxy http %v to %v", r.RemoteAddr, r.URL.String())
+				//ol.Tf(ctx, "proxy http %v to %v", r.RemoteAddr, r.URL.String())
 			},
 		}
 
