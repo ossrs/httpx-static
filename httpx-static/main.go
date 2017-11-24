@@ -101,7 +101,14 @@ func run(ctx context.Context) error {
 			Director: func(r *http.Request) {
 				r.URL.Scheme = proxyUrl.Scheme
 				r.URL.Host = proxyUrl.Host
-				if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+
+				// about x-real-ip and x-forwarded-for
+				// https://segmentfault.com/q/1010000002409659
+				// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
+				// @remark http proxy will set the X-Forwarded-For.
+				if rip := r.Header.Get("X-Real-IP"); rip != "" {
+					r.Header.Set("X-Real-IP", rip)
+				} else if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
 					r.Header.Set("X-Real-IP", ip)
 				}
 				//ol.Tf("proxy http %v to %v", r.RemoteAddr, r.URL.String())
