@@ -99,18 +99,29 @@ func run(ctx context.Context) error {
 
 		proxy := &httputil.ReverseProxy{
 			Director: func(r *http.Request) {
-				r.URL.Scheme = proxyUrl.Scheme
-				r.URL.Host = proxyUrl.Host
+				// about the x-real-schema, we proxy to backend to identify the client schema.
+				if rschema := r.Header.Get("X-Real-Schema"); rschema == "" {
+					if r.TLS == nil {
+						r.Header.Set("X-Real-Schema", "http")
+					} else {
+						r.Header.Set("X-Real-Schema", "https")
+					}
+				}
 
-				// about x-real-ip and x-forwarded-for
+				// about x-real-ip and x-forwarded-for or
+				// about X-Real-IP and X-Forwarded-For or
 				// https://segmentfault.com/q/1010000002409659
 				// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
 				// @remark http proxy will set the X-Forwarded-For.
-				if rip := r.Header.Get("X-Real-IP"); rip != "" {
-					r.Header.Set("X-Real-IP", rip)
-				} else if ip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-					r.Header.Set("X-Real-IP", ip)
+				if rip := r.Header.Get("X-Real-IP"); rip == "" {
+					if rip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+						r.Header.Set("X-Real-IP", rip)
+					}
 				}
+
+				r.URL.Scheme = proxyUrl.Scheme
+				r.URL.Host = proxyUrl.Host
+
 				//ol.Tf(ctx, "proxy http %v to %v", r.RemoteAddr, r.URL.String())
 			},
 		}
