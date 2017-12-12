@@ -45,7 +45,7 @@ import (
 	"sync"
 )
 
-const server = "Oryx/0.0.3"
+const server = "Oryx/0.0.4"
 
 type Proxies []string
 
@@ -61,27 +61,56 @@ func (v *Proxies) Set(value string) error {
 func run(ctx context.Context) error {
 	fmt.Println(server, "HTTP/HTTPS static server with API proxy.")
 
-	var httpPort, httpsPort int
-	var httpsDomains, html, cacheFile string
-	var useLetsEncrypt bool
-	var ssCert, ssKey string
-	var oproxies Proxies
+	var httpPort int
+	flag.IntVar(&httpPort, "t", 0, "http listen")
 	flag.IntVar(&httpPort, "http", 0, "http listen at. 0 to disable http.")
+
+	var httpsPort int
+	flag.IntVar(&httpsPort, "s", 0, "https listen")
 	flag.IntVar(&httpsPort, "https", 0, "https listen at. 0 to disable https. 443 to serve. ")
-	flag.StringVar(&httpsDomains, "domains", "", "the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
+
+	var httpsDomains string
+	flag.StringVar(&httpsDomains, "d", "", "https the allow domains")
+	flag.StringVar(&httpsDomains, "domains", "", "https the allow domains, empty to allow all. for example: ossrs.net,www.ossrs.net")
+
+	var html string
+	flag.StringVar(&html, "r", "./html", "the www web root")
 	flag.StringVar(&html, "root", "./html", "the www web root. support relative dir to argv[0].")
-	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "the cache for https. support relative dir to argv[0].")
+
+	var cacheFile string
+	flag.StringVar(&cacheFile, "e", "./letsencrypt.cache", "https the cache for letsencrypt")
+	flag.StringVar(&cacheFile, "cache", "./letsencrypt.cache", "https the cache for letsencrypt. support relative dir to argv[0].")
+
+	var useLetsEncrypt bool
+	flag.BoolVar(&useLetsEncrypt, "l", false, "whether use letsencrypt CA")
 	flag.BoolVar(&useLetsEncrypt, "lets", false, "whether use letsencrypt CA. self sign if not.")
-	flag.StringVar(&ssKey, "ssk", "server.key", "https self-sign key by(before server.cert): openssl genrsa -out server.key 2048")
-	flag.StringVar(&ssCert, "ssc", "server.crt", `https self-sign cert by: openssl req -new -x509 -key server.key -out server.crt -days 365 -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=me.org"`)
+
+	var ssKey string
+	flag.StringVar(&ssKey, "k", "server.key", "https self-sign key")
+	flag.StringVar(&ssKey, "ssk", "server.key", "https self-sign key")
+
+	var ssCert string
+	flag.StringVar(&ssCert, "c", "server.crt", `https self-sign cert`)
+	flag.StringVar(&ssCert, "ssc", "server.crt", `https self-sign cert`)
+
+	var oproxies Proxies
+	flag.Var(&oproxies, "p", "proxy ruler")
 	flag.Var(&oproxies, "proxy", "one or more proxy the matched path to backend, for example, -proxy http://127.0.0.1:8888/api/webrtc")
+
 	flag.Parse()
 
 	if useLetsEncrypt && (httpsPort != 0 && httpsPort != 443) {
 		return oe.Errorf("for letsencrypt, https=%v must be 0(disabled) or 443(enabled)", httpsPort)
 	}
 	if httpPort == 0 && httpsPort == 0 {
+		fmt.Println(fmt.Sprintf("Usage: %v -t http -s https -d domains -r root -e cache -l lets -k ssk -c ssc -p proxy", os.Args[0]))
 		flag.PrintDefaults()
+		fmt.Println(fmt.Sprintf("For example:"))
+		fmt.Println(fmt.Sprintf("	%v -t 8080 -s 9443 -r ./html", os.Args[0]))
+		fmt.Println(fmt.Sprintf("	%v -t 8080 -s 9443 -r ./html -p http://ossrs.net:1985/api/v1/versions", os.Args[0]))
+		fmt.Println(fmt.Sprintf("Generate cert for self-sign HTTPS:"))
+		fmt.Println(fmt.Sprintf("	openssl genrsa -out server.key 2048"))
+		fmt.Println(fmt.Sprintf(`	openssl req -new -x509 -key server.key -out server.crt -days 365 -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=me.org"`))
 		os.Exit(-1)
 	}
 
@@ -221,13 +250,26 @@ func run(ctx context.Context) error {
 	}
 	ol.Tf(ctx, "%v html root at %v", strings.Join(protos, ", "), string(html))
 
+	if httpsPort != 0 && !useLetsEncrypt {
+		if f, err := os.Open(ssCert); err != nil {
+			return oe.Wrapf(err, "open cert %v err %+v", ssCert, err)
+		} else {
+			f.Close()
+		}
+
+		if f, err := os.Open(ssKey); err != nil {
+			return oe.Wrapf(err, "open key %v err %+v", ssKey, err)
+		} else {
+			f.Close()
+		}
+	}
+
 	var hs, hss *http.Server
 
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	var err error
 	go func() {
 		defer wg.Done()
 		if httpPort == 0 {
@@ -239,8 +281,8 @@ func run(ctx context.Context) error {
 		hs = &http.Server{Addr: fmt.Sprintf(":%v", httpPort), Handler: nil}
 		ol.Tf(ctx, "http serve at %v", httpPort)
 
-		if err = hs.ListenAndServe(); err != nil {
-			err = oe.Wrapf(err, "serve http")
+		if err := hs.ListenAndServe(); err != nil {
+			ol.Ef(ctx, "http serve err %+v", err)
 			return
 		}
 		ol.T("http server ok")
@@ -256,6 +298,7 @@ func run(ctx context.Context) error {
 
 		defer cancel()
 
+		var err error
 		var m https.Manager
 		if useLetsEncrypt {
 			var domains []string
@@ -264,12 +307,12 @@ func run(ctx context.Context) error {
 			}
 
 			if m, err = https.NewLetsencryptManager("", domains, cacheFile); err != nil {
-				err = oe.Wrapf(err, "create letsencrypt manager")
+				ol.Ef(ctx, "create letsencrypt manager err %+v", err)
 				return
 			}
 		} else {
 			if m, err = https.NewSelfSignManager(ssCert, ssKey); err != nil {
-				err = oe.Wrapf(err, "create self-sign manager")
+				ol.Ef(ctx, "create self-sign manager err %+v", err)
 				return
 			}
 		}
@@ -283,7 +326,7 @@ func run(ctx context.Context) error {
 		ol.Tf(ctx, "http serve at %v", httpsPort)
 
 		if err = hss.ListenAndServeTLS("", ""); err != nil {
-			err = oe.Wrapf(err, "listen and serve https")
+			ol.Ef(ctx, "https serve err %+v", err)
 			return
 		}
 		ol.T("https serve ok")
@@ -301,7 +344,7 @@ func run(ctx context.Context) error {
 	}
 	wg.Wait()
 
-	return err
+	return nil
 }
 
 func main() {
