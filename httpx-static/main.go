@@ -124,6 +124,13 @@ func run(ctx context.Context) error {
 
 				//ol.Tf(ctx, "proxy http %v to %v", r.RemoteAddr, r.URL.String())
 			},
+			ModifyResponse: func(w *http.Response) error {
+				// we already added this header, it will cause chrome failed when duplicated.
+				if w.Header.Get("Access-Control-Allow-Origin") == "*" {
+					w.Header.Del("Access-Control-Allow-Origin")
+				}
+				return nil
+			},
 		}
 
 		if _, ok := proxies[proxyUrl.Path]; ok {
