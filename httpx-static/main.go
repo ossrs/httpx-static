@@ -35,6 +35,7 @@ import (
 	oe "github.com/ossrs/go-oryx-lib/errors"
 	"github.com/ossrs/go-oryx-lib/https"
 	ol "github.com/ossrs/go-oryx-lib/logger"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -150,8 +151,6 @@ func run(ctx context.Context) error {
 
 				r.URL.Scheme = proxyUrl.Scheme
 				r.URL.Host = proxyUrl.Host
-
-				//ol.Tf(ctx, "proxy http %v to %v", r.RemoteAddr, r.URL.String())
 			},
 			ModifyResponse: func(w *http.Response) error {
 				// we already added this header, it will cause chrome failed when duplicated.
@@ -218,7 +217,21 @@ func run(ctx context.Context) error {
 			}
 
 			if proxy, ok := proxies[proxyUrl.Path]; ok {
-				proxy.ServeHTTP(w, r)
+				// Create a proxy which attach a isolate logger.
+				elogger := log.New(os.Stderr, fmt.Sprintf("%v ", r.RemoteAddr), log.LstdFlags)
+
+				p := &httputil.ReverseProxy{
+					Director: func(r *http.Request) {
+						proxy.Director(r)
+
+						ra, url := r.RemoteAddr, r.URL.String()
+						rip, ua := r.Header.Get("X-Real-Ip"), r.Header.Get("User-Agent")
+						ol.Tf(ctx, "proxy http %v/%v %v %v %v", rip, ra, r.Method, url, ua)
+					},
+					ModifyResponse: proxy.ModifyResponse,
+					ErrorLog:       elogger,
+				}
+				p.ServeHTTP(w, r)
 				return
 			}
 		}
@@ -272,6 +285,8 @@ func run(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
+
+		ctx = ol.WithContext(ctx)
 		if httpPort == 0 {
 			ol.W(ctx, "http server disabled")
 			return
@@ -291,6 +306,8 @@ func run(ctx context.Context) error {
 
 	go func() {
 		defer wg.Done()
+
+		ctx = ol.WithContext(ctx)
 		if httpsPort == 0 {
 			ol.W(ctx, "https server disabled")
 			return
@@ -323,7 +340,7 @@ func run(ctx context.Context) error {
 				GetCertificate: m.GetCertificate,
 			},
 		}
-		ol.Tf(ctx, "http serve at %v", httpsPort)
+		ol.Tf(ctx, "https serve at %v", httpsPort)
 
 		if err = hss.ListenAndServeTLS("", ""); err != nil {
 			ol.Ef(ctx, "https serve err %+v", err)
@@ -348,7 +365,7 @@ func run(ctx context.Context) error {
 }
 
 func main() {
-	ctx := context.Background()
+	ctx := ol.WithContext(context.Background())
 	if err := run(ctx); err != nil {
 		ol.Ef(ctx, "run err %+v", err)
 		os.Exit(-1)
