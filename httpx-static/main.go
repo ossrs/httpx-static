@@ -33,6 +33,7 @@ import (
 	"flag"
 	"fmt"
 	oe "github.com/ossrs/go-oryx-lib/errors"
+	oh "github.com/ossrs/go-oryx-lib/http"
 	"github.com/ossrs/go-oryx-lib/https"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	"log"
@@ -46,21 +47,20 @@ import (
 	"sync"
 )
 
-const server = "Oryx/0.0.4"
+type Strings []string
 
-type Proxies []string
-
-func (v *Proxies) String() string {
-	return "proxy to backend services"
+func (v *Strings) String() string {
+	return fmt.Sprintf("strings [%v]", strings.Join(*v, ","))
 }
 
-func (v *Proxies) Set(value string) error {
+func (v *Strings) Set(value string) error {
 	*v = append(*v, value)
 	return nil
 }
 
 func run(ctx context.Context) error {
-	fmt.Println(server, "HTTP/HTTPS static server with API proxy.")
+	oh.Server = fmt.Sprintf("%v/%v", Signature(), Version())
+	fmt.Println(oh.Server, "HTTP/HTTPS static server with API proxy.")
 
 	var httpPort int
 	flag.IntVar(&httpPort, "t", 0, "http listen")
@@ -87,16 +87,21 @@ func run(ctx context.Context) error {
 	flag.BoolVar(&useLetsEncrypt, "lets", false, "whether use letsencrypt CA. self sign if not.")
 
 	var ssKey string
-	flag.StringVar(&ssKey, "k", "server.key", "https self-sign key")
-	flag.StringVar(&ssKey, "ssk", "server.key", "https self-sign key")
+	flag.StringVar(&ssKey, "k", "", "https self-sign key")
+	flag.StringVar(&ssKey, "ssk", "", "https self-sign key")
 
 	var ssCert string
-	flag.StringVar(&ssCert, "c", "server.crt", `https self-sign cert`)
-	flag.StringVar(&ssCert, "ssc", "server.crt", `https self-sign cert`)
+	flag.StringVar(&ssCert, "c", "", `https self-sign cert`)
+	flag.StringVar(&ssCert, "ssc", "", `https self-sign cert`)
 
-	var oproxies Proxies
+	var oproxies Strings
 	flag.Var(&oproxies, "p", "proxy ruler")
 	flag.Var(&oproxies, "proxy", "one or more proxy the matched path to backend, for example, -proxy http://127.0.0.1:8888/api/webrtc")
+
+	var sdomains, skeys, scerts Strings
+	flag.Var(&sdomains, "sdomain", "the SSL hostname")
+	flag.Var(&skeys, "skey", "the SSL key for domain")
+	flag.Var(&scerts, "scert", "the SSL cert for domain")
 
 	flag.Parse()
 
@@ -112,6 +117,8 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf("Generate cert for self-sign HTTPS:"))
 		fmt.Println(fmt.Sprintf("	openssl genrsa -out server.key 2048"))
 		fmt.Println(fmt.Sprintf(`	openssl req -new -x509 -key server.key -out server.crt -days 365 -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=me.org"`))
+		fmt.Println(fmt.Sprintf("For example:"))
+		fmt.Println(fmt.Sprintf("	%v -s 9443 -r ./html -sdomain ossrs.net -skey ossrs.net.key -scert ossrs.net.pem", os.Args[0]))
 		os.Exit(-1)
 	}
 
@@ -179,7 +186,7 @@ func run(ctx context.Context) error {
 
 	fs := http.FileServer(http.Dir(html))
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Server", server)
+		oh.SetHeader(w)
 
 		if o := r.Header.Get("Origin"); len(o) > 0 {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -189,6 +196,11 @@ func run(ctx context.Context) error {
 		}
 
 		if proxyUrls == nil {
+			if r.URL.Path == "/httpx/v1/versions" {
+				oh.WriteVersion(w, r, Version())
+				return
+			}
+
 			fs.ServeHTTP(w, r)
 			return
 		}
@@ -257,13 +269,31 @@ func run(ctx context.Context) error {
 
 		if useLetsEncrypt {
 			protos = append(protos, "letsencrypt")
-		} else {
+		} else if ssKey != "" {
 			protos = append(protos, fmt.Sprintf("self-sign(%v, %v)", ssKey, ssCert))
+		} else if len(sdomains) == 0 {
+			return oe.New("no ssl config")
+		}
+
+		for i := 0; i < len(sdomains); i++ {
+			sdomain, skey, scert := sdomains[i], skeys[i], scerts[i]
+			if f, err := os.Open(scert); err != nil {
+				return oe.Wrapf(err, "open cert %v for %v err %+v", scert, sdomain, err)
+			} else {
+				f.Close()
+			}
+
+			if f, err := os.Open(skey); err != nil {
+				return oe.Wrapf(err, "open key %v for %v err %+v", skey, sdomain, err)
+			} else {
+				f.Close()
+			}
+			protos = append(protos, fmt.Sprintf("ssl(%v,%v,%v)", sdomain, skey, scert))
 		}
 	}
 	ol.Tf(ctx, "%v html root at %v", strings.Join(protos, ", "), string(html))
 
-	if httpsPort != 0 && !useLetsEncrypt {
+	if httpsPort != 0 && !useLetsEncrypt && ssKey != "" {
 		if f, err := os.Open(ssCert); err != nil {
 			return oe.Wrapf(err, "open cert %v err %+v", ssCert, err)
 		} else {
@@ -327,9 +357,14 @@ func run(ctx context.Context) error {
 				ol.Ef(ctx, "create letsencrypt manager err %+v", err)
 				return
 			}
-		} else {
+		} else if ssKey != "" {
 			if m, err = https.NewSelfSignManager(ssCert, ssKey); err != nil {
 				ol.Ef(ctx, "create self-sign manager err %+v", err)
+				return
+			}
+		} else if len(sdomains) > 0 {
+			if m, err = NewCertsManager(sdomains, skeys, scerts); err != nil {
+				ol.Ef(ctx, "create ssl managers err %+v", err)
 				return
 			}
 		}

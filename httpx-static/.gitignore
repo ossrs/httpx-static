@@ -1,5 +1,6 @@
 httpx-static
 letsencrypt.cache
-server.crt
-server.key
+*.crt
+*.pem
+*.key
 
