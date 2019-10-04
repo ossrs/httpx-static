@@ -98,6 +98,12 @@ func (v *aspContext) InstallSignals() {
 func (v *aspContext) WatchParent() {
 	ppid := os.Getppid()
 
+	// If parent is 1 when start, ignore.
+	if ppid == 1 {
+		ol.T(v.ctx, "ignore parent event for ppid is 1")
+		return
+	}
+
 	go func() {
 		for {
 			if pid := os.Getppid(); pid == 1 || pid != ppid {
@@ -125,6 +131,12 @@ type aspContextNoExit struct {
 
 func (v *aspContextNoExit) WatchParent() {
 	ppid := os.Getppid()
+
+	// If parent is 1 when start, ignore.
+	if ppid == 1 {
+		ol.T(v.ctx, "ignore parent event for ppid is 1")
+		return
+	}
 
 	go func() {
 		for {

@@ -60,55 +60,55 @@ func TestKxps_Rps10s(t *testing.T) {
 	kxps := newKxps(nil, s)
 
 	if err := kxps.doSample(time.Unix(0, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 0 || kxps.Xps30s() != 0 || kxps.Xps300s() != 0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	}
 
 	s.s = 10
 	if err := kxps.doSample(time.Unix(10, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 0 || kxps.Xps30s() != 0 || kxps.Xps300s() != 0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	}
 
 	s.s = 20
 	if err := kxps.doSample(time.Unix(20, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 10.0/10.0 || kxps.Xps30s() != 0 || kxps.Xps300s() != 0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	} else if err := kxps.doSample(time.Unix(30, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 0 || kxps.Xps30s() != 0 || kxps.Xps300s() != 0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	}
 
 	s.s = 30
 	if err := kxps.doSample(time.Unix(40, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 10.0/10.0 || kxps.Xps30s() != 20.0/30.0 || kxps.Xps300s() != 0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	} else if err := kxps.doSample(time.Unix(50, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 0 || kxps.Xps30s() != 20.0/30.0 || kxps.Xps300s() != 0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	}
 
 	s.s = 40
 	if err := kxps.doSample(time.Unix(310, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 10.0/10.0 || kxps.Xps30s() != 10.0/30.0 || kxps.Xps300s() != 30.0/300.0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	} else if err := kxps.doSample(time.Unix(320, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 0 || kxps.Xps30s() != 10.0/30.0 || kxps.Xps300s() != 30.0/300.0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	} else if err := kxps.doSample(time.Unix(340, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 0 || kxps.Xps30s() != 0 || kxps.Xps300s() != 30.0/300.0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	} else if err := kxps.doSample(time.Unix(610, 0)); err != nil {
-		t.Errorf("sample failed, err is", err)
+		t.Errorf("sample failed, err is %+v", err)
 	} else if kxps.Xps10s() != 0 || kxps.Xps30s() != 0 || kxps.Xps300s() != 0 {
 		t.Errorf("sample invalid, 10s=%v, 30s=%v, 300s=%v", kxps.Xps10s(), kxps.Xps30s(), kxps.Xps300s())
 	}

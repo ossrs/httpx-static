@@ -270,19 +270,21 @@ func (v Channels) String() string {
 	}
 }
 
-type adts struct {
+// Please use NewADTS() and interface ADTS instead.
+// It's only exposed for example.
+type ADTSImpl struct {
 	asc AudioSpecificConfig
 }
 
 func NewADTS() (ADTS, error) {
-	return &adts{}, nil
+	return &ADTSImpl{}, nil
 }
 
-func (v *adts) SetASC(asc []byte) (err error) {
+func (v *ADTSImpl) SetASC(asc []byte) (err error) {
 	return v.asc.UnmarshalBinary(asc)
 }
 
-func (v *adts) Encode(raw []byte) (data []byte, err error) {
+func (v *ADTSImpl) Encode(raw []byte) (data []byte, err error) {
 	if err = v.asc.validate(); err != nil {
 		return nil, errors.WithMessage(err, "adts encode")
 	}
@@ -345,7 +347,7 @@ func (v *adts) Encode(raw []byte) (data []byte, err error) {
 	return append(p, raw...), nil
 }
 
-func (v *adts) Decode(data []byte) (raw, left []byte, err error) {
+func (v *ADTSImpl) Decode(data []byte) (raw, left []byte, err error) {
 	// write the ADTS header.
 	// Refer to @doc ISO_IEC_13818-7-AAC-2004.pdf, @page 26, @section 6.2 Audio Data Transport Stream, ADTS
 	// @see https://github.com/ossrs/srs/issues/212#issuecomment-64145885
@@ -443,7 +445,7 @@ func (v *adts) Decode(data []byte) (raw, left []byte, err error) {
 	return
 }
 
-func (v *adts) ASC() *AudioSpecificConfig {
+func (v *ADTSImpl) ASC() *AudioSpecificConfig {
 	return &v.asc
 }
 

@@ -43,11 +43,11 @@ func TestOCSPDecode(t *testing.T) {
 	}
 
 	if !reflect.DeepEqual(resp.ThisUpdate, expected.ThisUpdate) {
-		t.Errorf("resp.ThisUpdate: got %d, want %d", resp.ThisUpdate, expected.ThisUpdate)
+		t.Errorf("resp.ThisUpdate: got %v, want %v", resp.ThisUpdate, expected.ThisUpdate)
 	}
 
 	if !reflect.DeepEqual(resp.NextUpdate, expected.NextUpdate) {
-		t.Errorf("resp.NextUpdate: got %d, want %d", resp.NextUpdate, expected.NextUpdate)
+		t.Errorf("resp.NextUpdate: got %v, want %v", resp.NextUpdate, expected.NextUpdate)
 	}
 
 	if resp.Status != expected.Status {

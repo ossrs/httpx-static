@@ -81,6 +81,11 @@ type AppError interface {
 	error
 }
 
+// HTTP Status Code
+type HTTPStatus interface {
+	Status() int
+}
+
 // http standard error response.
 // @remark for not SystemError, we will use logger.E to print it.
 // @remark user can use WriteError() for simple api.
@@ -111,7 +116,12 @@ func Error(ctx ol.Context, err error) http.Handler {
 		SetHeader(w)
 		w.Header().Set("Content-Type", HttpJson)
 
-		http.Error(w, FilterError(ctx, w, r, err), http.StatusInternalServerError)
+		status := http.StatusInternalServerError
+		if v, ok := err.(HTTPStatus); ok {
+			status = v.Status()
+		}
+
+		http.Error(w, FilterError(ctx, w, r, err), status)
 	})
 }
 
@@ -144,15 +154,29 @@ func jsonHandler(ctx ol.Context, rv interface{}) http.Handler {
 		return Error(ctx, err)
 	}
 
+	status := http.StatusOK
+	if v, ok := rv.(HTTPStatus); ok {
+		status = v.Status()
+	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		SetHeader(w)
 
 		q := r.URL.Query()
 		if cb := q.Get("callback"); cb != "" {
 			w.Header().Set("Content-Type", HttpJavaScript)
+			if status != http.StatusOK {
+				w.WriteHeader(status)
+			}
+
+			// TODO: Handle error.
 			fmt.Fprintf(w, "%s(%s)", cb, string(b))
 		} else {
 			w.Header().Set("Content-Type", HttpJson)
+			if status != http.StatusOK {
+				w.WriteHeader(status)
+			}
+			// TODO: Handle error.
 			w.Write(b)
 		}
 	})

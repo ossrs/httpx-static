@@ -2,14 +2,39 @@
 
 
 [[projects]]
+  digest = "1:a32db1fd1c8b9807a21fd055fd58195bc3f612ed20d30b58266024b1461065e9"
   name = "github.com/ossrs/go-oryx-lib"
-  packages = ["asprocess","errors","http","https","https/acme","https/crypto/ocsp","https/jose","https/jose/cipher","https/letsencrypt","https/net/context","https/time/rate","json","logger","options"]
-  revision = "19afc33c9a6723d608b9d4711908bdfc37935c9e"
-  version = "v0.0.3"
+  packages = [
+    "asprocess",
+    "errors",
+    "http",
+    "https",
+    "https/acme",
+    "https/crypto/ocsp",
+    "https/jose",
+    "https/jose/cipher",
+    "https/letsencrypt",
+    "https/net/context",
+    "https/time/rate",
+    "json",
+    "logger",
+    "options",
+  ]
+  pruneopts = ""
+  revision = "7d35dadc3a70402a959f8531fc475f7ba6895243"
+  version = "v0.0.8"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "3d4da884a6902f354af0a97afede8f65cbb0d476c831657e08f7920a4ca61348"
+  input-imports = [
+    "github.com/ossrs/go-oryx-lib/asprocess",
+    "github.com/ossrs/go-oryx-lib/errors",
+    "github.com/ossrs/go-oryx-lib/http",
+    "github.com/ossrs/go-oryx-lib/https",
+    "github.com/ossrs/go-oryx-lib/json",
+    "github.com/ossrs/go-oryx-lib/logger",
+    "github.com/ossrs/go-oryx-lib/options",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1

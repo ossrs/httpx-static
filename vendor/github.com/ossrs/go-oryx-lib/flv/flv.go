@@ -27,6 +27,7 @@ import (
 	"errors"
 	"github.com/ossrs/go-oryx-lib/aac"
 	"io"
+	"strings"
 )
 
 // FLV Tag Type is the type of tag,
@@ -225,12 +226,33 @@ func (v *muxer) Close() error {
 type AudioFrameTrait uint8
 
 const (
-	AudioFrameTraitSequenceHeader AudioFrameTrait = iota // 0 = AAC sequence header
-	AudioFrameTraitRaw                                   // 1 = AAC raw
-	AudioFrameTraitForbidden
+	// For AAC, the frame trait.
+	AudioFrameTraitSequenceHeader AudioFrameTrait = 0 // 0 = AAC sequence header
+	AudioFrameTraitRaw            AudioFrameTrait = 1 // 1 = AAC raw
+
+	// For Opus, the frame trait, may has more than one traits.
+	AudioFrameTraitOpusRaw          AudioFrameTrait = 0x02 // 2, Has RAW Opus data.
+	AudioFrameTraitOpusSamplingRate AudioFrameTrait = 0x04 // 4, Has Opus SamplingRate.
+	AudioFrameTraitOpusAudioLevel   AudioFrameTrait = 0x08 // 8, Has audio level data, 16bits.
+
+	AudioFrameTraitForbidden AudioFrameTrait = 0xff
 )
 
 func (v AudioFrameTrait) String() string {
+	if v > AudioFrameTraitRaw && v < AudioFrameTraitForbidden {
+		var s []string
+		if (v & AudioFrameTraitOpusRaw) == AudioFrameTraitOpusRaw {
+			s = append(s, "RAW")
+		}
+		if (v & AudioFrameTraitOpusSamplingRate) == AudioFrameTraitOpusSamplingRate {
+			s = append(s, "SR")
+		}
+		if (v & AudioFrameTraitOpusAudioLevel) == AudioFrameTraitOpusAudioLevel {
+			s = append(s, "AL")
+		}
+		return strings.Join(s, "|")
+	}
+
 	switch v {
 	case AudioFrameTraitSequenceHeader:
 		return "SequenceHeader"
@@ -301,10 +323,20 @@ func (v AudioSampleBits) String() string {
 type AudioSamplingRate uint8
 
 const (
+	// For FLV, only support 5, 11, 22, 44KHz sampling rate.
 	AudioSamplingRate5kHz  AudioSamplingRate = iota // 0 = 5.5 kHz
 	AudioSamplingRate11kHz                          // 1 = 11 kHz
 	AudioSamplingRate22kHz                          // 2 = 22 kHz
 	AudioSamplingRate44kHz                          // 3 = 44 kHz
+	// For Opus, support 8, 12, 16, 24, 48KHz
+	// We will write a UINT8 sampling rate after FLV audio tag header.
+	// @doc https://tools.ietf.org/html/rfc6716#section-2
+	AudioSamplingRateNB8kHz   = 8  // NB (narrowband)
+	AudioSamplingRateMB12kHz  = 12 // MB (medium-band)
+	AudioSamplingRateWB16kHz  = 16 // WB (wideband)
+	AudioSamplingRateSWB24kHz = 24 // SWB (super-wideband)
+	AudioSamplingRateFB48kHz  = 48 // FB (fullband)
+
 	AudioSamplingRateForbidden
 )
 
@@ -318,6 +350,16 @@ func (v AudioSamplingRate) String() string {
 		return "22kHz"
 	case AudioSamplingRate44kHz:
 		return "44kHz"
+	case AudioSamplingRateNB8kHz:
+		return "NB8kHz"
+	case AudioSamplingRateMB12kHz:
+		return "MB12kHz"
+	case AudioSamplingRateWB16kHz:
+		return "WB16kHz"
+	case AudioSamplingRateSWB24kHz:
+		return "SWB24kHz"
+	case AudioSamplingRateFB48kHz:
+		return "FB48kHz"
 	default:
 		return "Forbidden"
 	}
@@ -329,12 +371,14 @@ func (v AudioSamplingRate) ToHz() int {
 	return flvSR[v]
 }
 
-// Convert aac sample rate index to FLV sampling rate.
+// For FLV, convert aac sample rate index to FLV sampling rate.
 func (v *AudioSamplingRate) From(a aac.SampleRateIndex) {
 	switch a {
 	case aac.SampleRateIndex96kHz, aac.SampleRateIndex88kHz, aac.SampleRateIndex64kHz:
 		*v = AudioSamplingRate44kHz
-	case aac.SampleRateIndex48kHz, aac.SampleRateIndex44kHz, aac.SampleRateIndex32kHz:
+	case aac.SampleRateIndex48kHz:
+		*v = AudioSamplingRate44kHz
+	case aac.SampleRateIndex44kHz, aac.SampleRateIndex32kHz:
 		*v = AudioSamplingRate44kHz
 	case aac.SampleRateIndex24kHz, aac.SampleRateIndex22kHz, aac.SampleRateIndex16kHz:
 		*v = AudioSamplingRate22kHz
@@ -347,8 +391,35 @@ func (v *AudioSamplingRate) From(a aac.SampleRateIndex) {
 	}
 }
 
+// Parse the Opus sampling rate to Hz.
+func (v AudioSamplingRate) OpusToHz() int {
+	opusSR := []int{8000, 12000, 16000, 24000, 48000}
+	return opusSR[v]
+}
+
+// For Opus, convert aac sample rate index to FLV sampling rate.
+func (v *AudioSamplingRate) OpusFrom(a aac.SampleRateIndex) {
+	switch a {
+	case aac.SampleRateIndex96kHz, aac.SampleRateIndex88kHz, aac.SampleRateIndex64kHz:
+		*v = AudioSamplingRateFB48kHz
+	case aac.SampleRateIndex48kHz, aac.SampleRateIndex44kHz, aac.SampleRateIndex32kHz:
+		*v = AudioSamplingRateFB48kHz
+	case aac.SampleRateIndex24kHz, aac.SampleRateIndex22kHz:
+		*v = AudioSamplingRateSWB24kHz
+	case aac.SampleRateIndex16kHz:
+		*v = AudioSamplingRateWB16kHz
+	case aac.SampleRateIndex12kHz, aac.SampleRateIndex11kHz:
+		*v = AudioSamplingRateMB12kHz
+	case aac.SampleRateIndex8kHz, aac.SampleRateIndex7kHz:
+		*v = AudioSamplingRateNB8kHz
+	default:
+		*v = AudioSamplingRateForbidden
+	}
+}
+
 // The audio codec id, FLV named it the SoundFormat.
 // Refer to @doc video_file_format_spec_v10.pdf, @page 76, @section E.4.2 Audio Tags
+// It's 4bits, that is 0-16.
 type AudioCodec uint8
 
 const (
@@ -365,7 +436,8 @@ const (
 	AudioCodecAAC                               // 10 = AAC
 	AudioCodecSpeex                             // 11 = Speex
 	AudioCodecUndefined12
-	AudioCodecUndefined13
+	// For FLV, it's undefined, we define it as Opus for WebRTC.
+	AudioCodecOpus           // 13 = Opus
 	AudioCodecMP3In8kHz      // 14 = MP3 8 kHz
 	AudioCodecDeviceSpecific // 15 = Device-specific sound
 	AudioCodecForbidden
@@ -395,6 +467,8 @@ func (v AudioCodec) String() string {
 		return "AAC"
 	case AudioCodecSpeex:
 		return "Speex"
+	case AudioCodecOpus:
+		return "Opus"
 	case AudioCodecMP3In8kHz:
 		return "MP3(8kHz)"
 	case AudioCodecDeviceSpecific:
@@ -410,6 +484,7 @@ type AudioFrame struct {
 	SoundSize   AudioSampleBits
 	SoundType   AudioChannels
 	Trait       AudioFrameTrait
+	AudioLevel  uint16
 	Raw         []byte
 }
 
@@ -432,15 +507,37 @@ func NewAudioPackager() (AudioPackager, error) {
 }
 
 func (v *audioPackager) Encode(frame *AudioFrame) (tag []byte, err error) {
+	audioTagHeader := []byte{
+		byte(frame.SoundFormat)<<4 | byte(frame.SoundRate)<<2 | byte(frame.SoundSize)<<1 | byte(frame.SoundType),
+	}
+
+	// For Opus, we put the sampling rate after trait,
+	// so we set the sound rate in audio tag to 0.
+	if frame.SoundFormat == AudioCodecOpus {
+		audioTagHeader[0] &= 0xf3
+	}
+
 	if frame.SoundFormat == AudioCodecAAC {
-		return append([]byte{
-			byte(frame.SoundFormat)<<4 | byte(frame.SoundRate)<<2 | byte(frame.SoundSize)<<1 | byte(frame.SoundType),
-			byte(frame.Trait),
-		}, frame.Raw...), nil
+		return append(append(audioTagHeader, byte(frame.Trait)), frame.Raw...), nil
+	} else if frame.SoundFormat == AudioCodecOpus {
+		var b bytes.Buffer
+
+		b.Write(audioTagHeader)
+
+		b.WriteByte(byte(frame.Trait))
+		if (frame.Trait & AudioFrameTraitOpusSamplingRate) == AudioFrameTraitOpusSamplingRate {
+			b.WriteByte(byte(frame.SoundRate))
+		}
+		if (frame.Trait & AudioFrameTraitOpusAudioLevel) == AudioFrameTraitOpusAudioLevel {
+			b.WriteByte(byte(frame.AudioLevel >> 8))
+			b.WriteByte(byte(frame.AudioLevel))
+		}
+
+		b.Write(frame.Raw)
+
+		return b.Bytes(), nil
 	} else {
-		return append([]byte{
-			byte(frame.SoundFormat)<<4 | byte(frame.SoundRate)<<2 | byte(frame.SoundSize)<<1 | byte(frame.SoundType),
-		}, frame.Raw...), nil
+		return append(audioTagHeader, frame.Raw...), nil
 	}
 }
 
@@ -462,6 +559,29 @@ func (v *audioPackager) Decode(tag []byte) (frame *AudioFrame, err error) {
 	if frame.SoundFormat == AudioCodecAAC {
 		frame.Trait = AudioFrameTrait(tag[1])
 		frame.Raw = tag[2:]
+	} else if frame.SoundFormat == AudioCodecOpus {
+		frame.Trait = AudioFrameTrait(tag[1])
+		p := tag[2:]
+
+		// For Opus, we put sampling rate after trait.
+		if (frame.Trait & AudioFrameTraitOpusSamplingRate) == AudioFrameTraitOpusSamplingRate {
+			if len(p) < 1 {
+				return nil, errDataNotEnough
+			}
+			frame.SoundRate = AudioSamplingRate(p[0])
+			p = p[1:]
+		}
+
+		// For Opus, we put audio level after trait.
+		if (frame.Trait & AudioFrameTraitOpusAudioLevel) == AudioFrameTraitOpusAudioLevel {
+			if len(p) < 2 {
+				return nil, errDataNotEnough
+			}
+			frame.AudioLevel = uint16(p[0])<<8 | uint16(p[1])
+			p = p[2:]
+		}
+
+		frame.Raw = p
 	} else {
 		frame.Raw = tag[1:]
 	}
@@ -501,6 +621,7 @@ func (v VideoFrameType) String() string {
 
 // The video codec id.
 // Refer to @doc video_file_format_spec_v10.pdf, @page 78, @section E.4.3 Video Tags
+// It's 4bits, that is 0-16.
 type VideoCodec uint8
 
 const (
@@ -511,6 +632,8 @@ const (
 	VideoCodecOn2VP6Alpha            // 5 = On2 VP6 with alpha channel
 	VideoCodecScreen2                // 6 = Screen video version 2
 	VideoCodecAVC                    // 7 = AVC
+	// See page 79 at @doc https://github.com/CDN-Union/H265/blob/master/Document/video_file_format_spec_v10_1_ksyun_20170615.doc
+	VideoCodecHEVC VideoCodec = 12 // 12 = HEVC
 )
 
 func (v VideoCodec) String() string {
@@ -527,6 +650,8 @@ func (v VideoCodec) String() string {
 		return "Screen2"
 	case VideoCodecAVC:
 		return "AVC"
+	case VideoCodecHEVC:
+		return "HEVC"
 	default:
 		return "Forbidden"
 	}
@@ -534,12 +659,13 @@ func (v VideoCodec) String() string {
 
 // The video AVC frame trait, whethere sequence header or not.
 // Refer to @doc video_file_format_spec_v10.pdf, @page 78, @section E.4.3 Video Tags
+// If AVC or HEVC, it's 8bits.
 type VideoFrameTrait uint8
 
 const (
-	VideoFrameTraitSequenceHeader VideoFrameTrait = iota // 0 = AVC sequence header
-	VideoFrameTraitNALU                                  // 1 = AVC NALU
-	VideoFrameTraitSequenceEOF                           // 2 = AVC end of sequence (lower level NALU sequence ender is
+	VideoFrameTraitSequenceHeader VideoFrameTrait = iota // 0 = AVC/HEVC sequence header
+	VideoFrameTraitNALU                                  // 1 = AVC/HEVC NALU
+	VideoFrameTraitSequenceEOF                           // 2 = AVC/HEVC end of sequence (lower level NALU sequence ender is
 	VideoFrameTraitForbidden
 )
 
@@ -562,6 +688,10 @@ type VideoFrame struct {
 	Trait     VideoFrameTrait
 	CTS       int32
 	Raw       []byte
+}
+
+func NewVideoFrame() *VideoFrame {
+	return &VideoFrame{}
 }
 
 // The packager used to codec the FLV video tag body.
@@ -592,7 +722,7 @@ func (v *videoPackager) Decode(tag []byte) (frame *VideoFrame, err error) {
 	frame.FrameType = VideoFrameType(byte(p[0]>>4) & 0x0f)
 	frame.CodecID = VideoCodec(byte(p[0]) & 0x0f)
 
-	if frame.CodecID == VideoCodecAVC {
+	if frame.CodecID == VideoCodecAVC || frame.CodecID == VideoCodecHEVC {
 		frame.Trait = VideoFrameTrait(p[1])
 		frame.CTS = int32(uint32(p[2])<<16 | uint32(p[3])<<8 | uint32(p[4]))
 		frame.Raw = tag[5:]
@@ -604,7 +734,7 @@ func (v *videoPackager) Decode(tag []byte) (frame *VideoFrame, err error) {
 }
 
 func (v videoPackager) Encode(frame *VideoFrame) (tag []byte, err error) {
-	if frame.CodecID == VideoCodecAVC {
+	if frame.CodecID == VideoCodecAVC || frame.CodecID == VideoCodecHEVC {
 		return append([]byte{
 			byte(frame.FrameType)<<4 | byte(frame.CodecID), byte(frame.Trait),
 			byte(frame.CTS >> 16), byte(frame.CTS >> 8), byte(frame.CTS),
