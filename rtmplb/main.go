@@ -47,6 +47,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"errors"
 )
 
 var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
@@ -57,13 +58,14 @@ type RtmpLbConfig struct {
 	Api  string `json:"api"`
 	Rtmp struct {
 		Listen       string `json:"listen"`
+		Backend      string `json:"backend"`
 		UseRtmpProxy bool   `json:"proxy"`
 	} `json:"rtmp"`
 }
 
 func (v *RtmpLbConfig) String() string {
-	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v,proxy=%v)",
-		&v.Config, v.Api, v.Rtmp.Listen, v.Rtmp.UseRtmpProxy)
+	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v,backend=%v,proxy=%v)",
+		&v.Config, v.Api, v.Rtmp.Listen, v.Rtmp.Backend, v.Rtmp.UseRtmpProxy)
 }
 
 func (v *RtmpLbConfig) Loads(c string) (err error) {
@@ -85,10 +87,10 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 		return
 	}
 
-	if len(v.Api) == 0 {
-		return fmt.Errorf("No api")
-	} else if nn := strings.Count(v.Api, "://"); nn != 1 {
-		return fmt.Errorf("Api contains %d network", nn)
+	if v.Api != "" {
+		if nn := strings.Count(v.Api, "://"); nn != 1 {
+			return errors.New("Api should contains network")
+		}
 	}
 
 	if len(v.Rtmp.Listen) == 0 {
@@ -143,12 +145,14 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			}
 		}()
 
+		proto := "tcp"
+		addr := fmt.Sprintf("127.0.0.1:%v", v.activePort)
 		if v.activePort <= 0 {
-			return fmt.Errorf("ignore no backend, port=%v, ports=%v", v.activePort, v.ports)
+			addrs := strings.Split(v.conf.Rtmp.Backend, "://")
+			proto, addr = addrs[0], addrs[1]
 		}
 
-		addr := fmt.Sprintf("127.0.0.1:%v", v.activePort)
-		if c, err := net.DialTimeout("tcp", addr, RetryBackend); err != nil {
+		if c, err := net.DialTimeout(proto, addr, RetryBackend); err != nil {
 			ol.W(ctx, "connect backend", addr, "failed, err is", err)
 			return err
 		} else {
@@ -167,7 +171,7 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 		return
 	}
 	defer backend.Close()
-	ol.T(ctx, fmt.Sprintf("proxy %v to %v, rpp=%v",
+	ol.T(ctx, fmt.Sprintf("proxy %v to %v, useProxyProtocol=%v",
 		client.RemoteAddr(), backend.RemoteAddr(), v.conf.Rtmp.UseRtmpProxy))
 
 	// proxy c to conn
@@ -262,12 +266,13 @@ func main() {
 	var err error
 
 	// for shell.
-	var api, port string
+	var api, backend, port string
 	flag.StringVar(&api, "a", "", "The api tcp://host:port, optional.")
+	flag.StringVar(&api, "b", "", "The backend server tcp://host:port, optional.")
 	flag.StringVar(&port, "l", "", "The listen tcp://host:port, optional.")
 
 	confFile := oo.ParseArgv("../conf/rtmplb.json", kernel.Version(), signature)
-	fmt.Println("RTMPLB is the load-balance for rtmp streaming, config is", confFile)
+	fmt.Println("RTMPLB is the load-balance for RTMP streaming, config is", confFile)
 
 	conf := &RtmpLbConfig{}
 	if err = conf.Loads(confFile); err != nil {
@@ -277,11 +282,14 @@ func main() {
 	defer conf.Close()
 
 	// override by shell.
-	if len(api) > 0 {
+	if api != "" {
 		conf.Api = api
 	}
-	if len(port) > 0 {
+	if port != "" {
 		conf.Rtmp.Listen = port
+	}
+	if backend != "" {
+		conf.Rtmp.Backend = backend
 	}
 
 	ctx := &kernel.Context{}
@@ -304,13 +312,16 @@ func main() {
 	}
 
 	var apiListener net.Listener
-	addrs := strings.Split(conf.Api, "://")
-	apiNetwork, apiAddr := addrs[0], addrs[1]
-	if apiListener, err = net.Listen(apiNetwork, apiAddr); err != nil {
-		ol.E(ctx, "http listen failed, err is", err)
-		return
+	var apiNetwork, apiAddr string
+	if conf.Api != "" {
+		addrs := strings.Split(conf.Api, "://")
+		apiNetwork, apiAddr = addrs[0], addrs[1]
+		if apiListener, err = net.Listen(apiNetwork, apiAddr); err != nil {
+			ol.E(ctx, "http listen failed, err is", err)
+			return
+		}
+		defer apiListener.Close()
 	}
-	defer apiListener.Close()
 
 	proxy := NewProxy(conf)
 	oh.Server = signature
@@ -324,8 +335,8 @@ func main() {
 
 	// rtmp connections
 	wg.ForkGoroutine(func() {
-		ol.E(ctx, "rtmp accepter ready")
-		defer ol.E(ctx, "rtmp accepter ok")
+		ol.T(ctx, "rtmp accepter ready")
+		defer ol.T(ctx, "rtmp accepter ok")
 
 		defer func() {
 			listener.Close()
@@ -348,33 +359,35 @@ func main() {
 	})
 
 	// control messages
-	wg.ForkGoroutine(func() {
-		ol.E(ctx, "http handler ready")
-		defer ol.E(ctx, "http handler ok")
+	if apiListener != nil {
+		wg.ForkGoroutine(func() {
+			ol.T(ctx, "http handler ready")
+			defer ol.T(ctx, "http handler ok")
 
-		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
-		http.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
-			oh.WriteVersion(w, r, kernel.Version())
-		})
+			ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
+			http.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
+				oh.WriteVersion(w, r, kernel.Version())
+			})
 
-		ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?rtmp=19350", apiAddr))
-		http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
-			ctx := &kernel.Context{}
-			if msg, err := proxy.serveChangeBackendApi(ctx, r); err != Success {
-				oh.WriteCplxError(ctx, w, r, err, msg)
+			ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?rtmp=19350", apiAddr))
+			http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
+				ctx := &kernel.Context{}
+				if msg, err := proxy.serveChangeBackendApi(ctx, r); err != Success {
+					oh.WriteCplxError(ctx, w, r, err, msg)
+					return
+				}
+				oh.WriteData(ctx, w, r, nil)
+			})
+
+			server := &http.Server{Addr: apiAddr, Handler: nil}
+			if err = server.Serve(apiListener); err != nil {
+				ol.E(ctx, "http serve failed, err is", err)
 				return
 			}
-			oh.WriteData(ctx, w, r, nil)
+		}, func() {
+			apiListener.Close()
 		})
-
-		server := &http.Server{Addr: apiAddr, Handler: nil}
-		if err = server.Serve(apiListener); err != nil {
-			ol.E(ctx, "http serve failed, err is", err)
-			return
-		}
-	}, func() {
-		apiListener.Close()
-	})
+	}
 
 	// wait util quit.
 	wg.Wait()
