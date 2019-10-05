@@ -36,7 +36,6 @@ import (
 	"flag"
 	"fmt"
 	oh "github.com/ossrs/go-oryx-lib/http"
-	oj "github.com/ossrs/go-oryx-lib/json"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
 	"io"
@@ -98,7 +97,7 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 		}
 		defer f.Close()
 
-		r := json.NewDecoder(oj.NewJsonPlusReader(f))
+		r := json.NewDecoder(f)
 		if err = r.Decode(v); err != nil {
 			ol.E(nil, "Decode config failed, err is", err)
 			return
