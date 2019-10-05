@@ -11,13 +11,9 @@
         "listen": "tcp://:1935",
         // The backend port to proxy to.
         // for example, tcp://:19350, tcp://0.0.0.0:19350, tcp4://:19350, tcp6://:19350
-        "backend": "tcp://:19350",
+        "backend": ["tcp://:19350"],
         // Whether use rtmp proxy protocol to connect to backend.
         // @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
         "proxy": false
-    },
-    // The control api listen tcp4 or tcp6 addrs, used to change the backend, for example,
-    // tcp://127.0.0.1:2037, tcp4://127.0.0.1:2037
-    // @remark empty to disable api.
-    "api": "tcp://127.0.0.1:2037"
+    }
 }

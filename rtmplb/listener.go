@@ -25,7 +25,7 @@ SOFTWARE.
 /*
  This is the listeners for oryx.
 */
-package kernel
+package main
 
 import (
 	"fmt"
@@ -34,6 +34,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"context"
 )
 
 // The tcp listeners which support reload.
@@ -47,6 +48,7 @@ type TcpListeners struct {
 	// Used to ensure all gorutine quit.
 	wait *sync.WaitGroup
 	// Used to notify all goroutines to quit.
+	// TODO: FIXME: Use context.Context instead.
 	closing chan bool
 	closed  bool
 }
@@ -78,7 +80,7 @@ func NewTcpListeners(addrs []string) (v *TcpListeners, err error) {
 	return
 }
 
-func (v *TcpListeners) ListenTCP() (err error) {
+func (v *TcpListeners) ListenTCP(ctx context.Context) (err error) {
 	for _, addr := range v.addrs {
 		var network, laddr string
 		if vs := strings.Split(addr, "://"); true {
@@ -96,17 +98,15 @@ func (v *TcpListeners) ListenTCP() (err error) {
 	}
 
 	for i, l := range v.listeners {
-		go v.acceptFrom(l, v.addrs[i])
+		go v.acceptFrom(ctx, l, v.addrs[i])
 	}
 
 	return
 }
 
-func (v *TcpListeners) acceptFrom(l *net.TCPListener, addr string) {
+func (v *TcpListeners) acceptFrom(ctx context.Context, l *net.TCPListener, addr string) {
 	v.wait.Add(1)
 	defer v.wait.Done()
-
-	ctx := &Context{}
 
 	for {
 		if err := v.doAcceptFrom(ctx, l); err != nil {
@@ -120,7 +120,7 @@ func (v *TcpListeners) acceptFrom(l *net.TCPListener, addr string) {
 	return
 }
 
-func (v *TcpListeners) doAcceptFrom(ctx ol.Context, l *net.TCPListener) (err error) {
+func (v *TcpListeners) doAcceptFrom(ctx context.Context, l *net.TCPListener) (err error) {
 	defer func() {
 		if err != nil && err != io.EOF {
 			select {

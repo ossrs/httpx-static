@@ -23,30 +23,19 @@ SOFTWARE.
 */
 
 /*
- This is the context for logger.
+ This is the version for oryx.
 */
-package kernel
+package main
 
-import "sync"
+import "fmt"
 
-// The global context id, grow from this one.
-var globalContextId int = 100
+const (
+	Major    = 0
+	Minor    = 0
+	Revision = 3
+)
 
-// The lock to generate the cid.
-var globalCidGeneratorLock *sync.Mutex = &sync.Mutex{}
-
-// The context for logger.
-type Context struct {
-	cid int
-}
-
-func (v *Context) Cid() int {
-	if v.cid == 0 {
-		globalCidGeneratorLock.Lock()
-		defer globalCidGeneratorLock.Unlock()
-
-		v.cid = globalContextId
-		globalContextId++
-	}
-	return v.cid
+// The version format in Major.Minor.Revision
+func Version() string {
+	return fmt.Sprintf("%v.%v.%v", Major, Minor, Revision)
 }

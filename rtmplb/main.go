@@ -29,42 +29,41 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	oh "github.com/ossrs/go-oryx-lib/http"
 	oj "github.com/ossrs/go-oryx-lib/json"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	oo "github.com/ossrs/go-oryx-lib/options"
-	"github.com/ossrs/go-oryx/kernel"
 	"io"
 	"net"
-	"net/http"
 	"os"
-	"strconv"
+	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
-	"errors"
 )
 
-var signature = fmt.Sprintf("RTMPLB/%v", kernel.Version())
+var signature = fmt.Sprintf("RTMPLB/%v", Version())
 
 // The config object for rtmplb module.
 type RtmpLbConfig struct {
-	kernel.Config
-	Api  string `json:"api"`
+	Config
 	Rtmp struct {
-		Listen       string `json:"listen"`
-		Backend      string `json:"backend"`
-		UseRtmpProxy bool   `json:"proxy"`
+		Listen       string   `json:"listen"`
+		Backend      []string `json:"backend"`
+		UseRtmpProxy bool     `json:"proxy"`
 	} `json:"rtmp"`
 }
 
 func (v *RtmpLbConfig) String() string {
-	return fmt.Sprintf("%v, api=%v, rtmp(listen=%v,backend=%v,proxy=%v)",
-		&v.Config, v.Api, v.Rtmp.Listen, v.Rtmp.Backend, v.Rtmp.UseRtmpProxy)
+	return fmt.Sprintf("%v, listen=%v, backend=%v, proxy=%v",
+		&v.Config, v.Rtmp.Listen, v.Rtmp.Backend, v.Rtmp.UseRtmpProxy)
 }
 
 func (v *RtmpLbConfig) Loads(c string) (err error) {
@@ -86,12 +85,6 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 		return
 	}
 
-	if v.Api != "" {
-		if nn := strings.Count(v.Api, "://"); nn != 1 {
-			return errors.New("Api should contains network")
-		}
-	}
-
 	if len(v.Rtmp.Listen) == 0 {
 		return fmt.Errorf("No rtmp listens")
 	}
@@ -99,14 +92,22 @@ func (v *RtmpLbConfig) Loads(c string) (err error) {
 		return fmt.Errorf("Listen %v contains %v network", v.Rtmp.Listen, nn)
 	}
 
+	if len(v.Rtmp.Backend) == 0 {
+		return errors.New("no backend")
+	}
+	for index, backend := range v.Rtmp.Backend {
+		if nn := strings.Count(backend, "://"); nn != 1 {
+			return fmt.Errorf("Backend %v %v contains %v network", index, backend, nn)
+		}
+	}
+
 	return
 }
 
 // The tcp porxy for rtmp backend.
 type proxy struct {
-	conf       *RtmpLbConfig
-	ports      []int
-	activePort int
+	conf    *RtmpLbConfig
+	lbIndex uint
 }
 
 func NewProxy(conf *RtmpLbConfig) *proxy {
@@ -120,9 +121,7 @@ const (
 	RetryMax = 3
 )
 
-func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
-	ctx := &kernel.Context{}
-
+func (v *proxy) serveRtmp(ctx context.Context, client *net.TCPConn) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			if err == nil {
@@ -144,10 +143,10 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			}
 		}()
 
-		proto := "tcp"
-		addr := fmt.Sprintf("127.0.0.1:%v", v.activePort)
-		if v.activePort <= 0 {
-			addrs := strings.Split(v.conf.Rtmp.Backend, "://")
+		var proto, addr string
+		if backend := v.conf.Rtmp.Backend[v.lbIndex]; backend != "" {
+			v.lbIndex = (v.lbIndex + 1) % uint(len(v.conf.Rtmp.Backend))
+			addrs := strings.Split(backend, "://")
 			proto, addr = addrs[0], addrs[1]
 		}
 
@@ -174,22 +173,28 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 		client.RemoteAddr(), backend.RemoteAddr(), v.conf.Rtmp.UseRtmpProxy))
 
 	// proxy c to conn
+	var wg sync.WaitGroup
+
 	var nr, nw int64
-	wg := kernel.NewWorkerGroup()
 	defer func() {
-		wg.Close()
 		ol.T(ctx, fmt.Sprintf("proxy client ok, read=%v, write=%v", nr, nw))
 	}()
 
-	wg.ForkGoroutine(func() {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer client.Close()
 		if nw, err = io.Copy(client, backend); err != nil {
 			ol.E(ctx, fmt.Sprintf("proxy rtmp<=backend failed, nn=%v, err is %v", nw, err))
 			return
 		}
-	}, func() {
-		client.Close()
-	})
-	wg.ForkGoroutine(func() {
+	}()
+
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		defer client.Close()
+
 		// write proxy header.
 		// @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
 		if v.conf.Rtmp.UseRtmpProxy {
@@ -215,9 +220,12 @@ func (v *proxy) serveRtmp(client *net.TCPConn) (err error) {
 			ol.E(ctx, fmt.Sprintf("proxy rtmp=>backend failed, nn=%v, err is %v", nr, err))
 			return
 		}
-	}, func() {
+	}()
+
+	go func() {
+		<-ctx.Done()
 		client.Close()
-	})
+	}()
 
 	wg.Wait()
 	return
@@ -229,48 +237,15 @@ const (
 	ApiProxyQuery oh.SystemError = 100 + iota
 )
 
-func (v *proxy) serveChangeBackendApi(ctx ol.Context, r *http.Request) (string, oh.SystemError) {
-	var err error
-	q := r.URL.Query()
-
-	var rtmp string
-	if rtmp = q.Get("rtmp"); len(rtmp) == 0 {
-		return fmt.Sprintf("require query rtmp port"), ApiProxyQuery
-	}
-
-	var port int
-	if port, err = strconv.Atoi(rtmp); err != nil {
-		return fmt.Sprintf("rtmp port is not int, err is %v", err), ApiProxyQuery
-	}
-
-	hasProxyed := func(port int) bool {
-		for _, p := range v.ports {
-			if p == port {
-				return true
-			}
-		}
-		return false
-	}
-
-	ol.T(ctx, fmt.Sprintf("proxy rtmp to %v, previous=%v, ports=%v", port, v.activePort, v.ports))
-	if !hasProxyed(port) {
-		v.ports = append(v.ports, port)
-	}
-	v.activePort = port
-
-	return "", Success
-}
-
 func main() {
 	var err error
 
 	// for shell.
-	var api, backend, port string
-	flag.StringVar(&api, "a", "", "The api tcp://host:port, optional.")
-	flag.StringVar(&api, "b", "", "The backend server tcp://host:port, optional.")
+	var backend, port string
+	flag.StringVar(&backend, "b", "", "The backend server tcp://host:port, optional.")
 	flag.StringVar(&port, "l", "", "The listen tcp://host:port, optional.")
 
-	confFile := oo.ParseArgv("../conf/rtmplb.json", kernel.Version(), signature)
+	confFile := oo.ParseArgv("../conf/rtmplb.json", Version(), signature)
 	fmt.Println("RTMPLB is the load-balance for RTMP streaming, config is", confFile)
 
 	conf := &RtmpLbConfig{}
@@ -281,114 +256,62 @@ func main() {
 	defer conf.Close()
 
 	// override by shell.
-	if api != "" {
-		conf.Api = api
-	}
 	if port != "" {
 		conf.Rtmp.Listen = port
 	}
 	if backend != "" {
-		conf.Rtmp.Backend = backend
+		conf.Rtmp.Backend = append(conf.Rtmp.Backend, backend)
 	}
 
-	ctx := &kernel.Context{}
+	ctx, cancel := context.WithCancel(context.Background())
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
 
-	// rtmplb is a asprocess of shell.
-	asq := make(chan bool, 1)
-	oa.WatchNoExit(ctx, oa.Interval, asq)
-
-	var listener *kernel.TcpListeners
-	if listener, err = kernel.NewTcpListeners([]string{conf.Rtmp.Listen}); err != nil {
+	var listener *TcpListeners
+	if listener, err = NewTcpListeners([]string{conf.Rtmp.Listen}); err != nil {
 		ol.E(ctx, "create listener failed, err is", err)
 		return
 	}
 	defer listener.Close()
 
-	if err = listener.ListenTCP(); err != nil {
+	if err = listener.ListenTCP(ctx); err != nil {
 		ol.E(ctx, "listen tcp failed, err is", err)
 		return
-	}
-
-	var apiListener net.Listener
-	var apiNetwork, apiAddr string
-	if conf.Api != "" {
-		addrs := strings.Split(conf.Api, "://")
-		apiNetwork, apiAddr = addrs[0], addrs[1]
-		if apiListener, err = net.Listen(apiNetwork, apiAddr); err != nil {
-			ol.E(ctx, "http listen failed, err is", err)
-			return
-		}
-		defer apiListener.Close()
 	}
 
 	proxy := NewProxy(conf)
 	oh.Server = signature
 
-	wg := kernel.NewWorkerGroup()
-	defer ol.T(ctx, "serve ok")
-	defer wg.Close()
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
 
-	wg.QuitForChan(asq)
-	wg.QuitForSignals(ctx, syscall.SIGINT, syscall.SIGTERM, syscall.SIGKILL)
+		<-c
+		cancel()
+	}()
+
+	defer ol.T(ctx, "serve ok")
 
 	// rtmp connections
-	wg.ForkGoroutine(func() {
-		ol.T(ctx, "rtmp accepter ready")
-		defer ol.T(ctx, "rtmp accepter ok")
-
-		defer func() {
-			listener.Close()
-		}()
-
-		for {
-			var c *net.TCPConn
-			if c, err = listener.AcceptTCP(); err != nil {
-				if err != io.EOF {
-					ol.E(ctx, "accept failed, err is", err)
-				}
-				break
-			}
-
-			//ol.T(ctx, "got rtmp client", c.RemoteAddr())
-			go proxy.serveRtmp(c)
-		}
-	}, func() {
+	go func() {
+		<-ctx.Done()
 		listener.Close()
-	})
+	}()
 
-	// control messages
-	if apiListener != nil {
-		wg.ForkGoroutine(func() {
-			ol.T(ctx, "http handler ready")
-			defer ol.T(ctx, "http handler ok")
+	ol.T(ctx, "rtmp accepter ready")
+	defer ol.T(ctx, "rtmp accepter ok")
 
-			ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/version", apiAddr))
-			http.HandleFunc("/api/v1/version", func(w http.ResponseWriter, r *http.Request) {
-				oh.WriteVersion(w, r, kernel.Version())
-			})
-
-			ol.T(ctx, fmt.Sprintf("handle http://%v/api/v1/proxy?rtmp=19350", apiAddr))
-			http.HandleFunc("/api/v1/proxy", func(w http.ResponseWriter, r *http.Request) {
-				ctx := &kernel.Context{}
-				if msg, err := proxy.serveChangeBackendApi(ctx, r); err != Success {
-					oh.WriteCplxError(ctx, w, r, err, msg)
-					return
-				}
-				oh.WriteData(ctx, w, r, nil)
-			})
-
-			server := &http.Server{Addr: apiAddr, Handler: nil}
-			if err = server.Serve(apiListener); err != nil {
-				ol.E(ctx, "http serve failed, err is", err)
-				return
+	for {
+		var c *net.TCPConn
+		if c, err = listener.AcceptTCP(); err != nil {
+			if err != io.EOF {
+				ol.E(ctx, "accept failed, err is", err)
 			}
-		}, func() {
-			apiListener.Close()
-		})
+			break
+		}
+
+		//ol.T(ctx, "got rtmp client", c.RemoteAddr())
+		go proxy.serveRtmp(ctx, c)
 	}
 
-	// wait util quit.
-	wg.Wait()
 	return
 }

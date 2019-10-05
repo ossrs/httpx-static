@@ -25,7 +25,7 @@ SOFTWARE.
 /*
  This is the basic config for oryx.
 */
-package kernel
+package main
 
 import (
 	"fmt"
