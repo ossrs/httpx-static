@@ -43,5 +43,5 @@ func Version() string {
 }
 
 func Signature() string {
-	return "Go-Oryx"
+	return "GoOryx"
 }

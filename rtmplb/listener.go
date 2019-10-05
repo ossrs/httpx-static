@@ -28,13 +28,13 @@ SOFTWARE.
 package main
 
 import (
+	"context"
 	"fmt"
 	ol "github.com/ossrs/go-oryx-lib/logger"
 	"io"
 	"net"
 	"strings"
 	"sync"
-	"context"
 )
 
 // The tcp listeners which support reload.

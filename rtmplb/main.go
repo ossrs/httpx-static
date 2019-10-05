@@ -49,55 +49,97 @@ import (
 	"time"
 )
 
-var signature = fmt.Sprintf("RTMPLB/%v", Version())
+const (
+	// when backend connect error, retry interval.
+	RetryBackend = time.Duration(3) * time.Second
+	// when backend connect error, retry max count.
+	RetryMax = 3
+)
+
+var signature = fmt.Sprintf("GoOryx/%v", Version())
 
 // The config object for rtmplb module.
 type RtmpLbConfig struct {
-	Config
+	Logger struct {
+		Tank     string `json:"tank"`
+		FilePath string `json:"file"`
+	} `json:"logger"`
 	Rtmp struct {
-		Listen       string   `json:"listen"`
-		Backend      []string `json:"backend"`
-		UseRtmpProxy bool     `json:"proxy"`
+		Listen  []string `json:"listen"`
+		Backend []string `json:"backend"`
+		Proxy   bool     `json:"proxy"`
 	} `json:"rtmp"`
 }
 
+// The interface io.Closer
+// Cleanup the resource open by config, for example, the logger file.
+func (v *RtmpLbConfig) Close() error {
+	return ol.Close()
+}
+
 func (v *RtmpLbConfig) String() string {
-	return fmt.Sprintf("%v, listen=%v, backend=%v, proxy=%v",
-		&v.Config, v.Rtmp.Listen, v.Rtmp.Backend, v.Rtmp.UseRtmpProxy)
+	var logger string
+	if v.Logger.Tank == "console" {
+		logger = v.Logger.Tank
+	} else {
+		logger = fmt.Sprintf("tank=%v,file=%v", v.Logger.Tank, v.Logger.FilePath)
+	}
+	logger = fmt.Sprintf("logger(tank=%v)", logger)
+
+	return fmt.Sprintf("%v, listen=%v, backend=%v, proxy=%v", logger, v.Rtmp.Listen, v.Rtmp.Backend, v.Rtmp.Proxy)
 }
 
 func (v *RtmpLbConfig) Loads(c string) (err error) {
-	var f *os.File
-	if f, err = os.Open(c); err != nil {
-		ol.E(nil, "Open config failed, err is", err)
-		return
-	}
-	defer f.Close()
+	func() {
+		var f *os.File
+		if f, err = os.Open(c); err != nil {
+			ol.E(nil, "Open config failed, err is", err)
+			return
+		}
+		defer f.Close()
 
-	r := json.NewDecoder(oj.NewJsonPlusReader(f))
-	if err = r.Decode(v); err != nil {
-		ol.E(nil, "Decode config failed, err is", err)
-		return
+		r := json.NewDecoder(oj.NewJsonPlusReader(f))
+		if err = r.Decode(v); err != nil {
+			ol.E(nil, "Decode config failed, err is", err)
+			return
+		}
+	}()
+
+	if true {
+		if tank := v.Logger.Tank; tank != "file" && tank != "console" {
+			return fmt.Errorf("Invalid logger tank, must be console/file, actual is %v", tank)
+		}
+
+		if v.Logger.Tank != "file" {
+			return
+		}
+
+		var f *os.File
+		if f, err = os.OpenFile(v.Logger.FilePath, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0644); err != nil {
+			return fmt.Errorf("Open logger %v failed, err is", v.Logger.FilePath, err)
+		}
+
+		_ = ol.Close()
+		ol.Switch(f)
 	}
 
-	if err = v.Config.OpenLogger(); err != nil {
-		ol.E(nil, "Open logger failed, err is", err)
-		return
-	}
+	if true {
+		if len(v.Rtmp.Listen) == 0 {
+			return errors.New("No rtmp listens")
+		}
+		for index, listen := range v.Rtmp.Listen {
+			if nn := strings.Count(listen, "://"); nn != 1 {
+				return fmt.Errorf("Listen %v %v contains %v network", index, listen, nn)
+			}
+		}
 
-	if len(v.Rtmp.Listen) == 0 {
-		return fmt.Errorf("No rtmp listens")
-	}
-	if nn := strings.Count(v.Rtmp.Listen, "://"); nn != 1 {
-		return fmt.Errorf("Listen %v contains %v network", v.Rtmp.Listen, nn)
-	}
-
-	if len(v.Rtmp.Backend) == 0 {
-		return errors.New("no backend")
-	}
-	for index, backend := range v.Rtmp.Backend {
-		if nn := strings.Count(backend, "://"); nn != 1 {
-			return fmt.Errorf("Backend %v %v contains %v network", index, backend, nn)
+		if len(v.Rtmp.Backend) == 0 {
+			return errors.New("no backend")
+		}
+		for index, backend := range v.Rtmp.Backend {
+			if nn := strings.Count(backend, "://"); nn != 1 {
+				return fmt.Errorf("Backend %v %v contains %v network", index, backend, nn)
+			}
 		}
 	}
 
@@ -113,13 +155,6 @@ type proxy struct {
 func NewProxy(conf *RtmpLbConfig) *proxy {
 	return &proxy{conf: conf}
 }
-
-const (
-	// when backend connect error, retry interval.
-	RetryBackend = time.Duration(3) * time.Second
-	// when backend connect error, retry max count.
-	RetryMax = 3
-)
 
 func (v *proxy) serveRtmp(ctx context.Context, client *net.TCPConn) (err error) {
 	defer func() {
@@ -170,7 +205,7 @@ func (v *proxy) serveRtmp(ctx context.Context, client *net.TCPConn) (err error) 
 	}
 	defer backend.Close()
 	ol.T(ctx, fmt.Sprintf("proxy %v to %v, useProxyProtocol=%v",
-		client.RemoteAddr(), backend.RemoteAddr(), v.conf.Rtmp.UseRtmpProxy))
+		client.RemoteAddr(), backend.RemoteAddr(), v.conf.Rtmp.Proxy))
 
 	// proxy c to conn
 	var wg sync.WaitGroup
@@ -197,7 +232,7 @@ func (v *proxy) serveRtmp(ctx context.Context, client *net.TCPConn) (err error) 
 
 		// write proxy header.
 		// @see https://github.com/ossrs/go-oryx/wiki/RtmpProxy
-		if v.conf.Rtmp.UseRtmpProxy {
+		if v.conf.Rtmp.Proxy {
 			var ip []byte
 			if addr, ok := client.RemoteAddr().(*net.TCPAddr); ok {
 				// TODO: support ipv6 client.
@@ -231,25 +266,17 @@ func (v *proxy) serveRtmp(ctx context.Context, client *net.TCPConn) (err error) 
 	return
 }
 
-const (
-	Success oh.SystemError = 0
-	// error when api proxy parse parameters.
-	ApiProxyQuery oh.SystemError = 100 + iota
-)
-
 func main() {
-	var err error
-
 	// for shell.
 	var backend, port string
 	flag.StringVar(&backend, "b", "", "The backend server tcp://host:port, optional.")
 	flag.StringVar(&port, "l", "", "The listen tcp://host:port, optional.")
 
-	confFile := oo.ParseArgv("../conf/rtmplb.json", Version(), signature)
+	confFile := oo.ParseArgv("rtmplb.json", Version(), signature)
 	fmt.Println("RTMPLB is the load-balance for RTMP streaming, config is", confFile)
 
 	conf := &RtmpLbConfig{}
-	if err = conf.Loads(confFile); err != nil {
+	if err := conf.Loads(confFile); err != nil {
 		ol.E(nil, "Loads config failed, err is", err)
 		return
 	}
@@ -257,7 +284,7 @@ func main() {
 
 	// override by shell.
 	if port != "" {
-		conf.Rtmp.Listen = port
+		conf.Rtmp.Listen = append(conf.Rtmp.Listen, port)
 	}
 	if backend != "" {
 		conf.Rtmp.Backend = append(conf.Rtmp.Backend, backend)
@@ -266,8 +293,9 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	ol.T(ctx, fmt.Sprintf("Config ok, %v", conf))
 
+	var err error
 	var listener *TcpListeners
-	if listener, err = NewTcpListeners([]string{conf.Rtmp.Listen}); err != nil {
+	if listener, err = NewTcpListeners(conf.Rtmp.Listen); err != nil {
 		ol.E(ctx, "create listener failed, err is", err)
 		return
 	}
