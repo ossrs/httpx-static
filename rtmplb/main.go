@@ -33,7 +33,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	oa "github.com/ossrs/go-oryx-lib/asprocess"
 	oh "github.com/ossrs/go-oryx-lib/http"
 	oj "github.com/ossrs/go-oryx-lib/json"
 	ol "github.com/ossrs/go-oryx-lib/logger"
