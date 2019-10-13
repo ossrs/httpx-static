@@ -43,6 +43,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -62,9 +63,9 @@ func run(ctx context.Context) error {
 	oh.Server = fmt.Sprintf("%v/%v", Signature(), Version())
 	fmt.Println(oh.Server, "HTTP/HTTPS static server with API proxy.")
 
-	var httpPort int
-	flag.IntVar(&httpPort, "t", 0, "http listen")
-	flag.IntVar(&httpPort, "http", 0, "http listen at. 0 to disable http.")
+	var httpPorts Strings
+	flag.Var(&httpPorts, "t", "http listen")
+	flag.Var(&httpPorts, "http", "http listen at. 0 to disable http.")
 
 	var httpsPort int
 	flag.IntVar(&httpsPort, "s", 0, "https listen")
@@ -108,7 +109,7 @@ func run(ctx context.Context) error {
 	if useLetsEncrypt && (httpsPort != 0 && httpsPort != 443) {
 		return oe.Errorf("for letsencrypt, https=%v must be 0(disabled) or 443(enabled)", httpsPort)
 	}
-	if httpPort == 0 && httpsPort == 0 {
+	if len(httpPorts) == 0 && httpsPort == 0 {
 		fmt.Println(fmt.Sprintf("Usage: %v -t http -s https -d domains -r root -e cache -l lets -k ssk -c ssc -p proxy", os.Args[0]))
 		flag.PrintDefaults()
 		fmt.Println(fmt.Sprintf("For example:"))
@@ -252,8 +253,8 @@ func run(ctx context.Context) error {
 	})
 
 	var protos []string
-	if httpPort != 0 {
-		protos = append(protos, fmt.Sprintf("http(:%v)", httpPort))
+	if len(httpPorts) > 0 {
+		protos = append(protos, fmt.Sprintf("http(:%v)", strings.Join(httpPorts, ",")))
 	}
 	if httpsPort != 0 {
 		s := httpsDomains
@@ -313,27 +314,35 @@ func run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	go func() {
-		defer wg.Done()
-
-		ctx = ol.WithContext(ctx)
-		if httpPort == 0 {
-			ol.W(ctx, "http server disabled")
-			return
+	for _, v := range httpPorts {
+		httpPort, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return oe.Wrapf(err, "parse %v", v)
 		}
 
-		defer cancel()
-		hs = &http.Server{Addr: fmt.Sprintf(":%v", httpPort), Handler: nil}
-		ol.Tf(ctx, "http serve at %v", httpPort)
+		wg.Add(1)
+		go func(httpPort int) {
+			defer wg.Done()
 
-		if err := hs.ListenAndServe(); err != nil {
-			ol.Ef(ctx, "http serve err %+v", err)
-			return
-		}
-		ol.T("http server ok")
-	}()
+			ctx = ol.WithContext(ctx)
+			if httpPort == 0 {
+				ol.W(ctx, "http server disabled")
+				return
+			}
+
+			defer cancel()
+			hs = &http.Server{Addr: fmt.Sprintf(":%v", httpPort), Handler: nil}
+			ol.Tf(ctx, "http serve at %v", httpPort)
+
+			if err := hs.ListenAndServe(); err != nil {
+				ol.Ef(ctx, "http serve err %+v", err)
+				return
+			}
+			ol.T("http server ok")
+		}(int(httpPort))
+	}
+
 	wg.Add(1)
-
 	go func() {
 		defer wg.Done()
 
@@ -383,7 +392,6 @@ func run(ctx context.Context) error {
 		}
 		ol.T("https serve ok")
 	}()
-	wg.Add(1)
 
 	select {
 	case <-ctx.Done():
