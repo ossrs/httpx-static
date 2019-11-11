@@ -59,6 +59,24 @@ func (v *Strings) Set(value string) error {
 	return nil
 }
 
+func shouldProxyURL(srcPath, proxyPath string) bool {
+	if !strings.HasSuffix(srcPath, "/") {
+		// /api to /api/
+		// /api.js to /api.js/
+		// /api/100 to /api/100/
+		srcPath += "/"
+	}
+
+	if !strings.HasSuffix(proxyPath, "/") {
+		// /api/ to /api/
+		// to match /api/ or /api/100
+		// and not match /api.js/
+		proxyPath += "/"
+	}
+
+	return strings.HasPrefix(srcPath, proxyPath)
+}
+
 func run(ctx context.Context) error {
 	oh.Server = fmt.Sprintf("%v/%v", Signature(), Version())
 	fmt.Println(oh.Server, "HTTP/HTTPS static server with API proxy.")
@@ -207,20 +225,7 @@ func run(ctx context.Context) error {
 		}
 
 		for _, proxyUrl := range proxyUrls {
-			srcPath, proxyPath := r.URL.Path, proxyUrl.Path
-			if !strings.HasSuffix(srcPath, "/") {
-				// /api to /api/
-				// /api.js to /api.js/
-				// /api/100 to /api/100/
-				srcPath += "/"
-			}
-			if !strings.HasSuffix(proxyPath, "/") {
-				// /api/ to /api/
-				// to match /api/ or /api/100
-				// and not match /api.js/
-				proxyPath += "/"
-			}
-			if !strings.HasPrefix(srcPath, proxyPath) {
+			if !shouldProxyURL(r.URL.Path, proxyUrl.Path) {
 				continue
 			}
 
