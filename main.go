@@ -27,7 +27,10 @@ SOFTWARE.
 */
 package main
 
-import "fmt"
+import (
+	"fmt"
+	_ "github.com/ossrs/go-oryx-lib/errors"
+)
 
 func main() {
 	description := `GO-ORYX is next generation media streaming server.
