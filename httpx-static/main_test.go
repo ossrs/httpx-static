@@ -27,9 +27,9 @@ package main
 import "testing"
 
 func TestShouldProxyURL(t *testing.T) {
-	vvs := []struct{
+	vvs := []struct {
 		source string
-		proxy string
+		proxy  string
 		expect bool
 	}{
 		{"talks/v1", "talks/v1", true},
@@ -41,7 +41,7 @@ func TestShouldProxyURL(t *testing.T) {
 		{"talks/v1/iceconfig", "api/v1", false},
 	}
 
-	for _,vv := range vvs {
+	for _, vv := range vvs {
 		if v := shouldProxyURL(vv.source, vv.proxy); v != vv.expect {
 			t.Errorf("source=%v, proxy=%v, expect=%v", vv.source, vv.proxy, vv.expect)
 		}
