@@ -77,6 +77,54 @@ func shouldProxyURL(srcPath, proxyPath string) bool {
 	return strings.HasPrefix(srcPath, proxyPath)
 }
 
+func NewComplexProxy(ctx context.Context, proxyUrl *url.URL, originalRequest *http.Request) http.Handler {
+	proxy := &httputil.ReverseProxy{}
+
+	// Create a proxy which attach a isolate logger.
+	elogger := log.New(os.Stderr, fmt.Sprintf("%v ", originalRequest.RemoteAddr), log.LstdFlags)
+	proxy.ErrorLog = elogger
+
+	proxy.Director = func(r *http.Request) {
+		// about the x-real-schema, we proxy to backend to identify the client schema.
+		if rschema := r.Header.Get("X-Real-Schema"); rschema == "" {
+			if r.TLS == nil {
+				r.Header.Set("X-Real-Schema", "http")
+			} else {
+				r.Header.Set("X-Real-Schema", "https")
+			}
+		}
+
+		// about x-real-ip and x-forwarded-for or
+		// about X-Real-IP and X-Forwarded-For or
+		// https://segmentfault.com/q/1010000002409659
+		// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
+		// @remark http proxy will set the X-Forwarded-For.
+		if rip := r.Header.Get("X-Real-IP"); rip == "" {
+			if rip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+				r.Header.Set("X-Real-IP", rip)
+			}
+		}
+
+		r.URL.Scheme = proxyUrl.Scheme
+		r.URL.Host = proxyUrl.Host
+
+		ra, url := r.RemoteAddr, r.URL.String()
+		rip, ua := r.Header.Get("X-Real-Ip"), r.Header.Get("User-Agent")
+		ol.Tf(ctx, "proxy http %v/%v %v %v %v", rip, ra, r.Method, url, ua)
+	}
+
+	proxy.ModifyResponse = func(w *http.Response) error {
+		// we already added this header, it will cause chrome failed when duplicated.
+		if w.Header.Get("Access-Control-Allow-Origin") == "*" {
+			w.Header.Del("Access-Control-Allow-Origin")
+		}
+
+		return nil
+	}
+
+	return proxy
+}
+
 func run(ctx context.Context) error {
 	oh.Server = fmt.Sprintf("%v/%v", Signature(), Version())
 	fmt.Println(oh.Server, "HTTP/HTTPS static server with API proxy.")
@@ -147,7 +195,7 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf("	-d, -domains string"))
 		fmt.Println(fmt.Sprintf("			Set the validate HTTPS domain. For example: ossrs.net,www.ossrs.net"))
 		fmt.Println(fmt.Sprintf("Options for HTTPS(file-based cert):"))
-		fmt.Println(fmt.Sprintf("	-s, -ssk string"))
+		fmt.Println(fmt.Sprintf("	-k, -ssk string"))
 		fmt.Println(fmt.Sprintf("			The self-sign or validate file-based key file."))
 		fmt.Println(fmt.Sprintf("	-c, -ssc string"))
 		fmt.Println(fmt.Sprintf("			The self-sign or validate file-based cert file."))
@@ -169,7 +217,7 @@ func run(ctx context.Context) error {
 	}
 
 	var proxyUrls []*url.URL
-	proxies := map[string]*httputil.ReverseProxy{}
+	proxies := make(map[string]*url.URL)
 	for _, oproxy := range []string(oproxies) {
 		if oproxy == "" {
 			return oe.Errorf("empty proxy in %v", oproxies)
@@ -180,46 +228,12 @@ func run(ctx context.Context) error {
 			return oe.Wrapf(err, "parse proxy %v", oproxy)
 		}
 
-		proxy := &httputil.ReverseProxy{
-			Director: func(r *http.Request) {
-				// about the x-real-schema, we proxy to backend to identify the client schema.
-				if rschema := r.Header.Get("X-Real-Schema"); rschema == "" {
-					if r.TLS == nil {
-						r.Header.Set("X-Real-Schema", "http")
-					} else {
-						r.Header.Set("X-Real-Schema", "https")
-					}
-				}
-
-				// about x-real-ip and x-forwarded-for or
-				// about X-Real-IP and X-Forwarded-For or
-				// https://segmentfault.com/q/1010000002409659
-				// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
-				// @remark http proxy will set the X-Forwarded-For.
-				if rip := r.Header.Get("X-Real-IP"); rip == "" {
-					if rip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-						r.Header.Set("X-Real-IP", rip)
-					}
-				}
-
-				r.URL.Scheme = proxyUrl.Scheme
-				r.URL.Host = proxyUrl.Host
-			},
-			ModifyResponse: func(w *http.Response) error {
-				// we already added this header, it will cause chrome failed when duplicated.
-				if w.Header.Get("Access-Control-Allow-Origin") == "*" {
-					w.Header.Del("Access-Control-Allow-Origin")
-				}
-				return nil
-			},
-		}
-
 		if _, ok := proxies[proxyUrl.Path]; ok {
 			return oe.Errorf("proxy %v duplicated", proxyUrl.Path)
 		}
 
 		proxyUrls = append(proxyUrls, proxyUrl)
-		proxies[proxyUrl.Path] = proxy
+		proxies[proxyUrl.Path] = proxyUrl
 		ol.Tf(ctx, "Proxy %v to %v", proxyUrl.Path, oproxy)
 	}
 
@@ -241,6 +255,11 @@ func run(ctx context.Context) error {
 			w.Header().Set("Access-Control-Allow-Headers", "origin,range,accept-encoding,referer,Cache-Control,X-Proxy-Authorization,X-Requested-With,Content-Type")
 		}
 
+		// For matched OPTIONS, directly return without response.
+		if r.Method == "OPTIONS" {
+			return
+		}
+
 		if proxyUrls == nil {
 			if r.URL.Path == "/httpx/v1/versions" {
 				oh.WriteVersion(w, r, Version())
@@ -256,26 +275,8 @@ func run(ctx context.Context) error {
 				continue
 			}
 
-			// For matched OPTIONS, directly return without response.
-			if r.Method == "OPTIONS" {
-				return
-			}
-
 			if proxy, ok := proxies[proxyUrl.Path]; ok {
-				// Create a proxy which attach a isolate logger.
-				elogger := log.New(os.Stderr, fmt.Sprintf("%v ", r.RemoteAddr), log.LstdFlags)
-
-				p := &httputil.ReverseProxy{
-					Director: func(r *http.Request) {
-						proxy.Director(r)
-
-						ra, url := r.RemoteAddr, r.URL.String()
-						rip, ua := r.Header.Get("X-Real-Ip"), r.Header.Get("User-Agent")
-						ol.Tf(ctx, "proxy http %v/%v %v %v %v", rip, ra, r.Method, url, ua)
-					},
-					ModifyResponse: proxy.ModifyResponse,
-					ErrorLog:       elogger,
-				}
+				p := NewComplexProxy(ctx, proxy, r)
 				p.ServeHTTP(w, r)
 				return
 			}
