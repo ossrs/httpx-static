@@ -1,4 +1,4 @@
-module github.com/winlinvip/go-oryx
+module github.com/ossrs/go-oryx
 
 go 1.13
 
