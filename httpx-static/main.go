@@ -170,12 +170,7 @@ func run(ctx context.Context) error {
 	flag.Var(&skeys, "skey", "the SSL key for domain")
 	flag.Var(&scerts, "scert", "the SSL cert for domain")
 
-	flag.Parse()
-
-	if useLetsEncrypt && len(httpsPorts) == 0 {
-		return oe.Errorf("for letsencrypt, https=%v must be 0(disabled) or 443(enabled)", httpsPorts)
-	}
-	if len(httpPorts) == 0 && len(httpsPorts) == 0 {
+	flag.Usage = func() {
 		fmt.Println(fmt.Sprintf("Usage: %v -t http -s https -d domains -r root -e cache -l lets -k ssk -c ssc -p proxy", os.Args[0]))
 		fmt.Println(fmt.Sprintf("	"))
 		fmt.Println(fmt.Sprintf("Options:"))
@@ -213,6 +208,14 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf(`	openssl req -new -x509 -key server.key -out server.crt -days 365 -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=me.org"`))
 		fmt.Println(fmt.Sprintf("For example:"))
 		fmt.Println(fmt.Sprintf("	%v -s 9443 -r ./html -sdomain ossrs.net -skey ossrs.net.key -scert ossrs.net.pem", os.Args[0]))
+	}
+	flag.Parse()
+
+	if useLetsEncrypt && len(httpsPorts) == 0 {
+		return oe.Errorf("for letsencrypt, https=%v must be 0(disabled) or 443(enabled)", httpsPorts)
+	}
+	if len(httpPorts) == 0 && len(httpsPorts) == 0 {
+		flag.Usage()
 		os.Exit(-1)
 	}
 
