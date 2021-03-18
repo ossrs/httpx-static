@@ -108,9 +108,8 @@ func NewComplexProxy(ctx context.Context, proxyUrl *url.URL, originalRequest *ht
 		r.URL.Scheme = proxyUrl.Scheme
 		r.URL.Host = proxyUrl.Host
 
-		ra, url := r.RemoteAddr, r.URL.String()
-		rip, ua := r.Header.Get("X-Real-Ip"), r.Header.Get("User-Agent")
-		ol.Tf(ctx, "proxy http %v/%v %v %v %v", rip, ra, r.Method, url, ua)
+		ra, url, rip := r.RemoteAddr, r.URL.String(), r.Header.Get("X-Real-Ip")
+		ol.Tf(ctx, "proxy http rip=%v, addr=%v %v %v with headers %v", rip, ra, r.Method, url, r.Header)
 	}
 
 	proxy.ModifyResponse = func(w *http.Response) error {

@@ -27,7 +27,7 @@ package main
 import "fmt"
 
 func VersionMajor() int {
-	return 0
+	return 1
 }
 
 func VersionMinor() int {
@@ -35,7 +35,7 @@ func VersionMinor() int {
 }
 
 func VersionRevision() int {
-	return 7
+	return 5
 }
 
 func Version() string {
