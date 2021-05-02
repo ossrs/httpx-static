@@ -29,7 +29,7 @@ $GOPATH/bin/httpx-static -https 8443 -root `pwd`/html
 
 Open https://localhost:8443/ in browser.
 
-> Remark: Click `ADVANCED` => `Proceed to localhost (unsafe)`.
+> Remark: Click `ADVANCED` => `Proceed to localhost (unsafe)`, or type `thisisunsafe` in page.
 
 *HTTPS proxy*: Proxy http as https
 
