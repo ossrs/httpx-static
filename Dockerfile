@@ -26,7 +26,7 @@ EXPOSE 80 443
 # SRS binary, config files and srs-console.
 COPY --from=build /usr/local/bin/httpx-static /usr/local/bin/
 COPY --from=build /usr/local/etc/server.* /usr/local/etc/
-COPY --from=build /usr/local/html/* /usr/local/html/
+COPY --from=build /usr/local/html /usr/local/html
 # Default workdir and command.
 WORKDIR /usr/local
 CMD ["./bin/httpx-static", \

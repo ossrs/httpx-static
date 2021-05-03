@@ -44,6 +44,16 @@ $GOPATH/bin/httpx-static -https 8443 -root `pwd`/html -proxy http://ossrs.net:19
 
 Open https://localhost:8443/api/v1/summaries in browser.
 
+## Docker
+
+Run httpx-static in docker:
+
+```bash
+docker run --rm -p 80:80 -p 443:443 registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:v1.0.2
+```
+
+> Note: More images and version is [here](https://cr.console.aliyun.com/repository/cn-hangzhou/ossrs/httpx/images).
+
 ## History
 
 * v0.0.3, 2017-11-03, Support multiple proxy HTTP to HTTPS.
