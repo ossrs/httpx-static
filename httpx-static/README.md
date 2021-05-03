@@ -58,7 +58,7 @@ To proxy to other dockers, in macOS:
 
 ```bash
 CANDIDATE=$(ifconfig en0 inet| grep 'inet '|awk '{print $2}') &&
-docker run --rm -p 80:80 -p 443:443 registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:v1.0.2 \
+docker run --rm -p 80:80 -p 443:443 registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:v1.0.5 \
     ./bin/httpx-static -http 80 -https 443 -ssk ./etc/server.key -ssc ./etc/server.crt \
         -proxy http://$CANDIDATE:8080/
 ```
