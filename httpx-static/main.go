@@ -108,6 +108,12 @@ func NewComplexProxy(ctx context.Context, proxyUrl *url.URL, originalRequest *ht
 		r.URL.Scheme = proxyUrl.Scheme
 		r.URL.Host = proxyUrl.Host
 
+		// Set the Host of client request to the upstream server's, to act as client
+		// directly access the upstream server.
+		if proxyUrl.Query().Get("modifyRequestHost") == "true" {
+			r.Host = proxyUrl.Host
+		}
+
 		ra, url, rip := r.RemoteAddr, r.URL.String(), r.Header.Get("X-Real-Ip")
 		ol.Tf(ctx, "proxy http rip=%v, addr=%v %v %v with headers %v", rip, ra, r.Method, url, r.Header)
 	}
@@ -181,6 +187,7 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf("			The www root path. Supports relative to argv[0]=%v. Default: ./html", path.Dir(os.Args[0])))
 		fmt.Println(fmt.Sprintf("	-p, -proxy string"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc"))
+		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?modifyRequestHost=true"))
 		fmt.Println(fmt.Sprintf("Options for HTTPS(letsencrypt cert):"))
 		fmt.Println(fmt.Sprintf("	-l, -lets=bool"))
 		fmt.Println(fmt.Sprintf("			Whether use letsencrypt CA. Default: false"))
