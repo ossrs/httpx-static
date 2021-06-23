@@ -108,6 +108,12 @@ func NewComplexProxy(ctx context.Context, proxyUrl *url.URL, originalRequest *ht
 		r.URL.Scheme = proxyUrl.Scheme
 		r.URL.Host = proxyUrl.Host
 
+		// The original request.Host requested by the client.
+		// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-Host
+		if r.Header.Get("X-Forwarded-Host") == "" {
+			r.Header.Set("X-Forwarded-Host", r.Host)
+		}
+
 		// Set the Host of client request to the upstream server's, to act as client
 		// directly access the upstream server.
 		if proxyUrl.Query().Get("modifyRequestHost") == "true" {
