@@ -125,8 +125,8 @@ func NewComplexProxy(ctx context.Context, proxyUrl *url.URL, originalRequest *ht
 	}
 
 	proxy.ModifyResponse = func(w *http.Response) error {
-		// we already added this header, it will cause chrome failed when duplicated.
-		if w.Header.Get("Access-Control-Allow-Origin") == "*" {
+		// We already added this header, it will cause chrome failed when duplicated.
+		if w.Header.Get("Access-Control-Allow-Origin") != "" {
 			w.Header.Del("Access-Control-Allow-Origin")
 		}
 
