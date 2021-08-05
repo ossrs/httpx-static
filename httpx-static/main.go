@@ -36,6 +36,7 @@ import (
 	oh "github.com/ossrs/go-oryx-lib/http"
 	"github.com/ossrs/go-oryx-lib/https"
 	ol "github.com/ossrs/go-oryx-lib/logger"
+	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -77,7 +78,47 @@ func shouldProxyURL(srcPath, proxyPath string) bool {
 	return strings.HasPrefix(srcPath, proxyPath)
 }
 
-func NewComplexProxy(ctx context.Context, proxyUrl *url.URL, originalRequest *http.Request) http.Handler {
+func filterByPreHook(ctx context.Context, preHook *url.URL, req *http.Request) error {
+	target := *preHook
+	target.RawQuery = strings.Join([]string{target.RawQuery, req.URL.RawQuery}, "&")
+
+	api := target.String()
+	r, err := http.NewRequestWithContext(ctx, req.Method, api, nil)
+	if err != nil {
+		return err
+	}
+
+	r2, err := http.DefaultClient.Do(r)
+	if err != nil {
+		return err
+	}
+	defer r2.Body.Close()
+
+	if r2.StatusCode != http.StatusOK {
+		return fmt.Errorf("Pre-hook HTTP StatusCode=%v %v", r2.StatusCode, r2.Status)
+	}
+
+	b, err := ioutil.ReadAll(r2.Body)
+	if err != nil {
+		return err
+	}
+	ol.Tf(ctx, "Pre-hook %v url=%v, res=%v", req.Method, api, string(b))
+
+	return nil
+}
+
+func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRequest *http.Request) http.Handler {
+	// Hook before proxy it.
+	if preHook != nil {
+		if err := filterByPreHook(ctx, preHook, originalRequest); err != nil {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ol.Ef(ctx, "Pre-hook err %+v", err)
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			})
+		}
+	}
+
+	// Start proxy it.
 	proxy := &httputil.ReverseProxy{}
 
 	// Create a proxy which attach a isolate logger.
@@ -176,6 +217,9 @@ func run(ctx context.Context) error {
 	flag.Var(&oproxies, "p", "proxy ruler")
 	flag.Var(&oproxies, "proxy", "one or more proxy the matched path to backend, for example, -proxy http://127.0.0.1:8888/api/webrtc")
 
+	var oprehooks Strings
+	flag.Var(&oprehooks, "pre-hook", "the pre-hook ruler, with request")
+
 	var sdomains, skeys, scerts Strings
 	flag.Var(&sdomains, "sdomain", "the SSL hostname")
 	flag.Var(&skeys, "skey", "the SSL key for domain")
@@ -194,6 +238,8 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf("	-p, -proxy string"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?modifyRequestHost=true"))
+		fmt.Println(fmt.Sprintf("	-pre-hook string"))
+		fmt.Println(fmt.Sprintf("			Pre-hook to backend, with request. For example: http://127.0.0.1:8888/api/stat"))
 		fmt.Println(fmt.Sprintf("Options for HTTPS(letsencrypt cert):"))
 		fmt.Println(fmt.Sprintf("	-l, -lets=bool"))
 		fmt.Println(fmt.Sprintf("			Whether use letsencrypt CA. Default: false"))
@@ -252,6 +298,27 @@ func run(ctx context.Context) error {
 		ol.Tf(ctx, "Proxy %v to %v", proxyUrl.Path, oproxy)
 	}
 
+	var preHookUrls []*url.URL
+	preHooks := make(map[string]*url.URL)
+	for _, oprehook := range []string(oprehooks) {
+		if oprehook == "" {
+			return oe.Errorf("empty pre-hook in %v", oprehooks)
+		}
+
+		preHookUrl, err := url.Parse(oprehook)
+		if err != nil {
+			return oe.Wrapf(err, "parse pre-hook %v", oprehook)
+		}
+
+		if _, ok := preHooks[preHookUrl.Path]; ok {
+			return oe.Errorf("pre-hook %v duplicated", preHookUrl.Path)
+		}
+
+		preHookUrls = append(preHookUrls, preHookUrl)
+		preHooks[preHookUrl.Path] = preHookUrl
+		ol.Tf(ctx, "pre-hook %v to %v", preHookUrl.Path, oprehook)
+	}
+
 	if !path.IsAbs(cacheFile) && path.IsAbs(os.Args[0]) {
 		cacheFile = path.Join(path.Dir(os.Args[0]), cacheFile)
 	}
@@ -285,13 +352,26 @@ func run(ctx context.Context) error {
 			return
 		}
 
+		// Find pre-hook to serve with proxy.
+		var preHook *url.URL
+		for _, preHookUrl := range preHookUrls {
+			if !shouldProxyURL(r.URL.Path, preHookUrl.Path) {
+				continue
+			}
+
+			if p, ok := preHooks[preHookUrl.Path]; ok {
+				preHook = p
+			}
+		}
+
+		// Find proxy to serve it.
 		for _, proxyUrl := range proxyUrls {
 			if !shouldProxyURL(r.URL.Path, proxyUrl.Path) {
 				continue
 			}
 
 			if proxy, ok := proxies[proxyUrl.Path]; ok {
-				p := NewComplexProxy(ctx, proxy, r)
+				p := NewComplexProxy(ctx, proxy, preHook, r)
 				p.ServeHTTP(w, r)
 				return
 			}
