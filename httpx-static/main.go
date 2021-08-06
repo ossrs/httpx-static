@@ -88,6 +88,21 @@ func filterByPreHook(ctx context.Context, preHook *url.URL, req *http.Request) e
 		return err
 	}
 
+	// about x-real-ip and x-forwarded-for or
+	// about X-Real-IP and X-Forwarded-For or
+	// https://segmentfault.com/q/1010000002409659
+	// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
+	// @remark http proxy will set the X-Forwarded-For.
+	if rip, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
+		if xrip := req.Header.Get("X-Real-IP"); xrip != "" {
+			r.Header.Set("X-Real-IP", xrip)
+		} else {
+			r.Header.Set("X-Real-IP", rip)
+		}
+		r.Header["X-Forwarded-For"] = req.Header["X-Forwarded-For"]
+		r.Header.Add("X-Forwarded-For", rip)
+	}
+
 	r2, err := http.DefaultClient.Do(r)
 	if err != nil {
 		return err
@@ -140,10 +155,13 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 		// https://segmentfault.com/q/1010000002409659
 		// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
 		// @remark http proxy will set the X-Forwarded-For.
-		if rip := r.Header.Get("X-Real-IP"); rip == "" {
-			if rip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		if rip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+			if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
+				r.Header.Set("X-Real-IP", xrip)
+			} else {
 				r.Header.Set("X-Real-IP", rip)
 			}
+			r.Header.Add("X-Forwarded-For", rip)
 		}
 
 		r.URL.Scheme = proxyUrl.Scheme
