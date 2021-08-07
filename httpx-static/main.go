@@ -83,7 +83,7 @@ func shouldProxyURL(srcPath, proxyPath string) bool {
 // https://segmentfault.com/q/1010000002409659
 // https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
 // @remark http proxy will set the X-Forwarded-For.
-func addProxyAddToHeader(remoteAddr, realIP string, fwd []string, header http.Header) {
+func addProxyAddToHeader(remoteAddr, realIP string, fwd []string, header http.Header, omitForward bool) {
 	rip, _, err := net.SplitHostPort(remoteAddr)
 	if err != nil {
 		return
@@ -95,16 +95,8 @@ func addProxyAddToHeader(remoteAddr, realIP string, fwd []string, header http.He
 		header.Set("X-Real-IP", rip)
 	}
 
-	header["X-Forwarded-For"] = fwd[:]
-
-	var exists bool
-	for _, v := range fwd {
-		if v == rip {
-			exists = true
-		}
-	}
-
-	if !exists {
+	if !omitForward {
+		header["X-Forwarded-For"] = fwd[:]
 		header.Add("X-Forwarded-For", rip)
 	}
 }
@@ -120,7 +112,8 @@ func filterByPreHook(ctx context.Context, preHook *url.URL, req *http.Request) e
 	}
 
 	// Add real ip and forwarded for to header.
-	addProxyAddToHeader(req.RemoteAddr, req.Header.Get("X-Real-IP"), req.Header["X-Forwarded-For"], r.Header)
+	// We should append the forward for pass-by.
+	addProxyAddToHeader(req.RemoteAddr, req.Header.Get("X-Real-IP"), req.Header["X-Forwarded-For"], r.Header, false)
 	ol.Tf(ctx, "Pre-hook proxy addr req=%v, r=%v", req.Header, r.Header)
 
 	r2, err := http.DefaultClient.Do(r)
@@ -171,7 +164,8 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 		}
 
 		// Add real ip and forwarded for to header.
-		addProxyAddToHeader(r.RemoteAddr, r.Header.Get("X-Real-IP"), r.Header["X-Forwarded-For"], r.Header)
+		// We should omit the forward header, because the ReverseProxy will doit.
+		addProxyAddToHeader(r.RemoteAddr, r.Header.Get("X-Real-IP"), r.Header["X-Forwarded-For"], r.Header, true)
 		ol.Tf(ctx, "Proxy addr header %v", r.Header)
 
 		r.URL.Scheme = proxyUrl.Scheme
