@@ -95,7 +95,7 @@ func addProxyAddToHeader(remoteAddr, realIP string, fwd []string, header http.He
 		header.Set("X-Real-IP", rip)
 	}
 
-	header["X-Forwarded-For"] = fwd
+	header["X-Forwarded-For"] = fwd[:]
 
 	var exists bool
 	for _, v := range fwd {
@@ -121,6 +121,7 @@ func filterByPreHook(ctx context.Context, preHook *url.URL, req *http.Request) e
 
 	// Add real ip and forwarded for to header.
 	addProxyAddToHeader(req.RemoteAddr, req.Header.Get("X-Real-IP"), req.Header["X-Forwarded-For"], r.Header)
+	ol.Tf(ctx, "Pre-hook proxy addr req=%v, r=%v", req.Header, r.Header)
 
 	r2, err := http.DefaultClient.Do(r)
 	if err != nil {
@@ -136,7 +137,7 @@ func filterByPreHook(ctx context.Context, preHook *url.URL, req *http.Request) e
 	if err != nil {
 		return err
 	}
-	ol.Tf(ctx, "Pre-hook %v url=%v, res=%v", req.Method, api, string(b))
+	ol.Tf(ctx, "Pre-hook %v url=%v, res=%v, headers=%v", req.Method, api, string(b), r.Header)
 
 	return nil
 }
@@ -171,6 +172,7 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 
 		// Add real ip and forwarded for to header.
 		addProxyAddToHeader(r.RemoteAddr, r.Header.Get("X-Real-IP"), r.Header["X-Forwarded-For"], r.Header)
+		ol.Tf(ctx, "Proxy addr header %v", r.Header)
 
 		r.URL.Scheme = proxyUrl.Scheme
 		r.URL.Host = proxyUrl.Host
