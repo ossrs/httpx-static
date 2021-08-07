@@ -78,6 +78,37 @@ func shouldProxyURL(srcPath, proxyPath string) bool {
 	return strings.HasPrefix(srcPath, proxyPath)
 }
 
+// about x-real-ip and x-forwarded-for or
+// about X-Real-IP and X-Forwarded-For or
+// https://segmentfault.com/q/1010000002409659
+// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
+// @remark http proxy will set the X-Forwarded-For.
+func addProxyAddToHeader(remoteAddr, realIP string, fwd []string, header http.Header) {
+	rip, _, err := net.SplitHostPort(remoteAddr)
+	if err != nil {
+		return
+	}
+
+	if realIP != "" {
+		header.Set("X-Real-IP", realIP)
+	} else {
+		header.Set("X-Real-IP", rip)
+	}
+
+	header["X-Forwarded-For"] = fwd
+
+	var exists bool
+	for _, v := range fwd {
+		if v == rip {
+			exists = true
+		}
+	}
+
+	if !exists {
+		header.Add("X-Forwarded-For", rip)
+	}
+}
+
 func filterByPreHook(ctx context.Context, preHook *url.URL, req *http.Request) error {
 	target := *preHook
 	target.RawQuery = strings.Join([]string{target.RawQuery, req.URL.RawQuery}, "&")
@@ -88,20 +119,8 @@ func filterByPreHook(ctx context.Context, preHook *url.URL, req *http.Request) e
 		return err
 	}
 
-	// about x-real-ip and x-forwarded-for or
-	// about X-Real-IP and X-Forwarded-For or
-	// https://segmentfault.com/q/1010000002409659
-	// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
-	// @remark http proxy will set the X-Forwarded-For.
-	if rip, _, err := net.SplitHostPort(req.RemoteAddr); err == nil {
-		if xrip := req.Header.Get("X-Real-IP"); xrip != "" {
-			r.Header.Set("X-Real-IP", xrip)
-		} else {
-			r.Header.Set("X-Real-IP", rip)
-		}
-		r.Header["X-Forwarded-For"] = req.Header["X-Forwarded-For"]
-		r.Header.Add("X-Forwarded-For", rip)
-	}
+	// Add real ip and forwarded for to header.
+	addProxyAddToHeader(req.RemoteAddr, req.Header.Get("X-Real-IP"), req.Header["X-Forwarded-For"], r.Header)
 
 	r2, err := http.DefaultClient.Do(r)
 	if err != nil {
@@ -150,19 +169,8 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 			}
 		}
 
-		// about x-real-ip and x-forwarded-for or
-		// about X-Real-IP and X-Forwarded-For or
-		// https://segmentfault.com/q/1010000002409659
-		// https://distinctplace.com/2014/04/23/story-behind-x-forwarded-for-and-x-real-ip-headers/
-		// @remark http proxy will set the X-Forwarded-For.
-		if rip, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
-			if xrip := r.Header.Get("X-Real-IP"); xrip != "" {
-				r.Header.Set("X-Real-IP", xrip)
-			} else {
-				r.Header.Set("X-Real-IP", rip)
-			}
-			r.Header.Add("X-Forwarded-For", rip)
-		}
+		// Add real ip and forwarded for to header.
+		addProxyAddToHeader(r.RemoteAddr, r.Header.Get("X-Real-IP"), r.Header["X-Forwarded-For"], r.Header)
 
 		r.URL.Scheme = proxyUrl.Scheme
 		r.URL.Host = proxyUrl.Host
