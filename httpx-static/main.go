@@ -179,7 +179,7 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 
 		// Set the Host of client request to the upstream server's, to act as client
 		// directly access the upstream server.
-		if proxyUrl.Query().Get("modifyRequestHost") == "true" {
+		if proxyUrl.Query().Get("modifyRequestHost") != "false" {
 			r.Host = proxyUrl.Host
 		}
 
@@ -263,7 +263,7 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf("			The www root path. Supports relative to argv[0]=%v. Default: ./html", path.Dir(os.Args[0])))
 		fmt.Println(fmt.Sprintf("	-p, -proxy string"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc"))
-		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?modifyRequestHost=true"))
+		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?modifyRequestHost=false"))
 		fmt.Println(fmt.Sprintf("	-pre-hook string"))
 		fmt.Println(fmt.Sprintf("			Pre-hook to backend, with request. For example: http://127.0.0.1:8888/api/stat"))
 		fmt.Println(fmt.Sprintf("Options for HTTPS(letsencrypt cert):"))
