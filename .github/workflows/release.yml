@@ -32,8 +32,8 @@ jobs:
       # Build SRS image
       - name: Build SRS docker image
         run: |
-          echo "Release ossrs/web:$SRS_TAG"
-          docker build --tag ossrs/web:$SRS_TAG .
+          echo "Release ossrs/httpx:$SRS_TAG"
+          docker build --tag ossrs/httpx:$SRS_TAG .
 
       ################################################################
       # Docker

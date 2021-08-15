@@ -7,14 +7,15 @@ FROM ossrs/srs:dev AS build
 
 RUN yum install -y git openssl
 COPY . /tmp/go-oryx
-RUN cd /tmp/go-oryx/httpx-static && make
-RUN cd /tmp/go-oryx/httpx-static && openssl genrsa -out server.key 2048 && \
+WORKDIR /tmp/go-oryx/httpx-static
+RUN make && \
+    openssl genrsa -out server.key 2048 && \
     openssl req -new -x509 -key server.key -out server.crt -days 3650 \
-        -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=ossrs.net"
-# Install binary.
-RUN cp /tmp/go-oryx/httpx-static/objs/httpx-static /usr/local/bin/httpx-static
-RUN cp /tmp/go-oryx/httpx-static/server.* /usr/local/etc/
-RUN cp -R /tmp/go-oryx/httpx-static/html /usr/local/
+        -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=ossrs.net" && \
+    # Install binary.
+    cp objs/httpx-static /usr/local/bin/httpx-static && \
+    cp server.* /usr/local/etc/ && \
+    cp -R html /usr/local/
 
 ############################################################
 # dist
