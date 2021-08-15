@@ -188,9 +188,10 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 	}
 
 	proxy.ModifyResponse = func(w *http.Response) error {
-		// We always set the server.
-		w.Header.Del("Server")
-		w.Header.Set("Server", oh.Server)
+		// We have already set the server, so remove the upstream one.
+		if proxyUrl.Query().Get("keepUpsreamServer") != "true" {
+			w.Header.Del("Server")
+		}
 
 		// We already added this header, it will cause chrome failed when duplicated.
 		if w.Header.Get("Access-Control-Allow-Origin") != "" {
@@ -264,6 +265,7 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf("	-p, -proxy string"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?modifyRequestHost=false"))
+		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?keepUpsreamServer=true"))
 		fmt.Println(fmt.Sprintf("	-pre-hook string"))
 		fmt.Println(fmt.Sprintf("			Pre-hook to backend, with request. For example: http://127.0.0.1:8888/api/stat"))
 		fmt.Println(fmt.Sprintf("Options for HTTPS(letsencrypt cert):"))
