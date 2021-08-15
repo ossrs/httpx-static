@@ -3,7 +3,7 @@
 ############################################################
 # build
 ############################################################
-FROM registry.cn-hangzhou.aliyuncs.com/ossrs/srs:dev AS build
+FROM ossrs/srs:dev AS build
 
 RUN yum install -y git openssl
 COPY . /tmp/go-oryx
