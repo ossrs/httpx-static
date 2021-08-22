@@ -176,6 +176,10 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 		if trimPrefix := proxyUrlQuery.Get("trimPrefix"); trimPrefix != "" {
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, trimPrefix)
 		}
+		// Aadd the prefix to path.
+		if addPrefix := proxyUrlQuery.Get("addPrefix"); addPrefix != "" {
+			r.URL.Path = addPrefix + r.URL.Path
+		}
 
 		// The original request.Host requested by the client.
 		// https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-Host
@@ -273,6 +277,7 @@ func run(ctx context.Context) error {
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?modifyRequestHost=false"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?keepUpsreamServer=true"))
 		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?trimPrefix=/ffmpeg"))
+		fmt.Println(fmt.Sprintf("			Proxy path to backend. For example: http://127.0.0.1:8888/api/webrtc?addPrefix=/release"))
 		fmt.Println(fmt.Sprintf("	-pre-hook string"))
 		fmt.Println(fmt.Sprintf("			Pre-hook to backend, with request. For example: http://127.0.0.1:8888/api/stat"))
 		fmt.Println(fmt.Sprintf("Options for HTTPS(letsencrypt cert):"))
