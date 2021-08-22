@@ -148,6 +148,7 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 
 	// Start proxy it.
 	proxy := &httputil.ReverseProxy{}
+	proxyUrlQuery := proxyUrl.Query()
 
 	// Create a proxy which attach a isolate logger.
 	elogger := log.New(os.Stderr, fmt.Sprintf("%v ", originalRequest.RemoteAddr), log.LstdFlags)
@@ -172,7 +173,7 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 		r.URL.Host = proxyUrl.Host
 
 		// Trim the prefix path.
-		if trimPrefix := proxyUrl.Query().Get("trimPrefix"); trimPrefix != "" {
+		if trimPrefix := proxyUrlQuery.Get("trimPrefix"); trimPrefix != "" {
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, trimPrefix)
 		}
 
@@ -184,7 +185,7 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 
 		// Set the Host of client request to the upstream server's, to act as client
 		// directly access the upstream server.
-		if proxyUrl.Query().Get("modifyRequestHost") != "false" {
+		if proxyUrlQuery.Get("modifyRequestHost") != "false" {
 			r.Host = proxyUrl.Host
 		}
 
@@ -194,7 +195,7 @@ func NewComplexProxy(ctx context.Context, proxyUrl, preHook *url.URL, originalRe
 
 	proxy.ModifyResponse = func(w *http.Response) error {
 		// We have already set the server, so remove the upstream one.
-		if proxyUrl.Query().Get("keepUpsreamServer") != "true" {
+		if proxyUrlQuery.Get("keepUpsreamServer") != "true" {
 			w.Header.Del("Server")
 		}
 
