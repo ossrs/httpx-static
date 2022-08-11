@@ -60,21 +60,3 @@ jobs:
           docker push registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:$SRS_TAG
           docker tag ossrs/httpx:$SRS_TAG registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:$SRS_MAJOR
           docker push registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:$SRS_MAJOR
-
-      ################################################################
-      # K8S
-      - name: Setup KUBECONFIG for Aliyun ACK
-        run: |-
-          KUBECONFIG=$RUNNER_TEMP/kubeconfig_$(date +%s)
-          echo "${{ secrets.KUBECONFIG }}" > $KUBECONFIG
-          echo "KUBECONFIG=$KUBECONFIG" >> $GITHUB_ENV
-      # K8S for SRS ossrs.net
-      - name: Release SRS ossrs.net to Aliyun ACK
-        run: |-
-          kubectl set image deploy/httpx-web-deploy httpx-web=registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:$SRS_TAG
-          kubectl describe deploy/httpx-web-deploy
-      # K8S for SRS d.ossrs.net
-      - name: Release SRS d.ossrs.net to Aliyun ACK
-        run: |-
-          kubectl set image deploy/httpx-dsrs-deploy httpx-dsrs=registry.cn-hangzhou.aliyuncs.com/ossrs/httpx:$SRS_TAG
-          kubectl describe deploy/httpx-dsrs-deploy
