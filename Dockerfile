@@ -8,8 +8,11 @@ FROM ossrs/srs:dev AS build
 RUN yum install -y git openssl
 COPY . /tmp/go-oryx
 WORKDIR /tmp/go-oryx/httpx-static
-RUN make && \
-    openssl genrsa -out server.key 2048 && \
+
+# Build for alpine, see https://www.cloudbees.com/blog/building-minimal-docker-containers-for-go-applications
+RUN CGO_ENABLED=0 GOOS=linux go build -mod=vendor -a -installsuffix cgo  -o objs/httpx-static .
+
+RUN openssl genrsa -out server.key 2048 && \
     openssl req -new -x509 -key server.key -out server.crt -days 3650 \
         -subj "/C=CN/ST=Beijing/L=Beijing/O=Me/OU=Me/CN=ossrs.net" && \
     # Install binary.
@@ -20,7 +23,7 @@ RUN make && \
 ############################################################
 # dist
 ############################################################
-FROM centos:7 AS dist
+FROM alpine:3.16 AS dist
 
 # HTTP/80, HTTPS/443
 EXPOSE 80 443
