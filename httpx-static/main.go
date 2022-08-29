@@ -262,8 +262,9 @@ func run(ctx context.Context) error {
 	flag.Var(&skeys, "skey", "the SSL key for domain")
 	flag.Var(&scerts, "scert", "the SSL cert for domain")
 
-	var noRedirectIndex bool
+	var noRedirectIndex, trimLastSlash bool
 	flag.BoolVar(&noRedirectIndex, "no-redirect-index", false, "Whether serve with index.html without redirect.")
+	flag.BoolVar(&trimLastSlash, "trim-last-slash", false, "Whether trim last slash by HTTP redirect(302).")
 
 	flag.Usage = func() {
 		fmt.Println(fmt.Sprintf("Usage: %v -t http -s https -d domains -r root -e cache -l lets -k ssk -c ssc -p proxy", os.Args[0]))
@@ -322,6 +323,12 @@ func run(ctx context.Context) error {
 		os.Exit(-1)
 	}
 
+	// If trim last slash, we should enable no redirect index, to avoid infinitely redirect.
+	if trimLastSlash {
+		noRedirectIndex = true
+	}
+	fmt.Println(fmt.Sprintf("Config trimLastSlash=%v, noRedirectIndex=%v", trimLastSlash, noRedirectIndex))
+
 	var proxyUrls []*url.URL
 	proxies := make(map[string]*url.URL)
 	for _, oproxy := range []string(oproxies) {
@@ -373,6 +380,18 @@ func run(ctx context.Context) error {
 
 	serveFileNoRedirect := func (w http.ResponseWriter, r *http.Request, name string) {
 		upath := path.Join(html, path.Clean(r.URL.Path))
+
+		// Redirect without the last slash.
+		if trimLastSlash && r.URL.Path != "/" && strings.HasSuffix(r.URL.Path, "/") {
+			u := strings.TrimSuffix(r.URL.Path, "/")
+			if r.URL.RawQuery != "" {
+				u += "?" + r.URL.RawQuery
+			}
+			http.Redirect(w, r, u, http.StatusFound)
+			return
+		}
+
+		// Append the index.html path if access a directory.
 		if noRedirectIndex && !strings.Contains(path.Base(upath), ".") {
 			if d, err := os.Stat(upath); err != nil {
 				http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -381,6 +400,7 @@ func run(ctx context.Context) error {
 				upath = path.Join(upath, "index.html")
 			}
 		}
+
 		http.ServeFile(w, r, upath)
 	}
 
