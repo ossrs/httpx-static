@@ -262,9 +262,11 @@ func run(ctx context.Context) error {
 	flag.Var(&skeys, "skey", "the SSL key for domain")
 	flag.Var(&scerts, "scert", "the SSL cert for domain")
 
+	var trimSlashLimit int
 	var noRedirectIndex, trimLastSlash bool
 	flag.BoolVar(&noRedirectIndex, "no-redirect-index", false, "Whether serve with index.html without redirect.")
 	flag.BoolVar(&trimLastSlash, "trim-last-slash", false, "Whether trim last slash by HTTP redirect(302).")
+	flag.IntVar(&trimSlashLimit, "trim-slash-limit", 0, "Only trim last slash when got enough directories.")
 
 	flag.Usage = func() {
 		fmt.Println(fmt.Sprintf("Usage: %v -t http -s https -d domains -r root -e cache -l lets -k ssk -c ssc -p proxy", os.Args[0]))
@@ -327,7 +329,7 @@ func run(ctx context.Context) error {
 	if trimLastSlash {
 		noRedirectIndex = true
 	}
-	fmt.Println(fmt.Sprintf("Config trimLastSlash=%v, noRedirectIndex=%v", trimLastSlash, noRedirectIndex))
+	fmt.Println(fmt.Sprintf("Config trimLastSlash=%v, trimSlashLimit=%v, noRedirectIndex=%v", trimLastSlash, trimSlashLimit, noRedirectIndex))
 
 	var proxyUrls []*url.URL
 	proxies := make(map[string]*url.URL)
@@ -387,8 +389,10 @@ func run(ctx context.Context) error {
 			if r.URL.RawQuery != "" {
 				u += "?" + r.URL.RawQuery
 			}
-			http.Redirect(w, r, u, http.StatusFound)
-			return
+			if strings.Count(u, "/") >= trimSlashLimit {
+				http.Redirect(w, r, u, http.StatusFound)
+				return
+			}
 		}
 
 		// Append the index.html path if access a directory.
